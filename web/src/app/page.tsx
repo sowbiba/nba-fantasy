@@ -1,65 +1,85 @@
-import Image from "next/image";
+import { supabase } from "@/lib/supabase";
+import { Game, Series, Recommendation, Player, SyncLog, RecommendationWithPlayer } from "@/types";
+import SyncStatus from "@/components/SyncStatus";
+import GamesCollapsible from "@/components/GamesCollapsible";
+import StrategyBanner from "@/components/StrategyBanner";
+import RecommendationCard from "@/components/RecommendationCard";
+import PlayerList from "@/components/PlayerList";
 
-export default function Home() {
+export const revalidate = 300;
+
+async function getData() {
+  const today = new Date().toISOString().split("T")[0];
+
+  const [gamesRes, seriesRes, recsRes, playersRes, syncRes] = await Promise.all([
+    supabase.from("games").select("*").eq("date", today).order("tip_off"),
+    supabase.from("series").select("*").eq("status", "active"),
+    supabase.from("recommendations").select("*").eq("date", today).order("rank"),
+    supabase.from("players").select("*"),
+    supabase.from("sync_log").select("*").order("started_at", { ascending: false }).limit(1),
+  ]);
+
+  const games = (gamesRes.data || []) as Game[];
+  const series = (seriesRes.data || []) as Series[];
+  const recs = (recsRes.data || []) as Recommendation[];
+  const players = (playersRes.data || []) as Player[];
+  const sync = (syncRes.data?.[0] || null) as SyncLog | null;
+
+  const playersMap = new Map(players.map((p) => [p.id, p]));
+
+  const recsWithPlayers: RecommendationWithPlayer[] = recs
+    .map((r) => {
+      const player = playersMap.get(r.player_id);
+      const game = games.find(
+        (g) => g.home_team === player?.team || g.away_team === player?.team
+      );
+      if (!player || !game) return null;
+      return { ...r, player, game };
+    })
+    .filter(Boolean) as RecommendationWithPlayer[];
+
+  let gameDaysRemaining = 0;
+  for (const s of series) {
+    const minLeft = 4 - Math.max(s.home_wins, s.away_wins);
+    const maxLeft = 7 - s.home_wins - s.away_wins;
+    gameDaysRemaining += Math.round((minLeft + maxLeft) / 2);
+  }
+  gameDaysRemaining = Math.max(1, Math.round(gameDaysRemaining * 0.7));
+
+  return { games, series, recsWithPlayers, sync, gameDaysRemaining };
+}
+
+export default async function TonightPage() {
+  const { games, series, recsWithPlayers, sync, gameDaysRemaining } = await getData();
+  const top3 = recsWithPlayers.slice(0, 3);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div>
+      <div className="flex justify-between items-center px-4 py-3 border-b border-gray-900">
+        <div>
+          <h1 className="text-lg font-bold">TTFL Advisor</h1>
+          <p className="text-xs text-gray-500">
+            {new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
+            {" "}· {games.length} match{games.length > 1 ? "s" : ""} ce soir
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <span className="bg-gray-900 rounded-full px-2.5 py-1 text-xs text-amber-500 font-medium">PLAYOFFS</span>
+      </div>
+      <SyncStatus sync={sync} />
+      <div className="mt-2"><GamesCollapsible games={games} series={series} /></div>
+      <div className="mt-2"><StrategyBanner recommendations={recsWithPlayers} gamesDaysRemaining={gameDaysRemaining} /></div>
+      <div className="mt-4 px-3">
+        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1">Top 3 recommandations</h2>
+        <div className="flex flex-col gap-2">
+          {top3.map((rec) => (<RecommendationCard key={rec.id} rec={rec} />))}
+          {top3.length === 0 && (
+            <p className="text-gray-600 text-sm text-center py-8">
+              Pas encore de recommandations pour ce soir. Prochaine synchro en cours...
+            </p>
+          )}
         </div>
-      </main>
+      </div>
+      <PlayerList recs={recsWithPlayers} />
     </div>
   );
 }
