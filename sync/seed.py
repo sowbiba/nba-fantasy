@@ -76,15 +76,28 @@ def seed():
 
         if game_log_rows:
             # Ensure game records exist (FK constraint)
-            for gl in game_log_rows:
+            for gl, nl in zip(game_log_rows, nba_logs[:20]):
                 game_id = gl["game_id"]
                 existing_game = client.table("games").select("id").eq("id", game_id).execute()
                 if not existing_game.data:
+                    matchup = nl.get("MATCHUP", "")
+                    # Parse "ATL vs. BOS" (home) or "ATL @ BOS" (away)
+                    if "vs." in matchup:
+                        parts = matchup.split(" vs. ")
+                        home_team = parts[0].strip()
+                        away_team = parts[1].strip() if len(parts) > 1 else "UNK"
+                    elif "@" in matchup:
+                        parts = matchup.split(" @ ")
+                        away_team = parts[0].strip()  # player's team is away
+                        home_team = parts[1].strip() if len(parts) > 1 else "UNK"
+                    else:
+                        home_team = p["team"] if gl["is_home"] else "UNK"
+                        away_team = "UNK" if gl["is_home"] else p["team"]
                     client.table("games").insert({
                         "id": game_id,
                         "date": gl["date"],
-                        "home_team": p["team"] if gl["is_home"] else "UNK",
-                        "away_team": "UNK" if gl["is_home"] else p["team"],
+                        "home_team": home_team,
+                        "away_team": away_team,
                         "status": "final",
                     }).execute()
 
