@@ -169,6 +169,30 @@
       </div>
     </div>
 
+    <!-- Export CSV tool -->
+    <div style="margin-bottom:20px">
+      <h2 style="font-size:20px;font-weight:800;margin-bottom:12px;text-align:center">📥 Export CSV</h2>
+      <div class="bookmarklet-zone" style="border-color:#3b82f6">
+        <p>Exporte le tableau de l'historique des decks en CSV :</p>
+        <a class="bookmarklet-btn" id="csv-bookmarklet-link" href="#" onclick="event.preventDefault()" draggable="true" style="background:#3b82f6;box-shadow:0 4px 12px rgba(59,130,246,0.3)">📥 Export CSV</a>
+        <div class="drag-hint">↑ Glisse-moi dans tes favoris ↑</div>
+      </div>
+      <div class="step">
+        <div class="step-num" style="background:#3b82f6">1</div>
+        <div>
+          <h3>Va sur l'historique</h3>
+          <p>Sur <a href="https://fantasy.trashtalk.co" target="_blank">fantasy.trashtalk.co</a>, va dans <strong>Palmarès > Historique des decks</strong> (<code>?tpl=historique</code>).</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num" style="background:#3b82f6">2</div>
+        <div>
+          <h3>Clique sur le bookmarklet</h3>
+          <p>Le fichier CSV se télécharge automatiquement avec toutes les colonnes : Joueur, Pts, Reb, Ast, Stl, Blk, etc.</p>
+        </div>
+      </div>
+    </div>
+
     <details>
       <summary>📱 Instructions pour mobile</summary>
       <div class="content">
@@ -187,14 +211,21 @@
   </div>
 
   <script>
-    fetch('/bookmarklet.js')
-      .then(r => r.text())
-      .then(code => {
-        const minified = code.replace(/\/\/.*$/gm, '').replace(/\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
-        const href = 'javascript:' + encodeURIComponent(minified);
-        document.getElementById('bookmarklet-link').href = href;
-        document.getElementById('mobile-code').textContent = href;
-      });
+    function loadBookmarklet(jsFile, linkId, mobileId) {
+      fetch('/' + jsFile)
+        .then(r => r.text())
+        .then(code => {
+          const minified = code.replace(/\/\/.*$/gm, '').replace(/\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
+          const href = 'javascript:' + encodeURIComponent(minified);
+          document.getElementById(linkId).href = href;
+          if (mobileId) {
+            var el = document.getElementById(mobileId);
+            if (el) el.textContent = href;
+          }
+        });
+    }
+    loadBookmarklet('bookmarklet.js', 'bookmarklet-link', 'mobile-code');
+    loadBookmarklet('export-csv.js', 'csv-bookmarklet-link', null);
   </script>
 </body>
 </html>
