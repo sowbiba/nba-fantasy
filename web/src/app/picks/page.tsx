@@ -5,7 +5,7 @@ export const revalidate = 0;
 
 async function getData() {
   const [picksRes, playersRes] = await Promise.all([
-    supabase.from("picks").select("*").eq("mode", "playoffs").order("date", { ascending: false }),
+    supabase.from("picks").select("*").order("date", { ascending: false }),
     supabase.from("players").select("id, name, team"),
   ]);
   const picks = (picksRes.data || []) as Pick[];
