@@ -11,53 +11,67 @@ ESPN_TEAM_IDS = {
     "SAC": 23, "SAS": 24, "TOR": 28, "UTA": 26, "WAS": 27,
 }
 
-INJURY_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{team_id}/injuries"
+GLOBAL_INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
 
+# Reverse mapping: ESPN team displayName -> tricode
+ESPN_NAME_TO_TRICODE = {
+    "Atlanta Hawks": "ATL", "Boston Celtics": "BOS", "Brooklyn Nets": "BKN",
+    "Charlotte Hornets": "CHA", "Chicago Bulls": "CHI", "Cleveland Cavaliers": "CLE",
+    "Dallas Mavericks": "DAL", "Denver Nuggets": "DEN", "Detroit Pistons": "DET",
+    "Golden State Warriors": "GSW", "Houston Rockets": "HOU", "Indiana Pacers": "IND",
+    "LA Clippers": "LAC", "Los Angeles Clippers": "LAC",
+    "Los Angeles Lakers": "LAL", "Memphis Grizzlies": "MEM",
+    "Miami Heat": "MIA", "Milwaukee Bucks": "MIL", "Minnesota Timberwolves": "MIN",
+    "New Orleans Pelicans": "NOP", "New York Knicks": "NYK",
+    "Oklahoma City Thunder": "OKC", "Orlando Magic": "ORL",
+    "Philadelphia 76ers": "PHI", "Phoenix Suns": "PHX", "Portland Trail Blazers": "POR",
+    "Sacramento Kings": "SAC", "San Antonio Spurs": "SAS", "Toronto Raptors": "TOR",
+    "Utah Jazz": "UTA", "Washington Wizards": "WAS",
+}
 
-def fetch_team_injuries(team_tricode: str) -> list[dict]:
-    """Fetch injuries for a single team.
-    Returns list of dicts: {"name": str, "status": str, "detail": str}
-    """
-    espn_id = ESPN_TEAM_IDS.get(team_tricode)
-    if espn_id is None:
-        return []
-
-    url = INJURY_URL.format(team_id=espn_id)
-    try:
-        resp = httpx.get(url, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-    except (httpx.HTTPError, ValueError):
-        return []
-
-    injuries = []
-    for item in data.get("items", []):
-        athlete = item.get("athlete", {})
-        name = athlete.get("displayName", "")
-        status = item.get("status", "")
-        detail_type = item.get("type", {}).get("description", "")
-        detail = item.get("details", {}).get("detail", detail_type)
-
-        if name and status:
-            injuries.append({
-                "name": name,
-                "status": status,
-                "detail": detail,
-            })
-
-    return injuries
+# Also map ESPN team ID to tricode
+ESPN_ID_TO_TRICODE = {str(v): k for k, v in ESPN_TEAM_IDS.items()}
 
 
 def fetch_all_injuries(teams: list[str] | None = None) -> dict[str, list[dict]]:
-    """Fetch injuries for all teams (or a subset).
+    """Fetch injuries for all teams from ESPN global endpoint.
+
     Returns {team_tricode: [{"name", "status", "detail"}, ...]}
     """
-    if teams is None:
-        teams = list(ESPN_TEAM_IDS.keys())
+    try:
+        resp = httpx.get(GLOBAL_INJURIES_URL, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return {}
 
-    all_injuries = {}
-    for tricode in teams:
-        team_injuries = fetch_team_injuries(tricode)
+    all_injuries: dict[str, list[dict]] = {}
+
+    for team_data in data.get("injuries", []):
+        team_name = team_data.get("displayName", "")
+        team_id = team_data.get("id", "")
+        tricode = ESPN_NAME_TO_TRICODE.get(team_name) or ESPN_ID_TO_TRICODE.get(team_id)
+        if not tricode:
+            continue
+        if teams is not None and tricode not in teams:
+            continue
+
+        team_injuries = []
+        for inj in team_data.get("injuries", []):
+            athlete = inj.get("athlete", {})
+            name = athlete.get("displayName", "")
+            status = inj.get("status", "")
+            if isinstance(status, dict):
+                status = status.get("type", status.get("name", ""))
+            detail = inj.get("type", {}).get("description", "") if isinstance(inj.get("type"), dict) else ""
+
+            if name and status:
+                team_injuries.append({
+                    "name": name,
+                    "status": status,
+                    "detail": detail,
+                })
+
         if team_injuries:
             all_injuries[tricode] = team_injuries
 
