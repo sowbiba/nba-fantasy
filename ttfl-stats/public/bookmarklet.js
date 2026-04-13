@@ -11,9 +11,9 @@
   var existing = document.getElementById('ttfl-stats-overlay');
   if (existing) existing.remove();
 
-  // Parse picks from #decks
+  // Parse picks from list-group-item elements
   var picks = [];
-  var items = document.querySelectorAll('#decks li, #decks .list-group-item');
+  var items = document.querySelectorAll('.list-group-item');
 
   items.forEach(function(item) {
     var nameEl = item.querySelector('h4.media-heading');
@@ -23,18 +23,31 @@
     var playerName = nameEl.textContent.trim();
     var smallText = smallEl.textContent.trim();
 
-    // Parse "date (XX pts)" pattern
-    var match = smallText.match(/(.+?)\s*\((-?\d+)\s*pts?\)/i);
-    if (match) {
-      var dateStr = match[1].trim();
-      var score = parseInt(match[2], 10);
-      picks.push({ player: playerName, date: dateStr, score: score });
-    }
-
-    // Check for no-pick
+    // Check for no-pick first
     if (smallText.toLowerCase().includes('no pick') || playerName.toLowerCase().includes('no pick')) {
       picks.push({ player: 'No Pick', date: smallText, score: 0, noPick: true });
+      return;
     }
+
+    // Parse score from <b>XX pts</b> inside <small>
+    var boldEl = smallEl.querySelector('b');
+    var score = 0;
+    if (boldEl) {
+      var boldMatch = boldEl.textContent.match(/(-?\d+)\s*pts?/i);
+      if (boldMatch) score = parseInt(boldMatch[1], 10);
+    }
+
+    // Parse date from "Le DD-MM-YYYY pour" pattern
+    var dateMatch = smallText.match(/Le\s+(\d{2}-\d{2}-\d{4})/i);
+    var dateStr = dateMatch ? dateMatch[1] : '';
+
+    // Also try format "(XX pts)" in case some entries use it
+    if (!boldEl) {
+      var altMatch = smallText.match(/\((-?\d+)\s*pts?\)/i);
+      if (altMatch) score = parseInt(altMatch[1], 10);
+    }
+
+    picks.push({ player: playerName, date: dateStr, score: score });
   });
 
   // Parse total points and rank from profile stats
