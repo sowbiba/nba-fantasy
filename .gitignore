@@ -1,1 +1,16 @@
 .superpowers/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Node
+web/node_modules/
+web/.next/
+web/out/
+
+# IDE
+.vscode/
+.idea/
