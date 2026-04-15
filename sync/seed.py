@@ -14,10 +14,10 @@ from sync.fetcher import (
 )
 from sync.ttfl import compute_ttfl_from_game_log
 
-# 2025-26 playoff teams (update if needed)
+# 2025-26 playoff teams + play-in teams (all 20)
 PLAYOFF_TEAMS = [
-    "BOS", "CLE", "NYK", "MIL", "IND", "DET", "ORL", "ATL",  # East
-    "OKC", "DEN", "MIN", "LAL", "HOU", "MEM", "LAC", "GSW",   # West
+    "BOS", "CLE", "NYK", "MIL", "IND", "DET", "ORL", "ATL", "PHI", "MIA", "CHA",  # East
+    "OKC", "DEN", "MIN", "LAL", "HOU", "MEM", "LAC", "GSW", "SAS", "POR", "PHX",  # West
 ]
 
 
