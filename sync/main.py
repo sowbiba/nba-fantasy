@@ -104,6 +104,26 @@ def run_sync():
                 })
             db.upsert_game_logs(client, game_logs)
 
+        # Step 2b: update actual_score on picks now that box scores are final.
+        # For each pick without an actual_score, look up the player's game_log
+        # for that date and copy ttfl_score.
+        unscored_picks = client.table("picks").select(
+            "id, player_id, date"
+        ).is_("actual_score", "null").execute().data or []
+        updated_picks = 0
+        for pick in unscored_picks:
+            log_res = client.table("game_logs").select("ttfl_score").eq(
+                "player_id", pick["player_id"]
+            ).eq("date", pick["date"]).execute()
+            if log_res.data:
+                ttfl = log_res.data[0]["ttfl_score"]
+                client.table("picks").update({
+                    "actual_score": ttfl
+                }).eq("id", pick["id"]).execute()
+                updated_picks += 1
+        if updated_picks > 0:
+            print(f"  Updated {updated_picks} pick(s) with actual score.")
+
         # --- Step 3: Fetch rosters + update players ---
         print("  Fetching rosters...")
         rosters = fetch_team_rosters()

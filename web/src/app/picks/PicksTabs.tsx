@@ -23,6 +23,35 @@ function isX2(pick: Pick): boolean {
   );
 }
 
+function EstimatedVsActual({
+  estimated,
+  actual,
+}: {
+  estimated: number;
+  actual: number;
+}) {
+  const diff = actual - estimated;
+  const abs = Math.abs(diff);
+  const color =
+    diff > 3
+      ? "text-[color:var(--color-emerald)]"
+      : diff < -3
+        ? "text-[color:var(--color-crimson)]"
+        : "text-[color:var(--color-text-mute)]";
+  const sign = diff > 0 ? "+" : diff < 0 ? "−" : "±";
+  return (
+    <div className="text-[9px] uppercase tracking-[0.12em] mt-0.5 font-mono-num flex items-center justify-end gap-1">
+      <span className="text-[color:var(--color-text-dim)]">
+        est. {estimated.toFixed(1)}
+      </span>
+      <span className={color}>
+        {sign}
+        {abs.toFixed(1)}
+      </span>
+    </div>
+  );
+}
+
 function StatsGrid({ picks }: { picks: Pick[] }) {
   const scores = picks
     .filter((p) => p.actual_score !== null)
@@ -31,6 +60,25 @@ function StatsGrid({ picks }: { picks: Pick[] }) {
   const avg = scores.length ? total / scores.length : 0;
   const best = scores.length ? Math.max(...scores) : 0;
   const worst = scores.length ? Math.min(...scores) : 0;
+
+  // Engine accuracy over picks with both estimated_score (engine) and actual_score,
+  // excluding x2 bonus picks where estimated_score is overloaded with the doubled
+  // display value.
+  const enginePicks = picks.filter(
+    (p) =>
+      !isX2(p) &&
+      p.estimated_score !== null &&
+      p.actual_score !== null
+  );
+  const errors = enginePicks.map(
+    (p) => (p.actual_score as number) - (p.estimated_score as number)
+  );
+  const mae = errors.length
+    ? errors.reduce((a, b) => a + Math.abs(b), 0) / errors.length
+    : null;
+  const bias = errors.length
+    ? errors.reduce((a, b) => a + b, 0) / errors.length
+    : null;
 
   if (scores.length === 0) return null;
 
@@ -69,7 +117,7 @@ function StatsGrid({ picks }: { picks: Pick[] }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mb-4">
+      <div className="grid grid-cols-2 gap-2 mb-3">
         <div className="rounded-[var(--radius-card-sm)] border border-[color:var(--color-emerald)]/20 bg-[color:var(--color-emerald)]/[0.05] p-3">
           <div className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--color-emerald)]">
             Meilleur
@@ -87,6 +135,40 @@ function StatsGrid({ picks }: { picks: Pick[] }) {
           </div>
         </div>
       </div>
+
+      {mae !== null && bias !== null && (
+        <div className="rounded-[var(--radius-card-sm)] border border-[color:var(--color-ice)]/15 bg-[color:var(--color-ice)]/[0.04] p-3 mb-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--color-ice)]">
+                Précision moteur · {enginePicks.length} pick
+                {enginePicks.length > 1 ? "s" : ""}
+              </div>
+              <div className="text-[11px] text-[color:var(--color-text-mute)] mt-1">
+                Écart absolu moyen : <span className="font-mono-num text-[color:var(--color-text)] font-semibold">{mae.toFixed(1)}</span> pts
+              </div>
+              <div className="text-[11px] text-[color:var(--color-text-mute)]">
+                Biais moyen :{" "}
+                <span
+                  className={`font-mono-num font-semibold ${
+                    bias > 2
+                      ? "text-[color:var(--color-emerald)]"
+                      : bias < -2
+                        ? "text-[color:var(--color-crimson)]"
+                        : "text-[color:var(--color-text)]"
+                  }`}
+                >
+                  {bias > 0 ? "+" : ""}
+                  {bias.toFixed(1)}
+                </span>{" "}
+                <span className="text-[color:var(--color-text-dim)]">
+                  ({bias > 2 ? "réel > estimé" : bias < -2 ? "réel < estimé" : "neutre"})
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -160,9 +242,22 @@ function PickList({
               >
                 {scored ? eff : "—"}
               </div>
-              {x2 && (
+              {x2 ? (
                 <div className="text-[9px] text-[color:var(--color-text-mute)] mt-0.5 font-mono-num">
                   {pick.actual_score} × 2
+                </div>
+              ) : (
+                scored &&
+                pick.estimated_score !== null && (
+                  <EstimatedVsActual
+                    estimated={pick.estimated_score}
+                    actual={pick.actual_score as number}
+                  />
+                )
+              )}
+              {!scored && pick.estimated_score !== null && (
+                <div className="text-[9px] uppercase tracking-[0.18em] text-[color:var(--color-text-mute)] mt-0.5 font-mono-num">
+                  est. {pick.estimated_score.toFixed(1)}
                 </div>
               )}
             </div>
