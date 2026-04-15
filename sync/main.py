@@ -60,6 +60,12 @@ def run_sync():
 
         # Step 1b: refresh playoff series + schedule (safe to re-run, upserts)
         try:
+            from sync.load_schedule import load as load_schedule_fn
+            load_schedule_fn(days_ahead=30)
+        except Exception as e:
+            print(f"  (schedule load skipped: {e})")
+
+        try:
             from sync.seed_playoffs import seed as seed_playoffs_fn
             seed_playoffs_fn()
         except Exception as e:
@@ -476,6 +482,14 @@ def run_sync():
         # --- Step 9: Push to Supabase ---
         print(f"  Pushing {len(recommendations)} recommendations...")
         db.replace_recommendations(client, recommendations, today)
+
+        # Step 9b: Weekly plan (optimal 7-day assignment)
+        try:
+            from sync.weekly_plan import build_and_push as build_weekly_plan
+            plan = build_weekly_plan(days_ahead=7)
+            print(f"  Weekly plan: {len(plan)} days assigned.")
+        except Exception as e:
+            print(f"  (weekly plan skipped: {e})")
 
         db.finish_sync_log(client, log_id, players_updated)
         print(f"[{datetime.now():%H:%M}] Sync complete! {len(recommendations)} players scored.")

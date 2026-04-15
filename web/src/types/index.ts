@@ -54,6 +54,21 @@ export interface Recommendation {
   computed_at: string;
 }
 
+export interface WeeklyPlanEntry {
+  id: number;
+  date: string;
+  player_id: number;
+  game_id: string;
+  estimated_score: number;
+  tier: string | null;
+  is_home: boolean;
+  opponent: string;
+  game_number: number | null;
+  elimination: string;
+  reasoning: string;
+  generated_at: string;
+}
+
 export interface Pick {
   id: number;
   player_id: number;

@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
-import { Recommendation, Series, Game } from "@/types";
+import { Recommendation, Series, Game, WeeklyPlanEntry, Player } from "@/types";
+import Link from "next/link";
 
 export const revalidate = 300;
 
@@ -9,7 +10,7 @@ async function getData() {
   futureDate.setDate(futureDate.getDate() + 7);
   const futureDateStr = futureDate.toISOString().split("T")[0];
 
-  const [recsRes, seriesRes, gamesRes] = await Promise.all([
+  const [recsRes, seriesRes, gamesRes, planRes, playersRes] = await Promise.all([
     supabase.from("recommendations").select("*").eq("date", today),
     supabase.from("series").select("*").eq("status", "active"),
     supabase
@@ -18,21 +19,28 @@ async function getData() {
       .gte("date", today)
       .lte("date", futureDateStr)
       .order("date"),
+    supabase.from("weekly_plan").select("*").order("date"),
+    supabase.from("players").select("id, name, team, position"),
   ]);
 
   return {
     recs: (recsRes.data || []) as Recommendation[],
     series: (seriesRes.data || []) as Series[],
     games: (gamesRes.data || []) as Game[],
+    plan: (planRes.data || []) as WeeklyPlanEntry[],
+    players: (playersRes.data || []) as Pick<Player, "id" | "name" | "team" | "position">[],
   };
 }
 
 export default async function StrategyPage() {
-  const { recs, series, games } = await getData();
+  const { recs, series, games, plan, players } = await getData();
+  const playersMap = new Map(players.map((p) => [p.id, p]));
 
   const elites = recs.filter((r) => r.tier === "elite").length;
   const solids = recs.filter((r) => r.tier === "solid").length;
   const fillers = recs.filter((r) => r.tier === "filler").length;
+
+  const planTotal = plan.reduce((sum, e) => sum + e.estimated_score, 0);
 
   const gamesByDate = new Map<string, Game[]>();
   for (const g of games) {
@@ -92,6 +100,88 @@ export default async function StrategyPage() {
             bgColor="bg-white/[0.02]"
           />
         </div>
+      </Section>
+
+      {/* --------------- weekly plan --------------- */}
+      <Section
+        title={`Plan de la semaine · ${planTotal.toFixed(0)} pts estimés`}
+        accent="gold"
+        className="mt-4"
+      >
+        {plan.length === 0 ? (
+          <p className="text-sm text-[color:var(--color-text-mute)]">
+            Aucun plan disponible. Le prochain sync en génèrera un.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {plan.map((entry) => {
+              const player = playersMap.get(entry.player_id);
+              const d = new Date(entry.date + "T12:00:00");
+              const dayLabel = d
+                .toLocaleDateString("fr-FR", {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "short",
+                })
+                .replace(".", "");
+              const isToday = entry.date === today;
+              const isElim = entry.elimination === "critical";
+              return (
+                <Link
+                  key={entry.id}
+                  href={`/player/${entry.player_id}`}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/[0.04] hover:border-[color:var(--color-gold)]/30 transition-colors"
+                >
+                  <div className="w-16 shrink-0">
+                    <div
+                      className={`text-[10px] uppercase tracking-[0.15em] font-bold ${
+                        isToday
+                          ? "text-[color:var(--color-flame)]"
+                          : "text-[color:var(--color-text-soft)]"
+                      }`}
+                    >
+                      {isToday ? "Auj." : dayLabel}
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-semibold text-sm text-[color:var(--color-text)] truncate">
+                        {player?.name || "?"}
+                      </span>
+                      {isElim && (
+                        <span className="text-[8px] font-bold tracking-[0.1em] px-1.5 py-0.5 rounded bg-[color:var(--color-crimson)]/15 text-[color:var(--color-crimson)] border border-[color:var(--color-crimson)]/30 animate-pulse-red">
+                          ELIM
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-[color:var(--color-text-mute)] mt-0.5 truncate">
+                      {player?.team}{" "}
+                      {entry.is_home ? "vs" : "@"} {entry.opponent}
+                      {entry.game_number ? (
+                        <span className="text-[color:var(--color-gold)]/80 ml-1">
+                          · G{entry.game_number}
+                        </span>
+                      ) : null}
+                      {entry.is_home ? " · 🏠" : " · ✈"}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-display text-xl leading-none font-mono-num gold-text">
+                      {entry.estimated_score.toFixed(1)}
+                    </div>
+                    <div className="text-[8px] uppercase tracking-[0.18em] text-[color:var(--color-text-mute)] mt-0.5">
+                      Estimé
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+        <p className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-text-mute)] mt-3 leading-relaxed">
+          Optimisation Hungarian — affecte 1 joueur par jour sur 7 jours en
+          maximisant le score total. Recalculé à chaque sync.
+        </p>
       </Section>
 
       {/* --------------- calendar 7 days --------------- */}
