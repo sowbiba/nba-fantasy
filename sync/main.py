@@ -105,16 +105,18 @@ def run_sync():
             db.upsert_game_logs(client, game_logs)
 
         # Step 2b: update actual_score on picks now that box scores are final.
-        # For each pick without an actual_score, look up the player's game_log
-        # for that date and copy ttfl_score.
+        # Match on (player_id, game_id) — the game_id is stable whereas the
+        # pick date vs game_log date can differ (NBA logs use the finish
+        # date in UTC, which is the next calendar day for late West Coast
+        # games).
         unscored_picks = client.table("picks").select(
-            "id, player_id, date"
-        ).is_("actual_score", "null").execute().data or []
+            "id, player_id, game_id, date"
+        ).filter("actual_score", "is", "null").execute().data or []
         updated_picks = 0
         for pick in unscored_picks:
             log_res = client.table("game_logs").select("ttfl_score").eq(
                 "player_id", pick["player_id"]
-            ).eq("date", pick["date"]).execute()
+            ).eq("game_id", pick["game_id"]).execute()
             if log_res.data:
                 ttfl = log_res.data[0]["ttfl_score"]
                 client.table("picks").update({
