@@ -31,6 +31,23 @@ from sync.strategy import elimination_risk
 
 LEAGUE_AVG_TTFL = 40
 
+# Reservation penalty: maximum score reduction for elites of deep-run
+# contenders in early rounds. This forces the Hungarian algorithm to
+# *save* these players for conference finals / finals unless the only
+# alternative is tragically bad.
+MAX_RESERVATION_PENALTY = 0.60  # up to -60% on projected score
+
+# Round factor: how much reservation applies per round. Early = full force,
+# finals = no reservation (use everyone).
+ROUND_RESERVATION_FACTOR = {1: 1.0, 2: 0.55, 3: 0.2, 4: 0.0}
+
+# Team potential by playoff seeding. Home court in a Round 1 series = top
+# seed (1-4) = high probability of advancing to Round 2+. Away team in R1
+# (seed 5-8) = lower probability but still alive. Play-in survivor = lowest.
+TEAM_POTENTIAL_TOP_SEED = 1.0
+TEAM_POTENTIAL_LOW_SEED = 0.5
+TEAM_POTENTIAL_UNKNOWN = 0.3
+
 
 @dataclass
 class Candidate:
@@ -47,6 +64,8 @@ class Candidate:
     game_number: int | None = None
     series_score: tuple[int, int] = (0, 0)
     elimination: str = "none"
+    raw_perf_score: float = 0.0  # before reservation tax
+    reservation_penalty: float = 0.0  # fraction 0..MAX_RESERVATION_PENALTY
 
 
 def _fr_day_label(iso_date: str) -> str:
@@ -59,6 +78,50 @@ def _fr_day_label(iso_date: str) -> str:
         4: "Vendredi", 5: "Samedi", 6: "Dimanche",
     }
     return f"{fr_days[d.weekday()]} {d.day}"
+
+
+def compute_team_potential_scores(active_series: list[dict]) -> dict[str, float]:
+    """Translate playoff seeding into a team-potential proxy.
+
+    Team is the home team (higher seed, home court advantage) in a R1
+    series → top-seed potential, probably advances to R2.
+    Team is the away team (seed 5-8) → still alive but more likely to lose.
+    Team not yet in a series (play-in winner TBD) → lowest potential.
+
+    This replaces the previous top-5-avg approach which was biased against
+    teams with a superstar + weak supporting cast (e.g., DEN with Jokic).
+    """
+    scores: dict[str, float] = {}
+    for s in active_series:
+        if s.get("round") == 1:
+            scores[s["home_team"]] = TEAM_POTENTIAL_TOP_SEED
+            scores[s["away_team"]] = TEAM_POTENTIAL_LOW_SEED
+        elif s.get("round", 1) >= 2:
+            scores[s["home_team"]] = TEAM_POTENTIAL_TOP_SEED
+            scores[s["away_team"]] = TEAM_POTENTIAL_TOP_SEED
+    return scores
+
+
+def compute_reservation_penalty(
+    player_season_avg: float,
+    team_potential: float,
+    round_num: int,
+) -> float:
+    """Fraction of the player's score to dock as "reservation tax".
+
+    A top-shelf player (avg_season 55, e.g. Jokic) on a top-seed team
+    (potential 1.0) in Round 1 gets the full MAX_RESERVATION_PENALTY so
+    the Hungarian algorithm avoids burning him on Game 2 when better spots
+    await in Rounds 2-4. A solid player (avg_season 32) on a play-in team
+    barely gets any penalty.
+    """
+    if player_season_avg <= 32:
+        return 0.0  # not elite, no reservation needed
+    # Elite factor 0..1 (player's own level). 32→0, 55→1.
+    elite_factor = min(1.0, (player_season_avg - 32) / 23)
+    round_factor = ROUND_RESERVATION_FACTOR.get(round_num, 0.0)
+    raw = elite_factor * team_potential * round_factor
+    return min(MAX_RESERVATION_PENALTY, raw * MAX_RESERVATION_PENALTY)
 
 
 def _opponent_ttfl(team_defense: dict[str, dict], opponent: str, position: str) -> float:
@@ -112,6 +175,9 @@ def build_candidates(
 
     # Active series for elimination detection
     active_series = db.get_active_series(client)
+
+    # Team potential by seeding → reservation factor per team
+    team_potential = compute_team_potential_scores(active_series)
 
     # Recent game log cache per player (for trend factor)
     # Bulk fetch by paging game_logs and indexing
@@ -197,6 +263,19 @@ def build_candidates(
                 elif elim == "high":
                     perf *= 1.05
 
+                # Reservation tax: discourage burning elites of deep contenders
+                # in early rounds. Elimination risk overrides this entirely.
+                reservation = 0.0
+                if elim != "critical":
+                    round_num = series["round"] if series else 1
+                    tp = team_potential.get(team, TEAM_POTENTIAL_UNKNOWN)
+                    reservation = compute_reservation_penalty(
+                        player_season_avg=season_avg,
+                        team_potential=tp,
+                        round_num=round_num,
+                    )
+                final_score = perf * (1.0 - reservation)
+
                 candidates.append(Candidate(
                     player_id=p["id"],
                     player_name=p["name"],
@@ -206,7 +285,9 @@ def build_candidates(
                     game_id=g["id"],
                     opponent=opponent,
                     is_home=is_home,
-                    estimated_score=float(perf),
+                    estimated_score=float(final_score),
+                    raw_perf_score=float(perf),
+                    reservation_penalty=reservation,
                     game_number=g.get("game_number"),
                     series_score=series_score,
                     elimination=elim,
@@ -280,6 +361,9 @@ def generate_reasoning(cand: Candidate) -> str:
     hw, aw = cand.series_score
     if hw + aw > 0:
         parts.append(f"série {hw}-{aw}")
+    if cand.reservation_penalty > 0.1:
+        pct = round(cand.reservation_penalty * 100)
+        parts.append(f"pick rare malgré réservation -{pct}%")
     return " · ".join(parts)
 
 
