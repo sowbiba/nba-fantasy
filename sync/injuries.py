@@ -100,16 +100,25 @@ def fetch_all_injuries(teams: list[str] | None = None) -> dict[str, list[dict]]:
     return all_injuries
 
 
+import unicodedata
+
+
+def _normalize(name: str) -> str:
+    """Lowercase, strip accents, normalize whitespace for fuzzy name matching."""
+    nfkd = unicodedata.normalize("NFKD", name)
+    stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return stripped.lower().strip()
+
+
 def match_injury_to_player(
     injury_name: str, players: list[dict]
 ) -> int | None:
     """Match an ESPN injury name to a player dict by fuzzy name matching.
-    Players should have 'name' and 'id' keys.
-    Returns player_id or None.
+    Accent-insensitive. Players should have 'name' and 'id' keys.
     """
-    injury_lower = injury_name.lower().strip()
+    injury_lower = _normalize(injury_name)
     for p in players:
-        player_lower = p["name"].lower().strip()
+        player_lower = _normalize(p["name"])
         if player_lower == injury_lower:
             return p["id"]
         injury_last = injury_lower.split()[-1] if injury_lower else ""

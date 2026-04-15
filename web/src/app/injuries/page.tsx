@@ -141,6 +141,18 @@ export default async function InjuriesPage() {
                               retour : {returnStr}
                             </span>
                           )}
+                          {p.injury_updated_at && (
+                            <span className="text-gray-600 text-[0.6em]">
+                              {(() => {
+                                const d = new Date(p.injury_updated_at);
+                                const diffDays = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+                                if (diffDays <= 0) return "màj aujourd'hui";
+                                if (diffDays === 1) return "màj hier";
+                                if (diffDays < 7) return `màj il y a ${diffDays}j`;
+                                return `màj ${d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`;
+                              })()}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
