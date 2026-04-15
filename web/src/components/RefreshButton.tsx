@@ -58,16 +58,16 @@ export default function RefreshButton() {
     <button
       onClick={handleRefresh}
       aria-label="Rafraîchir"
-      className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-900 border border-gray-800 text-gray-400 hover:text-gray-100 hover:border-gray-700 transition-colors"
+      className="relative w-11 h-11 flex items-center justify-center rounded-full bg-white/[0.04] border border-white/10 text-[color:var(--color-text-soft)] hover:text-white hover:border-[color:var(--color-flame)]/40 hover:bg-[color:var(--color-flame)]/10 active:scale-95 transition-all"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
+        width="18"
+        height="18"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth="2.5"
+        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
         className={spinning ? "animate-spin" : ""}

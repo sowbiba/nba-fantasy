@@ -80,7 +80,7 @@ export default function PullToRefresh() {
       }}
       className="fixed top-0 left-0 right-0 z-40 flex items-end justify-center pb-2 pointer-events-none"
     >
-      <div className="flex items-center gap-2 bg-gray-900/90 backdrop-blur-sm rounded-full px-4 py-1.5 border border-gray-800">
+      <div className="flex items-center gap-2 backdrop-blur-xl bg-[color:var(--color-ink)]/80 rounded-full px-4 py-2 border border-[color:var(--color-flame)]/30 shadow-[0_4px_20px_rgba(255,91,31,0.25)]">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           width="14"
@@ -91,7 +91,9 @@ export default function PullToRefresh() {
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={`text-blue-400 ${refreshing ? "animate-spin" : ""}`}
+          className={`text-[color:var(--color-flame)] ${
+            refreshing ? "animate-spin" : ""
+          }`}
           style={{
             transform: refreshing ? "" : `rotate(${progress * 360}deg)`,
             transition: refreshing ? "" : "transform 50ms linear",
@@ -102,12 +104,12 @@ export default function PullToRefresh() {
           <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
           <path d="M16 16h5v5" />
         </svg>
-        <span className="text-xs text-gray-300">
+        <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-[color:var(--color-text-soft)]">
           {refreshing
             ? "Synchro…"
             : progress >= 1
-              ? "Relâche pour rafraîchir"
-              : "Tire pour rafraîchir"}
+            ? "Relâche"
+            : "Tire"}
         </span>
       </div>
     </div>

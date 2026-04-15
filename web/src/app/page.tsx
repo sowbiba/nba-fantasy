@@ -54,35 +54,93 @@ export default async function TonightPage() {
   const { games, series, recsWithPlayers, sync, gameDaysRemaining } = await getData();
   const top3 = recsWithPlayers.slice(0, 3);
 
+  const dateLabel = new Date().toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
   return (
-    <div>
-      <div className="flex justify-between items-center px-4 py-3 border-b border-gray-900">
-        <div>
-          <h1 className="text-lg font-bold">TTFL Advisor</h1>
-          <p className="text-xs text-gray-500">
-            {new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
-            {" "}· {games.length} match{games.length > 1 ? "s" : ""} ce soir
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="bg-gray-900 rounded-full px-2.5 py-1 text-xs text-amber-500 font-medium">PLAYOFFS</span>
-          <RefreshButton />
-        </div>
-      </div>
-      <SyncStatus sync={sync} />
-      <div className="mt-2"><GamesCollapsible games={games} series={series} /></div>
-      <div className="mt-2"><StrategyBanner recommendations={recsWithPlayers} gamesDaysRemaining={gameDaysRemaining} /></div>
-      <div className="mt-4 px-3">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1">Top 3 recommandations</h2>
-        <div className="flex flex-col gap-2">
-          {top3.map((rec) => (<RecommendationCard key={rec.id} rec={rec} />))}
-          {top3.length === 0 && (
-            <p className="text-gray-600 text-sm text-center py-8">
-              Pas encore de recommandations pour ce soir. Prochaine synchro en cours...
+    <div className="animate-fade-in">
+      {/* -------------------- HERO header -------------------- */}
+      <header className="relative overflow-hidden px-4 pt-5 pb-4">
+        {/* decorative arc (half-court line) */}
+        <svg
+          className="absolute -top-10 -right-16 w-64 h-64 opacity-[0.07] pointer-events-none"
+          viewBox="0 0 200 200"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1"
+        >
+          <circle cx="100" cy="100" r="80" className="text-[color:var(--color-flame)]" />
+          <circle cx="100" cy="100" r="40" className="text-[color:var(--color-flame)]" />
+          <path d="M 20 100 H 180" className="text-[color:var(--color-flame)]" />
+        </svg>
+
+        <div className="flex items-start justify-between gap-3 relative">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-gold)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--color-gold)] animate-live-dot" />
+                Playoffs · Night
+              </span>
+            </div>
+            <h1 className="font-display text-5xl leading-none tracking-wide text-white">
+              CE <span className="flame-text">SOIR</span>
+            </h1>
+            <p className="text-xs text-[color:var(--color-text-mute)] mt-1.5 capitalize tracking-wide">
+              {dateLabel} ·{" "}
+              <span className="text-[color:var(--color-text-soft)] font-semibold">
+                {games.length} match{games.length > 1 ? "s" : ""}
+              </span>
             </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 pt-1">
+            <RefreshButton />
+          </div>
+        </div>
+      </header>
+
+      <SyncStatus sync={sync} />
+
+      <div className="mt-3 px-3">
+        <GamesCollapsible games={games} series={series} />
+      </div>
+
+      <div className="mt-3 px-3">
+        <StrategyBanner
+          recommendations={recsWithPlayers}
+          gamesDaysRemaining={gameDaysRemaining}
+        />
+      </div>
+
+      {/* -------------------- TOP 3 section -------------------- */}
+      <section className="mt-6 px-3">
+        <div className="flex items-end justify-between mb-3 px-1">
+          <h2 className="font-display text-3xl tracking-wide text-white leading-none">
+            TOP <span className="gold-text">3</span>
+          </h2>
+          <span className="text-[10px] tracking-[0.2em] uppercase text-[color:var(--color-text-mute)] pb-1">
+            Picks du soir
+          </span>
+        </div>
+        <div className="flex flex-col gap-3 stagger">
+          {top3.map((rec) => (
+            <RecommendationCard key={rec.id} rec={rec} />
+          ))}
+          {top3.length === 0 && (
+            <div className="surface p-8 text-center">
+              <div className="font-display text-2xl text-[color:var(--color-text-mute)] mb-1">
+                Aucune reco
+              </div>
+              <p className="text-sm text-[color:var(--color-text-mute)]">
+                Prochaine synchro en cours…
+              </p>
+            </div>
           )}
         </div>
-      </div>
+      </section>
+
       <PlayerList recs={recsWithPlayers} />
     </div>
   );

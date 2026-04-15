@@ -1,7 +1,211 @@
 @import "tailwindcss";
 
-html, body {
-  background: #0a0a0a;
-  color: #ededed;
-  font-family: Arial, Helvetica, sans-serif;
+/* =========================================================================
+   TTFL Advisor — "Court Side" design system
+   Editorial sports-broadcast aesthetic. Deep black canvas, ember-orange
+   energy, elite gold accents, heavy display type.
+   ========================================================================= */
+
+:root {
+  /* Surface / canvas */
+  --color-ink: #050507;
+  --color-bg: #0a0a0d;
+  --color-surface: #101017;
+  --color-surface-2: #171820;
+  --color-surface-3: #1f2030;
+  --color-line: #272836;
+  --color-line-soft: #1c1d28;
+
+  /* Text */
+  --color-text: #f5f5f7;
+  --color-text-soft: #b8b9c6;
+  --color-text-mute: #6d6e7f;
+  --color-text-dim: #45465a;
+
+  /* Brand */
+  --color-flame: #ff5b1f;            /* signature ember / basketball orange */
+  --color-flame-soft: #ff7a3f;
+  --color-flame-deep: #c23b08;
+  --color-gold: #f7c948;             /* elite */
+  --color-gold-soft: #ffd76a;
+  --color-crimson: #ff3a3a;          /* critical */
+  --color-crimson-deep: #b91c1c;
+  --color-emerald: #19c37d;          /* safe / confirmed */
+  --color-ice: #5cc7ff;              /* solid tier */
+  --color-violet: #a78bfa;           /* boost */
+
+  /* Radii */
+  --radius-card: 18px;
+  --radius-card-sm: 12px;
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-elite: 0 10px 40px -10px rgba(247, 201, 72, 0.35), 0 2px 0 rgba(247, 201, 72, 0.08) inset;
+  --shadow-flame: 0 12px 45px -12px rgba(255, 91, 31, 0.55);
+  --shadow-card:  0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 18px 32px -20px rgba(0, 0, 0, 0.7);
+  --shadow-critical: 0 0 0 1px rgba(255, 58, 58, 0.4), 0 10px 30px -10px rgba(255, 58, 58, 0.5);
 }
+
+/* ------------------------------ canvas ---------------------------------- */
+html, body {
+  background: var(--color-ink);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-family: var(--font-body), "Space Grotesk", system-ui, sans-serif;
+  overscroll-behavior-y: contain;
+}
+
+body {
+  background:
+    radial-gradient(1200px 500px at 50% -150px, rgba(255, 91, 31, 0.18), transparent 60%),
+    radial-gradient(900px 400px at 100% 10%, rgba(247, 201, 72, 0.06), transparent 60%),
+    linear-gradient(180deg, #07070a 0%, #0a0a0d 40%, #08080b 100%);
+  min-height: 100vh;
+  position: relative;
+}
+
+/* subtle halftone grain */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+  background-size: 3px 3px;
+  mix-blend-mode: overlay;
+  opacity: 0.6;
+}
+
+main {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------------------------- typography -------------------------------- */
+.font-display {
+  font-family: var(--font-display), "Bebas Neue", "Oswald", sans-serif;
+  letter-spacing: 0.02em;
+  font-weight: 400;
+}
+.font-body {
+  font-family: var(--font-body), "Space Grotesk", system-ui, sans-serif;
+}
+.font-mono-num {
+  font-family: var(--font-body), "Space Grotesk", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------- custom keyframes / motion ------------------------ */
+@keyframes ttfl-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ttfl-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes ttfl-scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes ttfl-pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 58, 58, 0.55); }
+  50%      { box-shadow: 0 0 0 6px rgba(255, 58, 58, 0); }
+}
+@keyframes ttfl-pulse-gold {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(247, 201, 72, 0.35); }
+  50%      { box-shadow: 0 0 0 6px rgba(247, 201, 72, 0); }
+}
+@keyframes ttfl-shine {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes ttfl-live-dot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+.animate-fade-up  { animation: ttfl-fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-fade-in  { animation: ttfl-fade-in 0.5s ease-out both; }
+.animate-scale-in { animation: ttfl-scale-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-pulse-red  { animation: ttfl-pulse-red 1.8s ease-in-out infinite; }
+.animate-pulse-gold { animation: ttfl-pulse-gold 2.2s ease-in-out infinite; }
+.animate-live-dot   { animation: ttfl-live-dot 1.4s ease-in-out infinite; }
+
+.stagger > * { animation: ttfl-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.08s; }
+.stagger > *:nth-child(3) { animation-delay: 0.14s; }
+.stagger > *:nth-child(4) { animation-delay: 0.20s; }
+.stagger > *:nth-child(5) { animation-delay: 0.26s; }
+.stagger > *:nth-child(6) { animation-delay: 0.32s; }
+.stagger > *:nth-child(7) { animation-delay: 0.38s; }
+.stagger > *:nth-child(8) { animation-delay: 0.44s; }
+
+/* ------------------------------ utility --------------------------------- */
+.surface {
+  background: linear-gradient(180deg, var(--color-surface-2) 0%, var(--color-surface) 100%);
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-card);
+}
+.surface-flat {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-card-sm);
+}
+
+.hairline-top {
+  background-image: linear-gradient(to right, transparent, var(--color-line) 20%, var(--color-line) 80%, transparent);
+  background-size: 100% 1px;
+  background-position: top;
+  background-repeat: no-repeat;
+}
+
+.court-line {
+  background-image:
+    repeating-linear-gradient(
+      -30deg,
+      rgba(255, 91, 31, 0.08) 0,
+      rgba(255, 91, 31, 0.08) 1px,
+      transparent 1px,
+      transparent 12px
+    );
+}
+
+.flame-text {
+  background: linear-gradient(180deg, #ffb67a 0%, #ff5b1f 60%, #c23b08 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.gold-text {
+  background: linear-gradient(180deg, #fff2c0 0%, #f7c948 60%, #c69016 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.shine {
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.09) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: ttfl-shine 3.8s ease-in-out infinite;
+}
+
+/* active tap feedback on mobile */
+button, a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 999px; }

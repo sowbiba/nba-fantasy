@@ -28,19 +28,37 @@ export default async function InjuriesPage() {
   const teamCount = Object.keys(byTeam).length;
 
   return (
-    <div className="px-4 py-4">
-      <h1 className="text-lg font-bold mb-1 text-gray-100">
-        Indisponibilités
-      </h1>
-      <p className="text-gray-500 text-sm mb-4">
-        {total} joueur{total > 1 ? "s" : ""} indisponible{total > 1 ? "s" : ""}{" "}
-        · {teamCount} équipe{teamCount > 1 ? "s" : ""}
-      </p>
+    <div className="px-4 py-5 animate-fade-in">
+      <div className="mb-5">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-crimson)]">
+          <span className="w-1 h-1 rounded-full bg-[color:var(--color-crimson)] animate-live-dot" />
+          Injury report
+        </span>
+        <h1 className="font-display text-4xl leading-none tracking-wide text-white mt-1">
+          BLESS<span className="text-[color:var(--color-crimson)]">É</span>S
+        </h1>
+        <div className="flex items-baseline gap-2 mt-2 font-mono-num">
+          <span className="font-display text-2xl text-white">{total}</span>
+          <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--color-text-mute)]">
+            joueurs
+          </span>
+          <span className="text-[color:var(--color-text-mute)]">·</span>
+          <span className="font-display text-2xl text-white">{teamCount}</span>
+          <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--color-text-mute)]">
+            équipes
+          </span>
+        </div>
+      </div>
 
       {total === 0 ? (
-        <p className="text-gray-600 text-sm text-center py-8">
-          Aucune indisponibilité. La prochaine synchro mettra la liste à jour.
-        </p>
+        <div className="surface p-8 text-center">
+          <div className="font-display text-2xl text-[color:var(--color-text-mute)]">
+            Aucune indispo
+          </div>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-[color:var(--color-text-dim)] mt-2">
+            la sync mettra la liste à jour
+          </p>
+        </div>
       ) : (
         <InjuriesList byTeam={byTeam} />
       )}
