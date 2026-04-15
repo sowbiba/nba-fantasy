@@ -58,6 +58,22 @@ def run_sync():
         db.upsert_games(client, today_games)
         print(f"  {len(today_games)} games today")
 
+        # Step 1b: refresh playoff series + schedule (safe to re-run, upserts)
+        try:
+            from sync.seed_playoffs import seed as seed_playoffs_fn
+            seed_playoffs_fn()
+        except Exception as e:
+            print(f"  (playoff seed skipped: {e})")
+
+        # Step 1c: once per day (around 7h), refresh team defense stats
+        # from the latest game_logs so matchup factor stays accurate.
+        if datetime.now().hour < 10:
+            try:
+                from sync.compute_team_defense import compute_and_push
+                compute_and_push()
+            except Exception as e:
+                print(f"  (team defense refresh skipped: {e})")
+
         # --- Step 2: Fetch yesterday's box scores (for actual_score updates) ---
         yesterday_games = db.get_today_games(client, yesterday)
         for game in yesterday_games:
