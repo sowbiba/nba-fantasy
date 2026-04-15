@@ -26,7 +26,7 @@ export default function RecommendationCard({ rec }: { rec: RecommendationWithPla
   const tier = tierBadges[rec.tier] || tierBadges.filler;
 
   return (
-    <Link href={`/player/${player.id}`}>
+    <Link href={`/player/${player.id}`} className="block text-gray-100">
       <div className={`bg-gray-900 rounded-xl p-3 border-l-[3px] ${rankBorders[rank] || "border-l-gray-600"}`}>
         <div className="flex justify-between items-start">
           <div className="flex gap-2.5 items-center">
@@ -34,7 +34,7 @@ export default function RecommendationCard({ rec }: { rec: RecommendationWithPla
               {rank}
             </div>
             <div>
-              <div className="font-bold text-[0.95em]">{player.name}</div>
+              <div className="font-bold text-[0.95em] text-gray-100">{player.name}</div>
               <div className="text-gray-500 text-xs">
                 {isHome ? `${player.team} vs ${opponent}` : `${player.team} @ ${opponent}`}
                 {game.game_number ? ` · Game ${game.game_number}` : ""}

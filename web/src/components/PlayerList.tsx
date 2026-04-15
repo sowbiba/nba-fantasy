@@ -29,12 +29,12 @@ export default function PlayerList({ recs }: { recs: RecommendationWithPlayer[] 
             const isHome = player.team === game.home_team;
             const opponent = isHome ? game.away_team : game.home_team;
             return (
-              <Link key={rec.id} href={`/player/${player.id}`}>
+              <Link key={rec.id} href={`/player/${player.id}`} className="block text-gray-100">
                 <div className="bg-gray-900 rounded-lg px-3 py-2 flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <span className="text-gray-600 text-xs w-6 text-right">{rec.rank}</span>
                     <div>
-                      <span className="font-medium text-sm">{player.name}</span>
+                      <span className="font-medium text-sm text-gray-100">{player.name}</span>
                       <span className="text-gray-600 text-xs ml-2">{player.team} {isHome ? "vs" : "@"} {opponent}</span>
                     </div>
                   </div>
