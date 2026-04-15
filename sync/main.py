@@ -362,12 +362,21 @@ def run_sync():
                 (i for i, s in enumerate(same_pos, 1) if s["player"]["id"] == p["id"]), 15,
             )
 
+            # Identify impactful teammate(s) who are OUT.
+            # "Impactful" = top-3 in their team by season avg TTFL (a proxy for usage).
+            team_mates = [
+                tp for tp in all_players_db
+                if tp["team"] == p["team"] and tp["id"] != p["id"]
+            ]
+            team_mates.sort(
+                key=lambda x: x.get("avg_ttfl_season", 0) or 0, reverse=True
+            )
+            top3_mates = team_mates[:3]
             teammate_out = None
-            for tp in all_players_db:
-                if tp["team"] == p["team"] and tp.get("injury_status") == "Out":
-                    if (tp.get("usage_rate", 0) or 0) > 20:
-                        teammate_out = tp["name"]
-                        break
+            for tp in top3_mates:
+                if tp.get("injury_status") in ("Out", "Doubtful"):
+                    teammate_out = tp["name"]
+                    break
 
             context = {
                 "player_name": p["name"], "team": p["team"], "opponent": sp["opponent"],
