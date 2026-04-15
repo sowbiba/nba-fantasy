@@ -94,7 +94,7 @@ function PickList({
           >
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-sm">
+                <span className="font-bold text-sm text-gray-100">
                   {player?.name || "?"}
                 </span>
                 {x2 && (

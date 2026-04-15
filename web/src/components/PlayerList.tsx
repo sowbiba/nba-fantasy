@@ -42,7 +42,7 @@ export default function PlayerList({ recs }: { recs: RecommendationWithPlayer[] 
                     <span className={`text-xs ${tierColors[rec.tier]}`}>
                       {rec.tier === "elite" ? "★★★" : rec.tier === "solid" ? "★★" : "★"}
                     </span>
-                    <span className="font-bold text-sm">{rec.estimated_score.toFixed(1)}</span>
+                    <span className="font-bold text-sm text-gray-100">{rec.estimated_score.toFixed(1)}</span>
                   </div>
                 </div>
               </Link>

@@ -48,7 +48,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
       <Link href="/" className="text-gray-500 text-sm">← Retour</Link>
       <div className="flex justify-between items-start mt-3 mb-4">
         <div>
-          <h1 className="text-xl font-bold">{player.name}</h1>
+          <h1 className="text-xl font-bold text-gray-100">{player.name}</h1>
           <p className="text-gray-500 text-sm">
             {player.team} · {player.position}
             {game ? ` · ${isHome ? `vs ${opponent}` : `@ ${opponent}`}${game.game_number ? ` Game ${game.game_number}` : ""}` : ""}

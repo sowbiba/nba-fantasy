@@ -98,7 +98,7 @@ export default async function InjuriesPage() {
               className="bg-gray-900 rounded-xl overflow-hidden"
             >
               <div className="px-3.5 py-2 bg-gray-800 flex justify-between items-center">
-                <span className="font-bold text-sm">{team}</span>
+                <span className="font-bold text-sm text-gray-100">{team}</span>
                 <span className="text-gray-500 text-xs">
                   {players.length} joueur{players.length > 1 ? "s" : ""}
                 </span>
@@ -112,7 +112,7 @@ export default async function InjuriesPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">
+                            <span className="font-medium text-sm text-gray-100">
                               {p.name}
                             </span>
                             <span className="text-gray-500 text-[0.65em]">
