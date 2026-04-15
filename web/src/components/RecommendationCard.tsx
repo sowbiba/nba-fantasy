@@ -58,6 +58,9 @@ export default function RecommendationCard({ rec }: { rec: RecommendationWithPla
           {rec.tags.includes("hot") && <span className="bg-green-950 text-green-500 text-[0.65em] px-2 py-0.5 rounded-full">🔥 En forme</span>}
           {rec.tags.includes("home") && <span className="bg-blue-950 text-blue-400 text-[0.65em] px-2 py-0.5 rounded-full">🏠 Home</span>}
           {rec.tags.includes("volatile") && <span className="bg-red-950 text-red-400 text-[0.65em] px-2 py-0.5 rounded-full">🎲 Volatile</span>}
+          {rec.tags.includes("elimination_critical") && <span className="bg-red-600 text-white text-[0.65em] px-2 py-0.5 rounded-full font-bold">🚨 ÉLIMINATION</span>}
+          {rec.tags.includes("elimination_high") && <span className="bg-amber-700 text-amber-100 text-[0.65em] px-2 py-0.5 rounded-full">⚠️ Série critique</span>}
+          {rec.tags.includes("teammate_out") && <span className="bg-purple-950 text-purple-400 text-[0.65em] px-2 py-0.5 rounded-full">⚡ Usage boost</span>}
         </div>
       </div>
     </Link>

@@ -5,6 +5,7 @@ import GamesCollapsible from "@/components/GamesCollapsible";
 import StrategyBanner from "@/components/StrategyBanner";
 import RecommendationCard from "@/components/RecommendationCard";
 import PlayerList from "@/components/PlayerList";
+import RefreshButton from "@/components/RefreshButton";
 
 export const revalidate = 300;
 
@@ -63,7 +64,10 @@ export default async function TonightPage() {
             {" "}· {games.length} match{games.length > 1 ? "s" : ""} ce soir
           </p>
         </div>
-        <span className="bg-gray-900 rounded-full px-2.5 py-1 text-xs text-amber-500 font-medium">PLAYOFFS</span>
+        <div className="flex items-center gap-2">
+          <span className="bg-gray-900 rounded-full px-2.5 py-1 text-xs text-amber-500 font-medium">PLAYOFFS</span>
+          <RefreshButton />
+        </div>
       </div>
       <SyncStatus sync={sync} />
       <div className="mt-2"><GamesCollapsible games={games} series={series} /></div>

@@ -35,10 +35,40 @@ def estimate_remaining_game_days(active_series: list[dict], current_round: int) 
     return max(1, game_days)
 
 
+def elimination_risk(series_score: tuple[int, int], player_is_home: bool) -> str:
+    """Assess elimination risk for a player's team going into tonight's game.
+
+    Args:
+        series_score: (home_wins, away_wins) of the player's team's series
+        player_is_home: True if the player's team is the home team in that series
+
+    Returns:
+        "critical"  — team loses tonight and they're eliminated (3 losses already)
+        "high"      — team is one loss away after tonight if they lose
+        "none"      — no elimination pressure
+    """
+    hw, aw = series_score
+    player_wins = hw if player_is_home else aw
+    opponent_wins = aw if player_is_home else hw
+
+    # Team already has 3 losses → a loss tonight ends their playoffs
+    if opponent_wins == 3:
+        return "critical"
+    # Team at 2 losses → loss tonight means next loss eliminates them
+    if opponent_wins == 2 and player_wins <= opponent_wins:
+        return "high"
+    return "none"
+
+
 def should_burn_elite(
     tonight_score: float, best_future_score: float,
     elites_remaining: int, game_days_remaining: int,
+    elimination: str = "none",
 ) -> bool:
+    # Critical elimination risk: burn now or lose the player forever
+    if elimination == "critical":
+        return True
+
     if best_future_score > tonight_score * (1 + BURN_THRESHOLD):
         return False
     if elites_remaining <= 2 and game_days_remaining > 10:
@@ -50,6 +80,7 @@ def compute_strategy_adjustment(
     perf_score: float, tier: str, is_home: bool,
     series_score: tuple[int, int],
     elites_remaining: int, game_days_remaining: int,
+    elimination: str = "none",
 ) -> float:
     adjustment = 1.0
     hw, aw = series_score
@@ -62,6 +93,12 @@ def compute_strategy_adjustment(
 
     if (hw == 3 or aw == 3) and tier != "filler":
         adjustment += 0.08
+
+    # Elimination-risk urgency boost (must-play tonight or lose them forever)
+    if elimination == "critical":
+        adjustment += 0.15
+    elif elimination == "high":
+        adjustment += 0.05
 
     if tier == "elite":
         elite_ratio = elites_remaining / max(1, game_days_remaining)

@@ -45,3 +45,31 @@ def test_generate_verdict_save():
         best_future_description="Game 5 vs MIL à domicile vendredi",
     )
     assert "GARDE" in verdict.upper() or "SAVE" in verdict.upper()
+
+
+def test_generate_verdict_elimination_critical_forces_burn():
+    """Critical elimination must trigger JOUE even with low score"""
+    verdict = generate_verdict(
+        should_burn=False,  # would normally save
+        tier="elite", tonight_score=35,
+        best_future_description="Game 7 à domicile",
+        elimination="critical",
+    )
+    assert "JOUE" in verdict.upper()
+    assert "ÉLIMIN" in verdict.upper() or "ELIMIN" in verdict.upper()
+
+
+def test_argumentaire_elimination_surfaces_warning():
+    context = {
+        "player_name": "Jamal Murray", "team": "DEN", "opponent": "OKC",
+        "is_home": False, "avg_l5": 40, "avg_l10": 38, "avg_season": 36,
+        "home_avg": 40, "away_avg": 32,
+        "matchup_rank": 15, "matchup_position": "guards",
+        "series_score": (3, 1), "game_number": 5, "tier": "elite",
+        "elites_remaining": 5, "game_days_remaining": 20,
+        "days_rest": 1, "stddev": 12, "floor": 25, "ceiling": 60,
+        "injury_status": None, "teammate_out": None,
+        "elimination": "critical", "rank": 4,
+    }
+    pros, _cons = generate_argumentaire(context)
+    assert any("ÉLIMIN" in p.upper() or "ELIMIN" in p.upper() for p in pros)

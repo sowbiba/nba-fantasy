@@ -34,9 +34,11 @@ from sync.strategy import (
     estimate_remaining_game_days,
     should_burn_elite,
     compute_strategy_adjustment,
+    elimination_risk,
 )
 from sync.advisor import generate_argumentaire, generate_verdict
 from sync.ttfl import compute_ttfl_from_game_log
+from sync.future import compute_best_future_opportunity
 
 
 def run_sync():
@@ -313,18 +315,37 @@ def run_sync():
 
             series_score = (series["home_wins"], series["away_wins"]) if series else (0, 0)
 
+            # Determine elimination risk from the player's perspective
+            player_series_is_home = bool(series and p["team"] == series["home_team"])
+            elim = elimination_risk(series_score, player_series_is_home) if series else "none"
+
             strategy_score = compute_strategy_adjustment(
                 perf_score=sp["perf_score"], tier=tier, is_home=sp["is_home"],
                 series_score=series_score, elites_remaining=elites_remaining,
                 game_days_remaining=game_days_remaining,
+                elimination=elim,
             )
             sp["strategy_score"] = strategy_score
             sp["estimated_score"] = strategy_score
             sp["series_score"] = series_score
             sp["game_number"] = game.get("game_number", 0) or 0
+            sp["elimination"] = elim
+            sp["player_series_is_home"] = player_series_is_home
 
         scored_players.sort(key=lambda x: x["estimated_score"], reverse=True)
         top_50 = scored_players[:50]
+
+        # --- Prefetch for future-opportunity scoring (Step B) ---
+        future_window_end = (today + timedelta(days=7)).isoformat()
+        future_games_res = client.table("games").select("*").gte(
+            "date", today.isoformat()
+        ).lte("date", future_window_end).execute()
+        future_games = future_games_res.data or []
+
+        team_defense_res = client.table("team_defense").select("*").execute()
+        team_defense_cache = {
+            row["team"]: row for row in (team_defense_res.data or [])
+        }
 
         # --- Step 8: Generate argumentaires ---
         print("  Generating argumentaires...")
@@ -352,6 +373,7 @@ def run_sync():
                 "player_name": p["name"], "team": p["team"], "opponent": sp["opponent"],
                 "is_home": sp["is_home"],
                 "avg_l5": p.get("avg_ttfl_l5", 0) or 0,
+                "avg_l10": p.get("avg_ttfl_l10", 0) or 0,
                 "avg_season": p.get("avg_ttfl_season", 0) or 0,
                 "matchup_rank": matchup_rank,
                 "matchup_position": {"G": "guards", "F": "forwards", "C": "centers"}.get(p["position"], "forwards"),
@@ -361,20 +383,41 @@ def run_sync():
                 "stddev": p.get("stddev_ttfl", 0) or 0,
                 "floor": floor_val, "ceiling": ceiling_val,
                 "injury_status": p.get("injury_status"), "teammate_out": teammate_out,
+                "elimination": sp["elimination"],
+                "home_avg": p.get("home_avg", 0) or 0,
+                "away_avg": p.get("away_avg", 0) or 0,
+                "rank": rank,
             }
 
             pros, cons = generate_argumentaire(context)
 
+            # Step B: compute real best future opportunity over the next 7 days
+            best_future_score, best_future_desc = compute_best_future_opportunity(
+                player=p,
+                player_recent_scores=sp["recent_scores"],
+                future_games=future_games,
+                team_defense_cache=team_defense_cache,
+                today=today,
+                days_ahead=7,
+            )
+            if best_future_desc is None:
+                best_future_desc = "aucun match prévu dans les 7 prochains jours"
+                best_future_score = 0.0
+
             burn = should_burn_elite(
                 tonight_score=sp["estimated_score"],
-                best_future_score=sp["estimated_score"] * 0.95,
+                best_future_score=best_future_score,
                 elites_remaining=elites_remaining,
                 game_days_remaining=game_days_remaining,
+                elimination=sp["elimination"],
             )
             verdict = generate_verdict(
                 should_burn=burn, tier=sp["tier"],
                 tonight_score=sp["estimated_score"],
-                best_future_description="prochain match à domicile",
+                best_future_description=best_future_desc,
+                elimination=sp["elimination"],
+                elites_remaining=elites_remaining,
+                game_days_remaining=game_days_remaining,
             )
 
             tags = []
@@ -387,6 +430,12 @@ def run_sync():
                 tags.append("volatile")
             if rank <= 3:
                 tags.append("reco_du_soir")
+            if sp["elimination"] == "critical":
+                tags.append("elimination_critical")
+            elif sp["elimination"] == "high":
+                tags.append("elimination_high")
+            if teammate_out:
+                tags.append("teammate_out")
 
             recommendations.append({
                 "date": today.isoformat(), "player_id": p["id"], "rank": rank,
