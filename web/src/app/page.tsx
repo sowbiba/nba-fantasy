@@ -6,6 +6,7 @@ import StrategyBanner from "@/components/StrategyBanner";
 import RecommendationCard from "@/components/RecommendationCard";
 import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
+import InjuryArbitrage from "@/components/InjuryArbitrage";
 
 export const revalidate = 300;
 
@@ -113,6 +114,8 @@ export default async function TonightPage() {
           gamesDaysRemaining={gameDaysRemaining}
         />
       </div>
+
+      <InjuryArbitrage recs={recsWithPlayers} />
 
       {/* -------------------- TOP 3 section -------------------- */}
       <section className="mt-6 px-3">
