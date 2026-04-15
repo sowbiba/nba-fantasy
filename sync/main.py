@@ -91,14 +91,14 @@ def run_sync():
         players_updated = len(all_players_list)
         print(f"  {players_updated} players updated")
 
-        # --- Step 4: Fetch injuries ---
+        # --- Step 4: Fetch injuries (all teams, not just tonight's) ---
         print("  Fetching injuries...")
         playing_teams = set()
         for g in today_games:
             playing_teams.add(g["home_team"])
             playing_teams.add(g["away_team"])
 
-        injuries = fetch_all_injuries(list(playing_teams))
+        injuries = fetch_all_injuries()
         all_players_db = db.get_all_players(client)
 
         for team_tricode, team_injuries in injuries.items():
@@ -106,29 +106,50 @@ def run_sync():
             for inj in team_injuries:
                 player_id = match_injury_to_player(inj["name"], team_players)
                 if player_id:
-                    db.upsert_players(client, [{
-                        "id": player_id,
+                    update_payload = {
                         "injury_status": inj["status"],
                         "injury_detail": inj["detail"],
-                    }])
+                    }
+                    # Optional enriched fields (require DB migration)
+                    if inj.get("short_comment"):
+                        update_payload["injury_short_comment"] = inj["short_comment"]
+                    if inj.get("return_date"):
+                        update_payload["injury_return_date"] = inj["return_date"]
+                    if inj.get("updated_at"):
+                        update_payload["injury_updated_at"] = inj["updated_at"]
+                    try:
+                        client.table("players").update(update_payload).eq("id", player_id).execute()
+                    except Exception:
+                        # Fallback if enriched columns don't exist yet
+                        client.table("players").update({
+                            "injury_status": inj["status"],
+                            "injury_detail": inj["detail"],
+                        }).eq("id", player_id).execute()
 
-        # Clear injuries for players not in injury report
+        # Clear injuries for players not in injury report (all teams)
         for p in all_players_db:
-            if p["team"] in playing_teams:
-                team_inj_names = [
-                    i["name"].lower()
-                    for i in injuries.get(p["team"], [])
-                ]
-                is_injured = any(
-                    p["name"].lower().split()[-1] in name
-                    for name in team_inj_names
-                )
-                if not is_injured and p.get("injury_status"):
-                    db.upsert_players(client, [{
-                        "id": p["id"],
+            team_inj_names = [
+                i["name"].lower()
+                for i in injuries.get(p["team"], [])
+            ]
+            is_injured = any(
+                p["name"].lower().split()[-1] in name
+                for name in team_inj_names
+            )
+            if not is_injured and p.get("injury_status"):
+                clear_payload = {
+                    "injury_status": None,
+                    "injury_detail": None,
+                }
+                try:
+                    clear_payload["injury_short_comment"] = None
+                    clear_payload["injury_return_date"] = None
+                    client.table("players").update(clear_payload).eq("id", p["id"]).execute()
+                except Exception:
+                    client.table("players").update({
                         "injury_status": None,
                         "injury_detail": None,
-                    }])
+                    }).eq("id", p["id"]).execute()
 
         # --- Step 5: Update player aggregates for tonight's players ---
         print("  Computing player aggregates...")
@@ -144,13 +165,44 @@ def run_sync():
             if not logs:
                 nba_logs = fetch_player_game_logs_nba_api(pid)
                 if nba_logs:
+                    # Find player team for FK game creation
+                    player_team = next((p["team"] for p in all_players_db if p["id"] == pid), "UNK")
+
                     game_log_rows = []
                     for nl in nba_logs[:20]:
                         ttfl = compute_ttfl_from_game_log(nl)
+                        game_id = str(nl.get("Game_ID", f"unknown_{pid}_{nl.get('GAME_DATE', '')}"))
+                        game_date = nl.get("GAME_DATE", "")
+                        matchup = nl.get("MATCHUP", "")
+                        is_home = "vs." in matchup
+
+                        # Ensure game exists (FK constraint)
+                        existing = client.table("games").select("id").eq("id", game_id).execute()
+                        if not existing.data:
+                            # Parse opponent from MATCHUP e.g. "DEN vs. OKC" or "DEN @ OKC"
+                            if "vs." in matchup:
+                                parts = matchup.split(" vs. ")
+                                home_team = parts[0].strip()
+                                away_team = parts[1].strip() if len(parts) > 1 else "UNK"
+                            elif "@" in matchup:
+                                parts = matchup.split(" @ ")
+                                away_team = parts[0].strip()
+                                home_team = parts[1].strip() if len(parts) > 1 else "UNK"
+                            else:
+                                home_team = player_team if is_home else "UNK"
+                                away_team = "UNK" if is_home else player_team
+                            client.table("games").insert({
+                                "id": game_id,
+                                "date": game_date,
+                                "home_team": home_team,
+                                "away_team": away_team,
+                                "status": "final",
+                            }).execute()
+
                         game_log_rows.append({
                             "player_id": pid,
-                            "game_id": nl.get("Game_ID", f"unknown_{pid}_{nl.get('GAME_DATE', '')}"),
-                            "date": nl.get("GAME_DATE", ""),
+                            "game_id": game_id,
+                            "date": game_date,
                             "pts": nl.get("PTS", 0), "reb": nl.get("REB", 0),
                             "ast": nl.get("AST", 0), "stl": nl.get("STL", 0),
                             "blk": nl.get("BLK", 0),
@@ -160,16 +212,15 @@ def run_sync():
                             "tov": nl.get("TOV", 0),
                             "minutes": nl.get("MIN", 0),
                             "ttfl_score": ttfl,
-                            "is_home": "vs." in nl.get("MATCHUP", ""),
+                            "is_home": is_home,
                         })
                     db.upsert_game_logs(client, game_log_rows)
                     logs = game_log_rows
 
             if logs:
                 aggs = compute_player_aggregates(logs)
-                aggs["id"] = pid
                 aggs["updated_at"] = datetime.utcnow().isoformat()
-                db.upsert_players(client, [aggs])
+                client.table("players").update(aggs).eq("id", pid).execute()
 
         # --- Step 6: Score tonight's players ---
         print("  Scoring players...")

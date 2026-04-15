@@ -44,9 +44,13 @@ def trend_factor(recent_scores: list[int | float]) -> float:
     scores = list(recent_scores[:10])
     x = np.arange(len(scores), dtype=float)
     y = np.array(scores, dtype=float)
-    slope = np.polyfit(x, y, 1)[0]
-    avg = np.mean(y)
-    if avg == 0:
+    try:
+        with np.errstate(all="ignore"):
+            slope = float(np.real(np.polyfit(x, y, 1)[0]))
+    except (np.linalg.LinAlgError, ValueError):
+        return 1.0
+    avg = float(np.mean(y))
+    if avg == 0 or not np.isfinite(slope):
         return 1.0
     pct_change = slope / avg
     capped = max(-0.10, min(0.10, pct_change))
@@ -83,5 +87,7 @@ def compute_performance_score(
     non_base_total_weight = sum(WEIGHTS[k] for k in factors.keys())
     for key, factor_value in factors.items():
         normalized_weight = WEIGHTS[key] / non_base_total_weight
-        combined_multiplier *= factor_value ** normalized_weight
-    return base * combined_multiplier
+        # Guard against negative factors that produce complex numbers when raised to fractional powers
+        safe_factor = max(0.01, float(factor_value))
+        combined_multiplier *= safe_factor ** normalized_weight
+    return float(base * combined_multiplier)

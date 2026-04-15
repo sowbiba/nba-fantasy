@@ -63,13 +63,35 @@ def fetch_all_injuries(teams: list[str] | None = None) -> dict[str, list[dict]]:
             status = inj.get("status", "")
             if isinstance(status, dict):
                 status = status.get("type", status.get("name", ""))
-            detail = inj.get("type", {}).get("description", "") if isinstance(inj.get("type"), dict) else ""
+
+            # `details` contains the real injury info: type (body part), side, returnDate
+            details = inj.get("details") if isinstance(inj.get("details"), dict) else {}
+            body_part = details.get("type", "") if details else ""
+            location = details.get("location", "") if details else ""
+            side = details.get("side", "") if details else ""
+
+            # Build a human-readable detail string e.g. "Achilles (Right Leg)"
+            detail_parts = []
+            if body_part and body_part != "Not Specified":
+                detail_parts.append(body_part)
+            if side and location and location != "Not Specified":
+                detail_parts.append(f"({side} {location})".strip())
+            elif location and location != "Not Specified":
+                detail_parts.append(f"({location})")
+            detail = " ".join(detail_parts).strip()
+
+            return_date = details.get("returnDate") if details else None
+            short_comment = inj.get("shortComment", "")
+            updated_at = inj.get("date", "")
 
             if name and status:
                 team_injuries.append({
                     "name": name,
                     "status": status,
                     "detail": detail,
+                    "return_date": return_date,
+                    "short_comment": short_comment,
+                    "updated_at": updated_at,
                 })
 
         if team_injuries:

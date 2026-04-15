@@ -7,6 +7,7 @@ const tabs = [
   { href: "/", label: "Ce soir", icon: "🏀" },
   { href: "/picks", label: "Mes picks", icon: "📋" },
   { href: "/strategy", label: "Stratégie", icon: "📊" },
+  { href: "/injuries", label: "Blessés", icon: "🏥" },
 ];
 
 export default function BottomNav() {
