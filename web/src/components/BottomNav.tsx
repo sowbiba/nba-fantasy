@@ -76,8 +76,25 @@ const IconMed = (
   </svg>
 );
 
+const IconScore = (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="w-[22px] h-[22px]"
+  >
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    <path d="M12 4v16" />
+    <path d="M2 12h20" />
+  </svg>
+);
+
 const tabs: Tab[] = [
   { href: "/", label: "Ce soir", icon: IconBall },
+  { href: "/games", label: "Matchs", icon: IconScore },
   { href: "/picks", label: "Picks", icon: IconList },
   { href: "/strategy", label: "Stratégie", icon: IconChart },
   { href: "/injuries", label: "Blessés", icon: IconMed },
