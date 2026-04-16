@@ -316,22 +316,37 @@ export default function GamesList({
   }
 
   // Group games by date
-  const dateGroups: [string, Game[]][] = [];
   const dateMap = new Map<string, Game[]>();
   for (const g of games) {
     const list = dateMap.get(g.date) || [];
     list.push(g);
     dateMap.set(g.date, list);
   }
+
+  const todayNBA = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/New_York",
+  });
+
+  // Order: today first, then future (ascending), then past (descending)
+  const todayGroup: [string, Game[]][] = [];
+  const futureGroups: [string, Game[]][] = [];
+  const pastGroups: [string, Game[]][] = [];
+
   for (const [d, gs] of dateMap) {
-    dateGroups.push([d, gs]);
+    if (d === todayNBA) todayGroup.push([d, gs]);
+    else if (d > todayNBA) futureGroups.push([d, gs]);
+    else pastGroups.push([d, gs]);
   }
+  futureGroups.sort((a, b) => a[0].localeCompare(b[0]));
+  pastGroups.sort((a, b) => b[0].localeCompare(a[0]));
+
+  const dateGroups = [...todayGroup, ...futureGroups, ...pastGroups];
 
   if (games.length === 0) {
     return (
       <div className="surface p-8 text-center">
         <div className="font-display text-2xl text-[color:var(--color-text-mute)]">
-          Aucun match terminé
+          Aucun match
         </div>
       </div>
     );
@@ -346,10 +361,17 @@ export default function GamesList({
           day: "numeric",
           month: "long",
         });
+        const isToday = dateStr === todayNBA;
         return (
           <div key={dateStr}>
-            <h2 className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--color-text-mute)] mb-1.5 px-1 capitalize">
-              {label}
+            <h2
+              className={`text-[10px] uppercase tracking-[0.22em] mb-1.5 px-1 capitalize ${
+                isToday
+                  ? "text-[color:var(--color-flame)] font-bold"
+                  : "text-[color:var(--color-text-mute)]"
+              }`}
+            >
+              {isToday ? "Aujourd'hui" : label}
             </h2>
             <div className="flex flex-col gap-1.5">
               {dateGames.map((game) => (

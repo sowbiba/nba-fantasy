@@ -1,8 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { Player, Recommendation, Game, Pick } from "@/types";
 import { ProsBlock, ConsBlock, VerdictBlock } from "@/components/ProsCons";
-import Link from "next/link";
 import PickButton from "./PickButton";
+import BackButton from "./BackButton";
 import { todayNBA } from "@/lib/date";
 
 export const revalidate = 300;
@@ -82,26 +82,7 @@ export default async function PlayerPage({
 
   return (
     <div className="px-4 py-4 animate-fade-in">
-      {/* back */}
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.25em] font-semibold text-[color:var(--color-text-mute)] hover:text-[color:var(--color-flame)] transition-colors"
-      >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M19 12H5" />
-          <path d="M12 19l-7-7 7-7" />
-        </svg>
-        Retour
-      </Link>
+      <BackButton />
 
       {/* ----------------- identity header ----------------- */}
       <header className="mt-3 relative">
