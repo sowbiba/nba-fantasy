@@ -157,11 +157,12 @@ def build_candidates(
         .gte("date", start_iso).lte("date", end_iso)
         .order("date").execute().data
     )
-    # Skip games with TBD teams (play-in winner pending)
+    # Skip games with TBD teams (play-in winner pending) and finished games
     games = [
         g for g in games
         if g.get("home_team") not in (None, "TBD", "")
         and g.get("away_team") not in (None, "TBD", "")
+        and g.get("status") != "final"
     ]
 
     all_players = client.table("players").select("*").execute().data
