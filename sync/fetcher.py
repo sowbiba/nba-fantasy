@@ -44,6 +44,9 @@ def parse_today_games(scoreboard: dict, today: date) -> list[dict]:
         else:
             status = "scheduled"
 
+        home_score = game["homeTeam"].get("score", 0) or 0
+        away_score = game["awayTeam"].get("score", 0) or 0
+
         games.append({
             "id": game_id,
             "date": today.isoformat(),
@@ -51,6 +54,8 @@ def parse_today_games(scoreboard: dict, today: date) -> list[dict]:
             "away_team": away,
             "tip_off": tip_off_utc,
             "status": status,
+            "home_score": home_score if status != "scheduled" else None,
+            "away_score": away_score if status != "scheduled" else None,
         })
     return games
 

@@ -88,12 +88,26 @@ export default function GamesCollapsible({ games, series }: Props) {
                 className="flex justify-between items-center py-2"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="flex items-center gap-1 font-mono-num text-[13px] font-semibold text-[color:var(--color-text)] tracking-wide">
-                    <span>{game.home_team}</span>
-                    <span className="text-[color:var(--color-text-mute)] text-[10px] px-0.5">
-                      vs
+                  <div className="flex items-center gap-1.5 font-mono-num text-[13px] font-semibold tracking-wide">
+                    <span className={`${game.status === "final" && game.home_score !== null && game.away_score !== null && game.home_score > game.away_score ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text)]"}`}>
+                      {game.home_team}
                     </span>
-                    <span>{game.away_team}</span>
+                    {game.status === "final" && game.home_score !== null && game.away_score !== null ? (
+                      <span className="text-[color:var(--color-text-soft)] text-[12px] font-bold font-mono-num">
+                        {game.home_score} - {game.away_score}
+                      </span>
+                    ) : game.status === "live" && game.home_score !== null ? (
+                      <span className="text-[color:var(--color-flame)] text-[12px] font-bold font-mono-num animate-live-dot">
+                        {game.home_score} - {game.away_score}
+                      </span>
+                    ) : (
+                      <span className="text-[color:var(--color-text-mute)] text-[10px] px-0.5">
+                        vs
+                      </span>
+                    )}
+                    <span className={`${game.status === "final" && game.home_score !== null && game.away_score !== null && game.away_score > game.home_score ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text)]"}`}>
+                      {game.away_team}
+                    </span>
                   </div>
                   {game.game_number && (
                     <span className="text-[9px] font-bold tracking-[0.1em] px-1.5 py-0.5 rounded bg-[color:var(--color-gold)]/15 text-[color:var(--color-gold)] border border-[color:var(--color-gold)]/30">
@@ -106,8 +120,14 @@ export default function GamesCollapsible({ games, series }: Props) {
                     </span>
                   )}
                 </div>
-                <span className="font-mono-num text-[12px] text-[color:var(--color-text-soft)] tabular-nums">
-                  {formatTipOff(game.tip_off)}
+                <span className="font-mono-num text-[12px] text-[color:var(--color-text-soft)] tabular-nums shrink-0">
+                  {game.status === "final" ? (
+                    <span className="text-[9px] uppercase tracking-[0.15em] text-[color:var(--color-text-mute)]">Final</span>
+                  ) : game.status === "live" ? (
+                    <span className="text-[9px] uppercase tracking-[0.15em] text-[color:var(--color-flame)] font-bold">Live</span>
+                  ) : (
+                    formatTipOff(game.tip_off)
+                  )}
                 </span>
               </div>
             );

@@ -25,6 +25,8 @@ export interface Game {
   series_id: number | null;
   game_number: number | null;
   status: string;
+  home_score: number | null;
+  away_score: number | null;
 }
 
 export interface Series {
