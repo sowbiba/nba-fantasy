@@ -28,7 +28,7 @@ export default function PickButton({
   const handlePick = async () => {
     if (disabled) return;
     setLoading(true);
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     const { error } = await supabase.from("picks").insert({
       player_id: playerId,
       game_id: gameId,

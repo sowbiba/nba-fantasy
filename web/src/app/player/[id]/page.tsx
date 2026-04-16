@@ -3,7 +3,7 @@ import { Player, Recommendation, Game, Pick } from "@/types";
 import { ProsBlock, ConsBlock, VerdictBlock } from "@/components/ProsCons";
 import Link from "next/link";
 import PickButton from "./PickButton";
-import { todayParis } from "@/lib/date";
+import { todayNBA } from "@/lib/date";
 
 export const revalidate = 300;
 
@@ -29,7 +29,7 @@ const tierLabels: Record<
 };
 
 async function getData(playerId: number) {
-  const today = todayParis();
+  const today = todayNBA();
   const [playerRes, recRes, gamesRes, picksRes] = await Promise.all([
     supabase.from("players").select("*").eq("id", playerId).single(),
     supabase
