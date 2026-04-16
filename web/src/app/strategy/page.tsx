@@ -1,11 +1,12 @@
 import { supabase } from "@/lib/supabase";
 import { Recommendation, Series, Game, WeeklyPlanEntry, Player } from "@/types";
 import Link from "next/link";
+import { todayParis } from "@/lib/date";
 
 export const revalidate = 300;
 
 async function getData() {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayParis();
   const futureDate = new Date();
   futureDate.setDate(futureDate.getDate() + 7);
   const futureDateStr = futureDate.toISOString().split("T")[0];
@@ -41,6 +42,7 @@ export default async function StrategyPage() {
   const fillers = recs.filter((r) => r.tier === "filler").length;
 
   const planTotal = plan.reduce((sum, e) => sum + e.estimated_score, 0);
+  const today = todayParis();
 
   const gamesByDate = new Map<string, Game[]>();
   for (const g of games) {
@@ -57,8 +59,6 @@ export default async function StrategyPage() {
       bestDate = date;
     }
   }
-
-  const today = new Date().toISOString().split("T")[0];
 
   return (
     <div className="px-4 py-5 animate-fade-in">

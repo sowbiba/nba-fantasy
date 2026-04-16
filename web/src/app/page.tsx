@@ -7,11 +7,12 @@ import RecommendationCard from "@/components/RecommendationCard";
 import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import InjuryArbitrage from "@/components/InjuryArbitrage";
+import { todayParis } from "@/lib/date";
 
 export const revalidate = 300;
 
 async function getData() {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayParis();
 
   const [gamesRes, seriesRes, recsRes, playersRes, syncRes] = await Promise.all([
     supabase.from("games").select("*").eq("date", today).order("tip_off"),
