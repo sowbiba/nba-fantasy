@@ -463,13 +463,10 @@ def generate_plan_verdict(context: dict) -> str:
         {1: "★★★", 2: "★★", 3: "★"}.get(priority, "") if priority else ""
     )
 
-    head = f"📅 {day_label.upper()} · {score:.0f} pts estimés. "
-
     # ---- Famille A : risque sur CE pick ----
     if elimination == "critical":
         return (
-            head
-            + "Pick obligatoire ce soir : son équipe peut être éliminée, "
+            "Pick obligatoire ce soir : son équipe peut être éliminée, "
             "sinon c'est un capital gâché pour le reste des playoffs."
         )
 
@@ -478,8 +475,7 @@ def generate_plan_verdict(context: dict) -> str:
     # joueur est sur la watchlist.
     if pick_prob < 0.7 and priority in (1, 2):
         return (
-            head
-            + f"Match incertain ({round(pick_prob * 100)}% qu'il ait lieu) — "
+            f"Match incertain ({round(pick_prob * 100)}% qu'il ait lieu) — "
             f"fenêtre la plus sûre identifiée cette semaine pour ce {tier_label}. "
             f"Au-delà, soit la série se termine, soit tu changes de tour."
         )
@@ -490,18 +486,16 @@ def generate_plan_verdict(context: dict) -> str:
     if priority == 1 and p_team_elim >= 0.4 and pick_prob >= 0.85:
         risk_pct = round(p_team_elim * 100)
         return (
-            head
-            + f"Si tu ne le joues pas maintenant, {risk_pct}% de risque que "
+            f"Si tu ne le joues pas maintenant, {risk_pct}% de risque que "
             f"{team} soit éliminée avant que tu puisses l'utiliser ailleurs. "
-            f"★★★ à sécuriser ce {day_label}."
+            f"★★★ à sécuriser."
         )
 
     # ---- Famille B : risque collatéral sur d'autres ★★★ ----
     if alts and p_team_elim >= 0.35:
         other = alts[0]
         return (
-            head
-            + f"En jouant {context.get('player_name','-')} maintenant, tu sécurises ce slot. "
+            f"En le jouant maintenant tu sécurises ce slot. "
             f"Si {team} perd ce soir tu risques aussi de bloquer {other} — "
             f"préfère le pick safe avant que la série bascule."
         )
@@ -510,8 +504,7 @@ def generate_plan_verdict(context: dict) -> str:
     # différable, mais cette fenêtre reste la meilleure du window 7j.
     if reservation >= 0.4 and expected_remaining >= 4:
         return (
-            head
-            + f"Différable ({team} avance probablement, ~{expected_remaining:.1f} matchs "
+            f"Différable ({team} avance probablement, ~{expected_remaining:.1f} matchs "
             f"encore devant lui), mais cette fenêtre reste le meilleur rendement "
             f"de la semaine sans cramer un spot premium."
         )
@@ -519,30 +512,26 @@ def generate_plan_verdict(context: dict) -> str:
     # ---- Famille C : répartition / pool / matchup ----
     if stddev > 18 and opp_ttfl >= league_avg * 1.10:
         return (
-            head
-            + f"Profil volatil (σ={stddev:.0f}) mais matchup ({opp_ttfl:.0f} TTFL "
+            f"Profil volatil (σ={stddev:.0f}) mais matchup ({opp_ttfl:.0f} TTFL "
             f"concédé aux {position_label}) compense largement."
         )
 
     if opp_ttfl >= league_avg * 1.15:
         return (
-            head
-            + f"Matchup défensif favorable contre {opponent} ({opp_ttfl:.0f} TTFL "
+            f"Matchup défensif favorable contre {opponent} ({opp_ttfl:.0f} TTFL "
             f"concédé aux {position_label}). Forme L5 {avg_l5:.0f}."
         )
 
     if priority == 3 or (priority == 2 and pick_prob >= 0.9):
         return (
-            head
-            + f"Pick safe (P {round(pick_prob*100)}%) — libère tes ★★★ pour des "
+            f"Pick safe (P {round(pick_prob*100)}%) — libère tes ★★★ pour des "
             f"matchs plus rentables ou plus serrés en R2/R3."
         )
 
     if reservation >= 0.2:
         pct = round(reservation * 100)
         return (
-            head
-            + f"Pick rare malgré une réserve -{pct}% — meilleure fenêtre "
+            f"Pick rare malgré une réserve -{pct}% — meilleure fenêtre "
             f"identifiée d'ici la fin de la série."
         )
 
@@ -550,7 +539,6 @@ def generate_plan_verdict(context: dict) -> str:
     place = "domicile" if is_home else "extérieur"
     g_str = f", G{game_number}" if game_number else ""
     return (
-        head
-        + f"{place.capitalize()} vs {opponent}{g_str}, forme L5 {avg_l5:.0f}. "
+        f"{place.capitalize()} vs {opponent}{g_str}, forme L5 {avg_l5:.0f}. "
         f"Aucun autre créneau de la fenêtre ne fait mieux sans sacrifier un spot premium."
     )
