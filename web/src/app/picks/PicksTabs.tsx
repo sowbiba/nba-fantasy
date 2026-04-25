@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Pick, Player } from "@/types";
+import { supabase } from "@/lib/supabase";
 
 function effectiveScore(pick: Pick): number {
   if (
@@ -173,6 +175,38 @@ function StatsGrid({ picks }: { picks: Pick[] }) {
   );
 }
 
+function CancelButton({ pickId, playerName }: { pickId: number; playerName: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  const onCancel = async () => {
+    if (!confirm(`Annuler le pick ${playerName} ?`)) return;
+    setLoading(true);
+    const { error } = await supabase.from("picks").delete().eq("id", pickId);
+    setLoading(false);
+    if (error) {
+      alert(`Erreur : ${error.message}`);
+      return;
+    }
+    router.refresh();
+  };
+
+  return (
+    <button
+      onClick={onCancel}
+      disabled={loading}
+      aria-label="Annuler le pick"
+      className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-full border border-white/10 text-[color:var(--color-text-mute)] hover:border-[color:var(--color-crimson)]/40 hover:text-[color:var(--color-crimson)] transition-colors disabled:opacity-40"
+    >
+      {loading ? (
+        <span className="text-[11px] animate-spin inline-block">⏳</span>
+      ) : (
+        <span className="text-[13px] leading-none">×</span>
+      )}
+    </button>
+  );
+}
+
 function PickList({
   picks,
   playersMap,
@@ -211,9 +245,9 @@ function PickList({
         return (
           <div
             key={pick.id}
-            className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/[0.04]"
+            className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/[0.04]"
           >
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-sm text-[color:var(--color-text)] truncate">
                   {player?.name || "?"}
@@ -261,6 +295,12 @@ function PickList({
                 </div>
               )}
             </div>
+            {!scored && (
+              <CancelButton
+                pickId={pick.id}
+                playerName={player?.name || "ce pick"}
+              />
+            )}
           </div>
         );
       })}

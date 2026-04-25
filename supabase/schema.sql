@@ -15,6 +15,7 @@ create table players (
   stddev_ttfl numeric default 0,
   home_avg numeric default 0,
   away_avg numeric default 0,
+  avg_minutes_l10 numeric default 0,
   usage_rate numeric default 0,
   updated_at timestamptz default now()
 );
@@ -65,6 +66,31 @@ create table game_logs (
   is_home boolean default false,
   unique(player_id, game_id)
 );
+
+-- Weekly plan (one row per upcoming game day, chosen by Hungarian optimizer)
+create table weekly_plan (
+  id serial primary key,
+  date date not null,
+  player_id integer not null references players(id),
+  game_id text not null references games(id),
+  estimated_score numeric not null,
+  tier text,
+  is_home boolean default false,
+  opponent text,
+  game_number integer,
+  elimination text default 'none',
+  reasoning text default '',
+  pros jsonb default '[]',
+  cons jsonb default '[]',
+  verdict text default '',
+  pick_probability numeric not null default 1.0,
+  generated_at timestamptz default now()
+);
+
+create index idx_weekly_plan_date on weekly_plan(date);
+
+alter table weekly_plan enable row level security;
+create policy "anon read weekly_plan" on weekly_plan for select using (true);
 
 -- Daily recommendations (top 50)
 create table recommendations (

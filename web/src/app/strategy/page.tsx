@@ -1,7 +1,17 @@
 import { supabase } from "@/lib/supabase";
-import { Recommendation, Series, Game, WeeklyPlanEntry, Player } from "@/types";
+import {
+  Recommendation,
+  Series,
+  Game,
+  WeeklyPlanEntry,
+  Player,
+  SeriesForecast,
+  WatchlistEntry,
+  Pick as PickType,
+} from "@/types";
 import Link from "next/link";
 import { todayNBA } from "@/lib/date";
+import SeriesForecastList from "./SeriesForecastList";
 
 export const revalidate = 300;
 
@@ -11,9 +21,18 @@ async function getData() {
   futureDate.setDate(futureDate.getDate() + 7);
   const futureDateStr = futureDate.toISOString().split("T")[0];
 
-  const [recsRes, seriesRes, gamesRes, planRes, playersRes] = await Promise.all([
+  const [
+    recsRes,
+    seriesRes,
+    gamesRes,
+    planRes,
+    playersRes,
+    forecastRes,
+    watchlistRes,
+    picksRes,
+  ] = await Promise.all([
     supabase.from("recommendations").select("*").eq("date", today),
-    supabase.from("series").select("*").eq("status", "active"),
+    supabase.from("series").select("*").eq("status", "active").order("round"),
     supabase
       .from("games")
       .select("*")
@@ -22,6 +41,9 @@ async function getData() {
       .order("date"),
     supabase.from("weekly_plan").select("*").order("date"),
     supabase.from("players").select("id, name, team, position"),
+    supabase.from("series_forecast").select("*"),
+    supabase.from("player_watchlist").select("*"),
+    supabase.from("picks").select("*").eq("mode", "playoffs"),
   ]);
 
   return {
@@ -30,16 +52,33 @@ async function getData() {
     games: (gamesRes.data || []) as Game[],
     plan: (planRes.data || []) as WeeklyPlanEntry[],
     players: (playersRes.data || []) as Pick<Player, "id" | "name" | "team" | "position">[],
+    forecasts: (forecastRes.data || []) as SeriesForecast[],
+    watchlist: (watchlistRes.data || []) as WatchlistEntry[],
+    picks: (picksRes.data || []) as PickType[],
   };
 }
 
 export default async function StrategyPage() {
-  const { recs, series, games, plan, players } = await getData();
+  const {
+    recs,
+    series,
+    games,
+    plan,
+    players,
+    forecasts,
+    watchlist,
+    picks,
+  } = await getData();
   const playersMap = new Map(players.map((p) => [p.id, p]));
 
-  const elites = recs.filter((r) => r.tier === "elite").length;
-  const solids = recs.filter((r) => r.tier === "solid").length;
-  const fillers = recs.filter((r) => r.tier === "filler").length;
+  // "Capital restant" = tes joueurs étoilés pas encore pickés en playoffs,
+  // groupés par priorité (★★★ / ★★ / ★). Reflète directement ta watchlist.
+  const pickedSet = new Set(picks.map((p) => p.player_id));
+  const remaining = watchlist.filter((w) => !pickedSet.has(w.player_id));
+  const p1Left = remaining.filter((w) => w.priority === 1).length;
+  const p2Left = remaining.filter((w) => w.priority === 2).length;
+  const p3Left = remaining.filter((w) => w.priority === 3).length;
+  const watchlistMap = new Map(watchlist.map((w) => [w.player_id, w.priority]));
 
   const planTotal = plan.reduce((sum, e) => sum + e.estimated_score, 0);
   const today = todayNBA();
@@ -72,34 +111,37 @@ export default async function StrategyPage() {
         </h1>
       </div>
 
-      {/* --------------- capital --------------- */}
-      <Section title="Capital restant" accent="gold">
+      {/* --------------- capital (watchlist non-pickés) --------------- */}
+      <Section title="Must-plays restants" accent="gold">
         <div className="grid grid-cols-3 gap-2">
           <CapitalTile
-            value={elites}
-            label="Elite"
+            value={p1Left}
+            label="Impératif"
             stars="★★★"
             color="text-[color:var(--color-gold)]"
             borderColor="border-[color:var(--color-gold)]/30"
             bgColor="bg-[color:var(--color-gold)]/5"
           />
           <CapitalTile
-            value={solids}
-            label="Solide"
+            value={p2Left}
+            label="Fort"
             stars="★★"
             color="text-[color:var(--color-ice)]"
             borderColor="border-[color:var(--color-ice)]/30"
             bgColor="bg-[color:var(--color-ice)]/5"
           />
           <CapitalTile
-            value={fillers}
-            label="Filler"
+            value={p3Left}
+            label="Optionnel"
             stars="★"
             color="text-[color:var(--color-text-soft)]"
             borderColor="border-white/10"
             bgColor="bg-white/[0.02]"
           />
         </div>
+        <p className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-text-mute)] mt-3 leading-relaxed">
+          Joueurs de ta watchlist pas encore pickés en playoffs. Clique sur l&apos;étoile dans une page joueur pour éditer.
+        </p>
       </Section>
 
       {/* --------------- weekly plan --------------- */}
@@ -129,7 +171,7 @@ export default async function StrategyPage() {
               return (
                 <Link
                   key={entry.id}
-                  href={`/player/${entry.player_id}`}
+                  href={`/player/${entry.player_id}?planDate=${entry.date}`}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/[0.04] hover:border-[color:var(--color-gold)]/30 transition-colors"
                 >
                   <div className="w-16 shrink-0">
@@ -145,6 +187,16 @@ export default async function StrategyPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      {(() => {
+                        const pr = watchlistMap.get(entry.player_id);
+                        if (!pr) return null;
+                        const stars = "★".repeat(4 - pr);
+                        return (
+                          <span className="font-mono-num text-[11px] tracking-widest text-[color:var(--color-gold)] leading-none">
+                            {stars}
+                          </span>
+                        );
+                      })()}
                       <span className="font-semibold text-sm text-[color:var(--color-text)] truncate">
                         {player?.name || "?"}
                       </span>
@@ -164,6 +216,11 @@ export default async function StrategyPage() {
                       ) : null}
                       {entry.is_home ? " · 🏠" : " · ✈"}
                     </div>
+                    {entry.verdict && (
+                      <div className="text-[10px] text-[color:var(--color-text-soft)] italic mt-1 leading-snug line-clamp-2">
+                        {entry.verdict}
+                      </div>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
                     <div className="font-display text-xl leading-none font-mono-num gold-text">
@@ -182,6 +239,11 @@ export default async function StrategyPage() {
           Optimisation Hungarian — affecte 1 joueur par jour sur 7 jours en
           maximisant le score total. Recalculé à chaque sync.
         </p>
+      </Section>
+
+      {/* --------------- series forecasts --------------- */}
+      <Section title="Pronos de séries" accent="ice" className="mt-4">
+        <SeriesForecastList series={series} forecasts={forecasts} />
       </Section>
 
       {/* --------------- calendar 7 days --------------- */}
@@ -316,7 +378,7 @@ function Section({
   className = "",
 }: {
   title: string;
-  accent: "gold" | "violet" | "emerald";
+  accent: "gold" | "violet" | "emerald" | "ice";
   children: React.ReactNode;
   className?: string;
 }) {
@@ -324,12 +386,14 @@ function Section({
     gold: "text-[color:var(--color-gold)]",
     violet: "text-[color:var(--color-violet)]",
     emerald: "text-[color:var(--color-emerald)]",
+    ice: "text-[color:var(--color-ice)]",
   }[accent];
 
   const accentLine = {
     gold: "bg-[color:var(--color-gold)]",
     violet: "bg-[color:var(--color-violet)]",
     emerald: "bg-[color:var(--color-emerald)]",
+    ice: "bg-[color:var(--color-ice)]",
   }[accent];
 
   return (

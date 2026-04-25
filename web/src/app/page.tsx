@@ -1,5 +1,14 @@
 import { supabase } from "@/lib/supabase";
-import { Game, Series, Recommendation, Player, SyncLog, RecommendationWithPlayer } from "@/types";
+import {
+  Game,
+  Series,
+  Recommendation,
+  Player,
+  SyncLog,
+  RecommendationWithPlayer,
+  WatchlistEntry,
+  Pick,
+} from "@/types";
 import SyncStatus from "@/components/SyncStatus";
 import GamesCollapsible from "@/components/GamesCollapsible";
 import StrategyBanner from "@/components/StrategyBanner";
@@ -7,6 +16,7 @@ import RecommendationCard from "@/components/RecommendationCard";
 import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import InjuryArbitrage from "@/components/InjuryArbitrage";
+import WatchlistAlerts from "@/components/WatchlistAlerts";
 import { todayNBA } from "@/lib/date";
 
 export const revalidate = 300;
@@ -14,12 +24,22 @@ export const revalidate = 300;
 async function getData() {
   const today = todayNBA();
 
-  const [gamesRes, seriesRes, recsRes, playersRes, syncRes] = await Promise.all([
+  const [
+    gamesRes,
+    seriesRes,
+    recsRes,
+    playersRes,
+    syncRes,
+    watchlistRes,
+    picksRes,
+  ] = await Promise.all([
     supabase.from("games").select("*").eq("date", today).order("tip_off"),
     supabase.from("series").select("*").eq("status", "active"),
     supabase.from("recommendations").select("*").eq("date", today).order("rank"),
     supabase.from("players").select("*"),
     supabase.from("sync_log").select("*").order("started_at", { ascending: false }).limit(1),
+    supabase.from("player_watchlist").select("*"),
+    supabase.from("picks").select("*").eq("mode", "playoffs"),
   ]);
 
   const games = (gamesRes.data || []) as Game[];
@@ -27,6 +47,8 @@ async function getData() {
   const recs = (recsRes.data || []) as Recommendation[];
   const players = (playersRes.data || []) as Player[];
   const sync = (syncRes.data?.[0] || null) as SyncLog | null;
+  const watchlist = (watchlistRes.data || []) as WatchlistEntry[];
+  const picks = (picksRes.data || []) as Pick[];
 
   const playersMap = new Map(players.map((p) => [p.id, p]));
 
@@ -49,11 +71,27 @@ async function getData() {
   }
   gameDaysRemaining = Math.max(1, Math.round(gameDaysRemaining * 0.7));
 
-  return { games, series, recsWithPlayers, sync, gameDaysRemaining };
+  return {
+    games,
+    series,
+    recsWithPlayers,
+    sync,
+    gameDaysRemaining,
+    watchlist,
+    picks,
+  };
 }
 
 export default async function TonightPage() {
-  const { games, series, recsWithPlayers, sync, gameDaysRemaining } = await getData();
+  const {
+    games,
+    series,
+    recsWithPlayers,
+    sync,
+    gameDaysRemaining,
+    watchlist,
+    picks,
+  } = await getData();
   const top3 = recsWithPlayers.slice(0, 3);
 
   const dateLabel = new Date().toLocaleDateString("fr-FR", {
@@ -108,6 +146,12 @@ export default async function TonightPage() {
       <div className="mt-3 px-3">
         <GamesCollapsible games={games} series={series} />
       </div>
+
+      <WatchlistAlerts
+        recommendations={recsWithPlayers}
+        watchlist={watchlist}
+        picks={picks}
+      />
 
       <div className="mt-3 px-3">
         <StrategyBanner

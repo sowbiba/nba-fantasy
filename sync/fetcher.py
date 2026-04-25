@@ -29,7 +29,20 @@ def fetch_today_scoreboard() -> dict:
 
 
 def parse_today_games(scoreboard: dict, today: date) -> list[dict]:
-    """Parse scoreboard into game dicts for the games table."""
+    """Parse scoreboard into game dicts for the games table.
+
+    Uses the scoreboard's own `gameDate` field when present — the NBA live
+    scoreboard sometimes keeps the previous game day active well into the
+    morning (ET). Trusting `today` unconditionally would mis-date yesterday's
+    late play-in games as today's.
+    """
+    sb_date_str = scoreboard.get("gameDate")
+    sb_date = today
+    if sb_date_str:
+        try:
+            sb_date = datetime.strptime(sb_date_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            sb_date = today
     games = []
     for game in scoreboard.get("games", []):
         game_id = game["gameId"]
@@ -49,7 +62,7 @@ def parse_today_games(scoreboard: dict, today: date) -> list[dict]:
 
         games.append({
             "id": game_id,
-            "date": today.isoformat(),
+            "date": sb_date.isoformat(),
             "home_team": home,
             "away_team": away,
             "tip_off": tip_off_utc,
@@ -78,11 +91,15 @@ def fetch_live_box_score(game_id: str) -> list[dict]:
 
         for p in team.get("players", []):
             stats = p.get("statistics", {})
-            if not stats or stats.get("minutes", "PT00M") == "PT00M":
-                continue
+            # DNP / did-not-dress players still appear in the box score with
+            # minutes == "PT00M". We log them as a 0-TTFL, 0-minute row so
+            # that rotation-fringe players see their aggregates pulled down
+            # by the nights they didn't play — previously we skipped these
+            # rows and the averages were computed only on games actually
+            # played, which made bench players look like everyday rotation.
 
             # Parse minutes from ISO duration "PT32M12.00S"
-            min_str = stats.get("minutes", "PT0M")
+            min_str = (stats.get("minutes") if stats else None) or "PT0M"
             minutes = 0
             if "M" in min_str:
                 try:
@@ -90,18 +107,18 @@ def fetch_live_box_score(game_id: str) -> list[dict]:
                 except (IndexError, ValueError):
                     pass
 
-            pts = stats.get("points", 0)
-            reb = stats.get("reboundsTotal", 0)
-            ast = stats.get("assists", 0)
-            stl = stats.get("steals", 0)
-            blk = stats.get("blocks", 0)
-            fgm = stats.get("fieldGoalsMade", 0)
-            fga = stats.get("fieldGoalsAttempted", 0)
-            tpm = stats.get("threePointersMade", 0)
-            tpa = stats.get("threePointersAttempted", 0)
-            ftm = stats.get("freeThrowsMade", 0)
-            fta = stats.get("freeThrowsAttempted", 0)
-            tov = stats.get("turnovers", 0)
+            pts = (stats or {}).get("points", 0)
+            reb = (stats or {}).get("reboundsTotal", 0)
+            ast = (stats or {}).get("assists", 0)
+            stl = (stats or {}).get("steals", 0)
+            blk = (stats or {}).get("blocks", 0)
+            fgm = (stats or {}).get("fieldGoalsMade", 0)
+            fga = (stats or {}).get("fieldGoalsAttempted", 0)
+            tpm = (stats or {}).get("threePointersMade", 0)
+            tpa = (stats or {}).get("threePointersAttempted", 0)
+            ftm = (stats or {}).get("freeThrowsMade", 0)
+            fta = (stats or {}).get("freeThrowsAttempted", 0)
+            tov = (stats or {}).get("turnovers", 0)
 
             ttfl = compute_ttfl_score(pts, reb, ast, stl, blk, fgm, fga, tpm, tpa, ftm, fta, tov)
 
@@ -197,11 +214,13 @@ def compute_player_aggregates(game_logs: list[dict]) -> dict:
         return {
             "avg_ttfl_l5": 0, "avg_ttfl_l10": 0, "avg_ttfl_l20": 0,
             "avg_ttfl_season": 0, "stddev_ttfl": 0, "home_avg": 0, "away_avg": 0,
+            "avg_minutes_l10": 0,
         }
 
     scores = [g["ttfl_score"] for g in game_logs]
     home_scores = [g["ttfl_score"] for g in game_logs if g["is_home"]]
     away_scores = [g["ttfl_score"] for g in game_logs if not g["is_home"]]
+    minutes = [g.get("minutes", 0) or 0 for g in game_logs]
 
     return {
         "avg_ttfl_l5": float(np.mean(scores[:5])) if len(scores) >= 1 else 0,
@@ -211,4 +230,5 @@ def compute_player_aggregates(game_logs: list[dict]) -> dict:
         "stddev_ttfl": float(np.std(scores)) if len(scores) >= 3 else 0,
         "home_avg": float(np.mean(home_scores)) if home_scores else 0,
         "away_avg": float(np.mean(away_scores)) if away_scores else 0,
+        "avg_minutes_l10": float(np.mean(minutes[:10])) if minutes else 0,
     }

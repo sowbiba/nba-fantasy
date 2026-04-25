@@ -116,7 +116,9 @@ export default function GamesCollapsible({ games, series }: Props) {
                   )}
                   {s && (
                     <span className="text-[10px] font-mono-num text-[color:var(--color-text-mute)]">
-                      {s.home_wins}-{s.away_wins}
+                      {game.home_team === s.home_team
+                        ? `${s.home_wins}-${s.away_wins}`
+                        : `${s.away_wins}-${s.home_wins}`}
                     </span>
                   )}
                 </div>

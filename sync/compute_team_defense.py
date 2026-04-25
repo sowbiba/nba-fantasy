@@ -7,7 +7,7 @@ stored in team_defense.vs_<position>s_ttfl_avg.
 This populates the 25% matchup factor that's currently falling back to
 league_avg everywhere.
 """
-from datetime import datetime
+from datetime import UTC, datetime
 
 import numpy as np
 
@@ -86,7 +86,7 @@ def compute_and_push():
             "vs_forwards_ttfl_avg": float(np.mean(pos_scores["F"])) if pos_scores["F"] else 0,
             "vs_centers_ttfl_avg": float(np.mean(pos_scores["C"])) if pos_scores["C"] else 0,
             "def_rating": 0,  # populated separately by fetcher.fetch_team_defense_stats
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         rows.append(row)
 

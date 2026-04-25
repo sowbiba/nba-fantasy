@@ -3,7 +3,7 @@
 
 Uses the service_role key for full write access.
 """
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from supabase import create_client, Client
 from sync.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 
@@ -16,7 +16,7 @@ def get_client() -> Client:
 
 def start_sync_log(client: Client) -> int:
     result = client.table("sync_log").insert({
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
         "status": "running",
     }).execute()
     return result.data[0]["id"]
@@ -24,7 +24,7 @@ def start_sync_log(client: Client) -> int:
 
 def finish_sync_log(client: Client, log_id: int, players_updated: int):
     client.table("sync_log").update({
-        "finished_at": datetime.utcnow().isoformat(),
+        "finished_at": datetime.now(UTC).isoformat(),
         "status": "success",
         "players_updated": players_updated,
     }).eq("id", log_id).execute()
@@ -32,7 +32,7 @@ def finish_sync_log(client: Client, log_id: int, players_updated: int):
 
 def fail_sync_log(client: Client, log_id: int, error: str):
     client.table("sync_log").update({
-        "finished_at": datetime.utcnow().isoformat(),
+        "finished_at": datetime.now(UTC).isoformat(),
         "status": "error",
         "error_message": error[:500],
     }).eq("id", log_id).execute()

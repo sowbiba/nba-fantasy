@@ -15,3 +15,6 @@ web/.env.local
 # IDE
 .vscode/
 .idea/
+
+# Claude Code local config
+.claude/

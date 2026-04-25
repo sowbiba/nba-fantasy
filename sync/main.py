@@ -13,12 +13,12 @@
 import sys
 import time
 import traceback
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
 
 from sync import db
-from sync.config import NBA_API_DELAY
+from sync.config import MIN_MINUTES_L10, NBA_API_DELAY
 from sync.fetcher import (
     fetch_today_scoreboard,
     parse_today_games,
@@ -30,15 +30,26 @@ from sync.fetcher import (
 from sync.injuries import fetch_all_injuries, match_injury_to_player
 from sync.scoring import compute_performance_score
 from sync.strategy import (
+    TEAM_POTENTIAL_UNKNOWN,
     classify_tiers,
+    compute_reservation_penalty,
+    compute_strategy_adjustment,
+    compute_team_potential_scores,
+    elimination_risk,
     estimate_remaining_game_days,
     should_burn_elite,
-    compute_strategy_adjustment,
-    elimination_risk,
 )
 from sync.advisor import generate_argumentaire, generate_verdict
 from sync.ttfl import compute_ttfl_from_game_log
 from sync.future import compute_best_future_opportunity
+
+
+# User watchlist ranking boosts, escalating with elimination pressure. See
+# /home/isow/.claude/plans/greedy-swinging-wirth.md for rationale.
+WATCHLIST_BASE = {1: 0.12, 2: 0.07, 3: 0.03}
+WATCHLIST_ELIM_BONUS = {"critical": 0.35, "high": 0.15, "none": 0.0}
+# Challenger Game 3 at home after 0-2 deficit — watchlist players only.
+GAME3_SURGE_MULTIPLIER = 1.12
 
 
 def run_sync():
@@ -52,11 +63,17 @@ def run_sync():
         players_updated = 0
 
         # --- Step 1: Fetch today's scoreboard ---
+        # The scoreboard reflects the NBA's current "game day" which can lag
+        # behind our local date (play-in nights tipping off Friday night ET
+        # are still on the Friday scoreboard well into Saturday morning). We
+        # upsert whatever the scoreboard says — tagged with *its* gameDate —
+        # then rely on the DB (fed by load_schedule.py) to know what games
+        # actually happen on `today`.
         print("  Fetching scoreboard...")
         scoreboard = fetch_today_scoreboard()
-        today_games = parse_today_games(scoreboard, today)
-        db.upsert_games(client, today_games)
-        print(f"  {len(today_games)} games today")
+        scoreboard_games = parse_today_games(scoreboard, today)
+        db.upsert_games(client, scoreboard_games)
+        print(f"  {len(scoreboard_games)} games on scoreboard (date={scoreboard.get('gameDate') or today})")
 
         # Step 1b: refresh playoff series + schedule (safe to re-run, upserts)
         try:
@@ -123,6 +140,18 @@ def run_sync():
                     "actual_score": ttfl
                 }).eq("id", pick["id"]).execute()
                 updated_picks += 1
+                continue
+            # No game_log row. If the game is final, the picked player
+            # wasn't even in the box score (not dressed / inactive list).
+            # That's a DNP → lock in 0 so the pick stops showing as "—".
+            game_res = client.table("games").select("status").eq(
+                "id", pick["game_id"]
+            ).execute()
+            if game_res.data and game_res.data[0]["status"] == "final":
+                client.table("picks").update({
+                    "actual_score": 0
+                }).eq("id", pick["id"]).execute()
+                updated_picks += 1
         if updated_picks > 0:
             print(f"  Updated {updated_picks} pick(s) with actual score.")
 
@@ -136,6 +165,12 @@ def run_sync():
         db.upsert_players(client, all_players_list)
         players_updated = len(all_players_list)
         print(f"  {players_updated} players updated")
+
+        # Games happening today (local), fetched from the DB — this is what
+        # Steps 4/5/6 iterate on. Decoupled from the scoreboard so that a
+        # stale scoreboard can't wipe out tonight's recos.
+        today_games = db.get_today_games(client, today)
+        print(f"  {len(today_games)} games in DB for {today}")
 
         # --- Step 4: Fetch injuries (all teams, not just tonight's) ---
         print("  Fetching injuries...")
@@ -265,7 +300,7 @@ def run_sync():
 
             if logs:
                 aggs = compute_player_aggregates(logs)
-                aggs["updated_at"] = datetime.utcnow().isoformat()
+                aggs["updated_at"] = datetime.now(UTC).isoformat()
                 client.table("players").update(aggs).eq("id", pid).execute()
 
         # --- Step 6: Score tonight's players ---
@@ -284,6 +319,13 @@ def run_sync():
                 if p["id"] in picked_ids:
                     continue
                 if p.get("injury_status") in ("Out", "Doubtful"):
+                    continue
+                # Rotation-fringe cutoff — see sync/weekly_plan.py for the
+                # same gate. Avoids surfacing benchers whose L5 is inflated
+                # by a single garbage-time blowout. Skip when the column
+                # is still at the default 0 (pre-backfill) to stay graceful.
+                avg_min_l10 = p.get("avg_minutes_l10", 0) or 0
+                if 0 < avg_min_l10 < MIN_MINUTES_L10:
                     continue
 
                 is_home = p["team"] == g["home_team"]
@@ -340,9 +382,39 @@ def run_sync():
         available_scores = [(sp["player"]["id"], sp["perf_score"]) for sp in scored_players]
         tiers = classify_tiers(available_scores)
 
+        # Load user forecasts (optional, table may not exist yet)
+        forecast_map: dict[int, dict] = {}
+        try:
+            fc_rows = client.table("series_forecast").select(
+                "series_id, winner_team, expected_games"
+            ).execute().data or []
+            forecast_map = {r["series_id"]: r for r in fc_rows}
+            if forecast_map:
+                print(f"  {len(forecast_map)} series forecasts loaded")
+        except Exception as e:
+            print(f"  (series_forecast table missing, skipping: {e})")
+
         current_round = max((s["round"] for s in active_series), default=1)
-        game_days_remaining = estimate_remaining_game_days(active_series, current_round)
+        game_days_remaining = estimate_remaining_game_days(
+            active_series, current_round, forecasts=forecast_map
+        )
         elites_remaining = sum(1 for t in tiers.values() if t == "elite")
+        team_potential = compute_team_potential_scores(
+            active_series, forecasts=forecast_map
+        )
+
+        # Watchlist: user-flagged must-play players (priority 1..3). Wrapped
+        # in try/except so the sync still works before the migration is applied.
+        watchlist_map: dict[int, int] = {}
+        try:
+            wl_rows = client.table("player_watchlist").select(
+                "player_id, priority"
+            ).execute().data or []
+            watchlist_map = {r["player_id"]: r["priority"] for r in wl_rows}
+            if watchlist_map:
+                print(f"  {len(watchlist_map)} watchlist entries loaded")
+        except Exception as e:
+            print(f"  (watchlist table missing, skipping boost: {e})")
 
         for sp in scored_players:
             pid = sp["player"]["id"]
@@ -360,7 +432,9 @@ def run_sync():
             series_score = (series["home_wins"], series["away_wins"]) if series else (0, 0)
 
             # Determine elimination risk from the player's perspective
-            player_series_is_home = bool(series and p["team"] == series["home_team"])
+            player_series_is_home = bool(
+                series and sp["player"]["team"] == series["home_team"]
+            )
             elim = elimination_risk(series_score, player_series_is_home) if series else "none"
 
             strategy_score = compute_strategy_adjustment(
@@ -369,8 +443,55 @@ def run_sync():
                 game_days_remaining=game_days_remaining,
                 elimination=elim,
             )
+
+            # Reservation tax (elite preservation for deeper rounds). Bypassed
+            # when elimination is critical: the player might be gone tomorrow,
+            # no reason to save him.
+            reservation = 0.0
+            if elim != "critical":
+                season_avg = sp["player"].get("avg_ttfl_season", 0) or 0
+                round_num = series["round"] if series else 1
+                tp = team_potential.get(
+                    sp["player"]["team"], TEAM_POTENTIAL_UNKNOWN
+                )
+                reservation = compute_reservation_penalty(
+                    player_season_avg=season_avg,
+                    team_potential=tp,
+                    round_num=round_num,
+                )
+
+            # Watchlist boost — your flagged must-plays rise in the ranking,
+            # more so as their team approaches elimination.
+            priority = watchlist_map.get(pid)
+            base_boost = WATCHLIST_BASE.get(priority, 0) if priority else 0
+            elim_boost = WATCHLIST_ELIM_BONUS.get(elim, 0) if priority else 0
+            watchlist_boost = base_boost + elim_boost
+
+            # Challenger's Game 3 at home after an 0-2 deficit — franchise
+            # players in must-win mode on their first home floor.
+            hw, aw = series_score
+            player_wins = hw if player_series_is_home else aw
+            opponent_wins = aw if player_series_is_home else hw
+            game3_surge = bool(
+                priority
+                and sp["is_home"]
+                and game.get("game_number") == 3
+                and player_wins == 0
+                and opponent_wins == 2
+            )
+            surge_multiplier = GAME3_SURGE_MULTIPLIER if game3_surge else 1.0
+
             sp["strategy_score"] = strategy_score
-            sp["estimated_score"] = strategy_score
+            sp["reservation_penalty"] = reservation
+            sp["watchlist_priority"] = priority
+            sp["watchlist_boost"] = watchlist_boost
+            sp["game3_surge"] = game3_surge
+            sp["estimated_score"] = (
+                strategy_score
+                * (1.0 - reservation)
+                * (1.0 + watchlist_boost)
+                * surge_multiplier
+            )
             sp["series_score"] = series_score
             sp["game_number"] = game.get("game_number", 0) or 0
             sp["elimination"] = elim
@@ -440,6 +561,9 @@ def run_sync():
                 "home_avg": p.get("home_avg", 0) or 0,
                 "away_avg": p.get("away_avg", 0) or 0,
                 "rank": rank,
+                "reservation_penalty": sp["reservation_penalty"],
+                "watchlist_priority": sp.get("watchlist_priority"),
+                "game3_surge": sp.get("game3_surge", False),
             }
 
             pros, cons = generate_argumentaire(context)
@@ -466,7 +590,11 @@ def run_sync():
             )
             verdict = generate_verdict(
                 should_burn=burn, tier=sp["tier"],
-                tonight_score=sp["estimated_score"],
+                # Narrative score uses strategy_score (pre-reservation) so the
+                # "GARDE-LE à 55 pts" verdict surfaces the true expected TTFL
+                # tonight, while the ranking/sorting layer still prefers to
+                # save Jokic-types (estimated_score applies reservation).
+                tonight_score=sp["strategy_score"],
                 best_future_description=best_future_desc,
                 elimination=sp["elimination"],
                 elites_remaining=elites_remaining,
@@ -489,6 +617,10 @@ def run_sync():
                 tags.append("elimination_high")
             if teammate_out:
                 tags.append("teammate_out")
+            if sp.get("watchlist_priority"):
+                tags.append(f"watchlist_p{sp['watchlist_priority']}")
+            if sp.get("game3_surge"):
+                tags.append("game3_surge")
 
             recommendations.append({
                 "date": today.isoformat(), "player_id": p["id"], "rank": rank,
@@ -498,7 +630,7 @@ def run_sync():
                 "strategy_score": round(sp.get("strategy_score", 0), 1),
                 "pros": pros, "cons": cons, "verdict": verdict,
                 "tier": sp["tier"], "tags": tags,
-                "computed_at": datetime.utcnow().isoformat(),
+                "computed_at": datetime.now(UTC).isoformat(),
             })
 
         # --- Step 9: Push to Supabase ---

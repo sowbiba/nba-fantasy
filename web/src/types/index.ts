@@ -56,6 +56,20 @@ export interface Recommendation {
   computed_at: string;
 }
 
+export interface SeriesForecast {
+  series_id: number;
+  winner_team: string;
+  expected_games: 4 | 5 | 6 | 7;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WatchlistEntry {
+  player_id: number;
+  priority: 1 | 2 | 3;
+  created_at: string;
+}
+
 export interface WeeklyPlanEntry {
   id: number;
   date: string;
@@ -68,6 +82,10 @@ export interface WeeklyPlanEntry {
   game_number: number | null;
   elimination: string;
   reasoning: string;
+  pros: string[];
+  cons: string[];
+  verdict: string;
+  pick_probability: number;
   generated_at: string;
 }
 

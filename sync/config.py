@@ -40,3 +40,8 @@ INJURY_MODIFIER = {
 # Playoff strategy: burn threshold
 # If best future spot > tonight + 10%, recommend saving
 BURN_THRESHOLD = 0.10
+
+# Minimum average minutes over the last 10 games for a player to be a
+# candidate. Below this, DNP/garbage-time outliers dominate the signal and
+# we don't want the engine to propose them.
+MIN_MINUTES_L10 = 12

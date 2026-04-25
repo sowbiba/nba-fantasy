@@ -41,10 +41,12 @@ function GameCard({
   game,
   players,
   logs,
+  isToday,
 }: {
   game: Game;
   players: Record<number, Player>;
   logs: GameLog[];
+  isToday: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -67,13 +69,12 @@ function GameCard({
     month: "short",
   });
 
-  return (
-    <div className="rounded-[var(--radius-card)] border border-white/5 bg-gradient-to-br from-[color:var(--color-surface-2)] to-[color:var(--color-surface)] overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left"
-      >
-        <div className="flex items-center gap-3 min-w-0">
+  const isLive = game.status === "live";
+  const useLivePage = isLive || isToday;
+
+  const header = (
+    <>
+      <div className="flex items-center gap-3 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.12em] text-[color:var(--color-text-mute)] w-14 shrink-0">
             {dateLabel}
           </div>
@@ -122,30 +123,65 @@ function GameCard({
                 : "TBD"}
             </span>
           )}
-          {game.status === "live" && (
+          {isLive && (
             <span className="text-[9px] font-bold tracking-[0.1em] px-1.5 py-0.5 rounded bg-[color:var(--color-flame)]/15 text-[color:var(--color-flame)] border border-[color:var(--color-flame)]/30 animate-live-dot">
               LIVE
             </span>
           )}
         </div>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={`text-[color:var(--color-text-mute)] transition-transform duration-300 shrink-0 ${
-            open ? "rotate-180" : ""
-          }`}
-        >
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
+        {useLivePage ? (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-[color:var(--color-flame)] shrink-0"
+          >
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        ) : (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`text-[color:var(--color-text-mute)] transition-transform duration-300 shrink-0 ${
+              open ? "rotate-180" : ""
+            }`}
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        )}
+    </>
+  );
 
-      {open && (
+  return (
+    <div className="rounded-[var(--radius-card)] border border-white/5 bg-gradient-to-br from-[color:var(--color-surface-2)] to-[color:var(--color-surface)] overflow-hidden">
+      {useLivePage ? (
+        <Link
+          href={`/games/${game.id}`}
+          className="w-full flex items-center justify-between px-4 py-3 text-left"
+        >
+          {header}
+        </Link>
+      ) : (
+        <button
+          onClick={() => setOpen(!open)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left"
+        >
+          {header}
+        </button>
+      )}
+
+      {!useLivePage && open && (
         <div className="border-t border-white/5 animate-fade-up">
           {game.status === "final" && logs.length > 0 ? (
             <>
@@ -315,12 +351,20 @@ export default function GamesList({
     logsByGame[gid].push(log as unknown as GameLog);
   }
 
-  // Group games by date
+  // Group games by date, then sort each day by tip-off (earliest first).
+  // Games without a tip_off go last.
   const dateMap = new Map<string, Game[]>();
   for (const g of games) {
     const list = dateMap.get(g.date) || [];
     list.push(g);
     dateMap.set(g.date, list);
+  }
+  for (const list of dateMap.values()) {
+    list.sort((a, b) => {
+      if (!a.tip_off) return 1;
+      if (!b.tip_off) return -1;
+      return a.tip_off.localeCompare(b.tip_off);
+    });
   }
 
   const todayNBA = new Date().toLocaleDateString("en-CA", {
@@ -380,6 +424,7 @@ export default function GamesList({
                   game={game}
                   players={players}
                   logs={logsByGame[game.id] || []}
+                  isToday={isToday}
                 />
               ))}
             </div>
