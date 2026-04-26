@@ -18,7 +18,7 @@ from datetime import UTC, date, datetime, timedelta
 import numpy as np
 
 from sync import db
-from sync.config import MIN_MINUTES_L10, NBA_API_DELAY
+from sync.config import MIN_MINUTES_L10, NBA_API_DELAY, UNAVAILABLE_STATUSES
 from sync.fetcher import (
     fetch_today_scoreboard,
     parse_today_games,
@@ -318,7 +318,7 @@ def run_sync():
                     continue
                 if p["id"] in picked_ids:
                     continue
-                if p.get("injury_status") in ("Out", "Doubtful"):
+                if p.get("injury_status") in UNAVAILABLE_STATUSES:
                     continue
                 # Rotation-fringe cutoff — see sync/weekly_plan.py for the
                 # same gate. Avoids surfacing benchers whose L5 is inflated

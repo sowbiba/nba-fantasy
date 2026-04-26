@@ -37,6 +37,12 @@ INJURY_MODIFIER = {
     "Day-To-Day": -0.10,
 }
 
+# Statuses that exclude a player from recommendations entirely.
+# Day-To-Day / Questionable are GTD (game-time decision) — uncertainty
+# high enough that we don't want the engine to propose them and risk a
+# DNP burning a watchlist slot.
+UNAVAILABLE_STATUSES = ("Out", "Doubtful", "Day-To-Day", "Questionable")
+
 # Playoff strategy: burn threshold
 # If best future spot > tonight + 10%, recommend saving
 BURN_THRESHOLD = 0.10

@@ -26,7 +26,7 @@ from scipy.optimize import linear_sum_assignment
 
 from sync import db
 from sync.advisor import generate_plan_argumentaire, generate_plan_verdict
-from sync.config import MIN_MINUTES_L10
+from sync.config import MIN_MINUTES_L10, UNAVAILABLE_STATUSES
 from sync.scoring import compute_performance_score
 from sync.strategy import (
     K_VAR,
@@ -268,7 +268,7 @@ def build_candidates(
                 # finite watchlist capital, not fall back to deep-bench fillers.
                 if p["id"] not in watchlist_map:
                     continue
-                if p.get("injury_status") in ("Out", "Doubtful"):
+                if p.get("injury_status") in UNAVAILABLE_STATUSES:
                     continue
                 season_avg = p.get("avg_ttfl_season", 0) or 0
                 # Filter very-low-usage players to keep the matrix tractable
