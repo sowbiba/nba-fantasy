@@ -86,6 +86,12 @@ export default function LiveBoxScore({
 
   useEffect(() => {
     fetchLive();
+  }, [fetchLive]);
+
+  useEffect(() => {
+    // Polling only matters while the game can still change.
+    if (data?.status === 3 || initialStatus === "final") return;
+
     let interval: ReturnType<typeof setInterval> | null = null;
 
     const start = () => {
@@ -118,7 +124,7 @@ export default function LiveBoxScore({
       document.removeEventListener("visibilitychange", onVisibility);
       clearInterval(tick);
     };
-  }, [fetchLive]);
+  }, [fetchLive, data?.status, initialStatus]);
 
   const isLive = data?.status === 2;
   const isFinal = data?.status === 3 || initialStatus === "final";
@@ -160,9 +166,9 @@ export default function LiveBoxScore({
                 À VENIR
               </span>
             )}
-            {data && (
+            {data && !isFinal && (
               <div className="text-[10px] text-[color:var(--color-text-soft)] mt-0.5">
-                {isLive || isFinal
+                {isLive
                   ? `Q${data.period} · ${parseClock(data.game_clock)}`
                   : data.status_text}
               </div>
@@ -179,24 +185,26 @@ export default function LiveBoxScore({
         </div>
       </div>
 
-      {/* refresh bar */}
-      <div className="flex items-center justify-between mt-3 px-1 text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-text-mute)]">
-        <span>
-          {loading && !data
-            ? "Chargement…"
-            : error
-              ? `Erreur : ${error}`
-              : `Actualisé il y a ${secondsAgo}s`}
-        </span>
-        <button
-          onClick={fetchLive}
-          disabled={loading}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:border-[color:var(--color-flame)]/40 hover:text-[color:var(--color-flame)] transition-colors disabled:opacity-50"
-        >
-          <span className={loading ? "animate-spin inline-block" : ""}>↻</span>
-          <span>Actualiser</span>
-        </button>
-      </div>
+      {/* refresh bar — hidden on finals (data won't change) */}
+      {!isFinal && (
+        <div className="flex items-center justify-between mt-3 px-1 text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-text-mute)]">
+          <span>
+            {loading && !data
+              ? "Chargement…"
+              : error
+                ? `Erreur : ${error}`
+                : `Actualisé il y a ${secondsAgo}s`}
+          </span>
+          <button
+            onClick={fetchLive}
+            disabled={loading}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-white/10 hover:border-[color:var(--color-flame)]/40 hover:text-[color:var(--color-flame)] transition-colors disabled:opacity-50"
+          >
+            <span className={loading ? "animate-spin inline-block" : ""}>↻</span>
+            <span>Actualiser</span>
+          </button>
+        </div>
+      )}
 
       {/* stats tables */}
       {data && data.players.length > 0 ? (
