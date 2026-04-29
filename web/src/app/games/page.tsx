@@ -1,6 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Game, Player } from "@/types";
-import Link from "next/link";
+import { Game } from "@/types";
 import GamesList from "./GamesList";
 
 export const revalidate = 300;
@@ -8,34 +7,17 @@ export const revalidate = 300;
 const PLAYOFFS_START = "2026-04-14";
 
 async function getData() {
-  const [gamesRes, playersRes] = await Promise.all([
-    supabase
-      .from("games")
-      .select("*")
-      .gte("date", PLAYOFFS_START)
-      .order("date", { ascending: false }),
-    supabase.from("players").select("id, name, team, position"),
-  ]);
+  const { data } = await supabase
+    .from("games")
+    .select("*")
+    .gte("date", PLAYOFFS_START)
+    .order("date", { ascending: false });
 
-  const games = (gamesRes.data || []) as Game[];
-  const players = (playersRes.data || []) as Player[];
-
-  // Fetch game_logs for final games
-  const finalIds = games.filter((g) => g.status === "final").map((g) => g.id);
-  let gameLogs: Record<string, unknown>[] = [];
-  if (finalIds.length > 0) {
-    const logsRes = await supabase
-      .from("game_logs")
-      .select("*")
-      .in("game_id", finalIds);
-    gameLogs = (logsRes.data || []) as Record<string, unknown>[];
-  }
-
-  return { games, players, gameLogs };
+  return { games: (data || []) as Game[] };
 }
 
 export default async function GamesPage() {
-  const { games, players, gameLogs } = await getData();
+  const { games } = await getData();
 
   return (
     <div className="px-4 py-5 animate-fade-in">
@@ -54,11 +36,7 @@ export default async function GamesPage() {
         </p>
       </div>
 
-      <GamesList
-        games={games}
-        players={Object.fromEntries(players.map((p) => [p.id, p]))}
-        gameLogs={gameLogs}
-      />
+      <GamesList games={games} />
     </div>
   );
 }
