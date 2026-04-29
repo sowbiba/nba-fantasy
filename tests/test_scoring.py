@@ -10,8 +10,9 @@ from sync.scoring import (
 
 
 def test_weighted_average_full_data():
+    # (60*3 + 55*2 + 50*1) / 6 = 340 / 6
     score = weighted_ttfl_average(avg_l5=60, avg_l10=55, avg_l20=50)
-    assert round(score, 2) == 55.83
+    assert round(score, 2) == 56.67
 
 def test_weighted_average_low_stats():
     score = weighted_ttfl_average(avg_l5=0, avg_l10=0, avg_l20=0)

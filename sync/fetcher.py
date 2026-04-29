@@ -209,18 +209,28 @@ def fetch_team_defense_stats(season: str = "2025-26") -> list[dict]:
 
 
 def compute_player_aggregates(game_logs: list[dict]) -> dict:
-    """Compute aggregated stats from game log dicts (from game_logs table)."""
-    if not game_logs:
-        return {
-            "avg_ttfl_l5": 0, "avg_ttfl_l10": 0, "avg_ttfl_l20": 0,
-            "avg_ttfl_season": 0, "stddev_ttfl": 0, "home_avg": 0, "away_avg": 0,
-            "avg_minutes_l10": 0,
-        }
+    """Compute aggregated stats from game log dicts (from game_logs table).
 
-    scores = [g["ttfl_score"] for g in game_logs]
-    home_scores = [g["ttfl_score"] for g in game_logs if g["is_home"]]
-    away_scores = [g["ttfl_score"] for g in game_logs if not g["is_home"]]
-    minutes = [g.get("minutes", 0) or 0 for g in game_logs]
+    DNPs (minutes == 0) are excluded from all averages — they reflect absence,
+    not performance, and would otherwise drag the rolling means to zero
+    (notably during injury stretches).
+    """
+    empty = {
+        "avg_ttfl_l5": 0, "avg_ttfl_l10": 0, "avg_ttfl_l20": 0,
+        "avg_ttfl_season": 0, "stddev_ttfl": 0, "home_avg": 0, "away_avg": 0,
+        "avg_minutes_l10": 0,
+    }
+    if not game_logs:
+        return empty
+
+    played = [g for g in game_logs if (g.get("minutes") or 0) > 0]
+    if not played:
+        return empty
+
+    scores = [g["ttfl_score"] for g in played]
+    home_scores = [g["ttfl_score"] for g in played if g["is_home"]]
+    away_scores = [g["ttfl_score"] for g in played if not g["is_home"]]
+    minutes = [g["minutes"] for g in played]
 
     return {
         "avg_ttfl_l5": float(np.mean(scores[:5])) if len(scores) >= 1 else 0,

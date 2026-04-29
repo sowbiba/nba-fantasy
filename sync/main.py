@@ -18,7 +18,14 @@ from datetime import UTC, date, datetime, timedelta
 import numpy as np
 
 from sync import db
-from sync.config import MIN_MINUTES_L10, NBA_API_DELAY, UNAVAILABLE_STATUSES
+from sync.config import (
+    MIN_MINUTES_L10,
+    NBA_API_DELAY,
+    UNAVAILABLE_STATUSES,
+    WATCHLIST_BASE,
+    WATCHLIST_ELIM_BONUS,
+    WATCHLIST_GAME3_SURGE,
+)
 from sync.fetcher import (
     fetch_today_scoreboard,
     parse_today_games,
@@ -44,12 +51,8 @@ from sync.ttfl import compute_ttfl_from_game_log
 from sync.future import compute_best_future_opportunity
 
 
-# User watchlist ranking boosts, escalating with elimination pressure. See
-# /home/isow/.claude/plans/greedy-swinging-wirth.md for rationale.
-WATCHLIST_BASE = {1: 0.12, 2: 0.07, 3: 0.03}
-WATCHLIST_ELIM_BONUS = {"critical": 0.35, "high": 0.15, "none": 0.0}
-# Challenger Game 3 at home after 0-2 deficit — watchlist players only.
-GAME3_SURGE_MULTIPLIER = 1.12
+# Watchlist boost constants live in sync.config so main.py and weekly_plan.py
+# stay in sync.
 
 
 def run_sync():
@@ -242,7 +245,10 @@ def run_sync():
                     tonight_player_ids.add(p["id"])
 
         for pid in tonight_player_ids:
-            logs = db.get_player_game_logs(client, pid, limit=20)
+            # Pull a wider window so the L20 still has 20 *played* games
+            # after DNPs are filtered out (long injury stretches can leave
+            # ~half the recent logs as zeros).
+            logs = db.get_player_game_logs(client, pid, limit=40)
             if not logs:
                 nba_logs = fetch_player_game_logs_nba_api(pid)
                 if nba_logs:
@@ -479,7 +485,7 @@ def run_sync():
                 and player_wins == 0
                 and opponent_wins == 2
             )
-            surge_multiplier = GAME3_SURGE_MULTIPLIER if game3_surge else 1.0
+            surge_multiplier = WATCHLIST_GAME3_SURGE if game3_surge else 1.0
 
             sp["strategy_score"] = strategy_score
             sp["reservation_penalty"] = reservation

@@ -130,9 +130,9 @@ def seed():
                 if hw + aw > series_map[key]["home_wins"] + series_map[key]["away_wins"]:
                     series_map[key]["home_wins"] = hw
                     series_map[key]["away_wins"] = aw
-                # Mark finished if someone reached 4
+                # Mark completed if someone reached 4
                 if hw == 4 or aw == 4:
-                    series_map[key]["status"] = "finished"
+                    series_map[key]["status"] = "completed"
 
             playoff_games.append({
                 "game_id": g.get("gameId"),
@@ -159,6 +159,7 @@ def seed():
     key_to_id: dict[tuple[str, str], int] = {}
     inserted_count = 0
     updated_count = 0
+    preserved_count = 0
     for s in series_map.values():
         unordered = series_key(s["home_team"], s["away_team"])
         lookup_key = (s["round"], unordered)
@@ -174,6 +175,20 @@ def seed():
         }
 
         if existing_row:
+            # NBA's static schedule lags reality (a Game 4 win that closes a
+            # sweep can take ~24h to appear in seriesText). Never let stale
+            # NBA data overwrite a completed series or downgrade higher win
+            # counts already recorded locally.
+            existing_total = (
+                (existing_row.get("home_wins") or 0)
+                + (existing_row.get("away_wins") or 0)
+            )
+            incoming_total = s["home_wins"] + s["away_wins"]
+            if existing_row.get("status") == "completed" or incoming_total < existing_total:
+                key_to_id[unordered] = existing_row["id"]
+                preserved_count += 1
+                continue
+
             client.table("series").update(payload).eq(
                 "id", existing_row["id"]
             ).execute()
@@ -185,7 +200,10 @@ def seed():
             key_to_id[unordered] = new_id
             inserted_count += 1
 
-    print(f"Series: {inserted_count} inserted, {updated_count} updated.")
+    print(
+        f"Series: {inserted_count} inserted, {updated_count} updated, "
+        f"{preserved_count} preserved (completed or stale)."
+    )
 
     # Now update games with series_id and game_number
     updated_games = 0
@@ -201,12 +219,15 @@ def seed():
 
     print(f"Linked {updated_games} games to their series.")
 
-    # Summary
+    # Summary — read from DB (not series_map) so completed/stale-protected
+    # rows show their authoritative wins, not NBA's lagging snapshot.
     print()
-    for k, v in sorted(series_map.items(), key=lambda x: (x[1]["round"], x[0])):
+    final = client.table("series").select("*").order("round").execute().data
+    for s in final:
+        flag = " ✅" if s["status"] == "completed" else ""
         print(
-            f"  R{v['round']} · {v['home_team']} (home court) vs {v['away_team']}"
-            f" ({v['home_wins']}-{v['away_wins']})"
+            f"  R{s['round']} · {s['home_team']} (home court) vs {s['away_team']}"
+            f" ({s['home_wins']}-{s['away_wins']}){flag}"
         )
 
 

@@ -26,7 +26,13 @@ from scipy.optimize import linear_sum_assignment
 
 from sync import db
 from sync.advisor import generate_plan_argumentaire, generate_plan_verdict
-from sync.config import MIN_MINUTES_L10, UNAVAILABLE_STATUSES
+from sync.config import (
+    MIN_MINUTES_L10,
+    UNAVAILABLE_STATUSES,
+    WATCHLIST_BASE,
+    WATCHLIST_ELIM_BONUS,
+    WATCHLIST_GAME3_SURGE,
+)
 from sync.scoring import compute_performance_score
 from sync.strategy import (
     K_VAR,
@@ -377,13 +383,9 @@ def build_candidates(
 
                 # Watchlist boost (same model as daily reco) + challenger
                 # Game 3 surge for flagged players only.
-                base_boost = (
-                    {1: 0.12, 2: 0.07, 3: 0.03}.get(priority, 0) if priority else 0
-                )
+                base_boost = WATCHLIST_BASE.get(priority, 0) if priority else 0
                 elim_boost = (
-                    {"critical": 0.35, "high": 0.15, "none": 0.0}.get(elim, 0)
-                    if priority
-                    else 0
+                    WATCHLIST_ELIM_BONUS.get(elim, 0) if priority else 0
                 )
                 watchlist_boost = base_boost + elim_boost
 
@@ -400,7 +402,7 @@ def build_candidates(
                     and player_wins == 0
                     and opponent_wins == 2
                 )
-                surge_multiplier = 1.12 if game3_surge else 1.0
+                surge_multiplier = WATCHLIST_GAME3_SURGE if game3_surge else 1.0
 
                 # Loss-aversion penalty: si le match a une bonne chance de
                 # ne pas avoir lieu, déduire une perte attendue pondérée par

@@ -13,7 +13,10 @@ from sync.config import WEIGHTS, FATIGUE
 
 
 def weighted_ttfl_average(avg_l5: float, avg_l10: float, avg_l20: float) -> float:
-    return (avg_l5 * 3 + avg_l10 * 1 + avg_l20 * 2) / 6
+    # L5 dominates (50%), L10 reinforces (33%), L20 anchors (17%).
+    # Skews recent: in playoffs, the L20 quickly fills with playoff games
+    # round after round, while regular-season residue stops dragging picks.
+    return (avg_l5 * 3 + avg_l10 * 2 + avg_l20 * 1) / 6
 
 
 def matchup_factor(opponent_ttfl_at_position: float, league_avg_ttfl_at_position: float) -> float:

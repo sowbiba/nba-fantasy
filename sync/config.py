@@ -51,3 +51,13 @@ BURN_THRESHOLD = 0.10
 # candidate. Below this, DNP/garbage-time outliers dominate the signal and
 # we don't want the engine to propose them.
 MIN_MINUTES_L10 = 12
+
+# Watchlist priority boosts on estimated_score (multiplicative).
+# Priority 1 dominates so the franchise pick wins close calls;
+# 2 and 3 stay nudges only.
+WATCHLIST_BASE = {1: 0.20, 2: 0.08, 3: 0.03}
+# Extra boost when the player's team is at elimination risk.
+# 'critical' = next loss ends the series; 'high' = facing a 2-3 deficit.
+WATCHLIST_ELIM_BONUS = {"critical": 0.35, "high": 0.15, "none": 0.0}
+# Challenger Game 3 at home after 0-2 deficit — watchlist players only.
+WATCHLIST_GAME3_SURGE = 1.12
