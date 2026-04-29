@@ -158,6 +158,7 @@ def _build_aggregate_payload(
         "primary_def_minutes": round(primary_minutes, 2),
         "samples_count": 1,  # incremented on conflict by the upsert helper
         "last_game_id": last_game_id,
+        "processed_game_ids": [last_game_id],
         "updated_at": datetime.now(UTC).isoformat(),
     }
 
@@ -218,10 +219,14 @@ def _blend_into(row: dict, payload: dict, game_id: str) -> dict | None:
     """Merge one new payload into an existing aggregate row.
 
     Returns the update payload, or None when the game is already
-    accounted for (idempotency guard).
+    accounted for. Idempotency is guaranteed by `processed_game_ids`
+    — a re-run of any historical game is a no-op because its id is
+    already in the array.
     """
-    if row.get("last_game_id") == game_id:
+    processed = list(row.get("processed_game_ids") or [])
+    if game_id in processed:
         return None
+
     old_min = float(row.get("primary_def_minutes") or 0)
     new_min = payload["primary_def_minutes"]
     total_min = old_min + new_min
@@ -252,6 +257,7 @@ def _blend_into(row: dict, payload: dict, game_id: str) -> dict | None:
         + payload["allowed_blk_against"]
     )
     merged["samples_count"] = int(row.get("samples_count") or 0) + 1
+    merged["processed_game_ids"] = processed + [game_id]
     return merged
 
 
