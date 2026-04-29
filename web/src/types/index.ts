@@ -112,4 +112,26 @@ export interface SyncLog {
 export interface RecommendationWithPlayer extends Recommendation {
   player: Player;
   game: Game;
+  matchup?: MatchupAggregate | null;
+}
+
+/**
+ * Per-pair, in-series defensive aggregate, populated by the sync from
+ * BoxScoreMatchupsV3. Used by the UI to surface "defended by X (62%)"
+ * context next to a recommendation.
+ */
+export interface MatchupAggregate {
+  player_id: number;
+  opponent_team: string;
+  series_id: number | null;
+  primary_def_id: number | null;
+  primary_def_name: string | null;
+  primary_def_share: number;
+  secondary_def_id: number | null;
+  secondary_def_name: string | null;
+  secondary_def_share: number;
+  allowed_off_ttfl_per36: number;
+  primary_def_minutes: number;
+  matchup_minutes_total: number;
+  samples_count: number;
 }

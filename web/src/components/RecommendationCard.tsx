@@ -1,5 +1,60 @@
 import Link from "next/link";
-import { RecommendationWithPlayer } from "@/types";
+import { MatchupAggregate, RecommendationWithPlayer } from "@/types";
+
+/**
+ * One-liner showing the primary defender on this matchup and the TTFL
+ * (offensive only) the player has produced under him in the active
+ * series. Renders nothing until we have at least 5 minutes of pair
+ * sample — below that, the team-positional fallback dominates the
+ * scoring layer anyway and the line would be misleading.
+ */
+function MatchupLine({
+  matchup,
+  playerName,
+}: {
+  matchup: MatchupAggregate | null | undefined;
+  playerName: string;
+}) {
+  if (!matchup || matchup.primary_def_minutes < 5 || !matchup.primary_def_name) {
+    return null;
+  }
+
+  const sharePct = Math.round(matchup.primary_def_share * 100);
+  const allowed = matchup.allowed_off_ttfl_per36;
+  // Color the allow rate qualitatively. We're *not* trying to grade
+  // absolute TTFL — the numbers below are heuristic for "favourable"
+  // vs "tough" matchups based on observed playoff distribution.
+  let toneClass = "text-[color:var(--color-text-soft)]";
+  if (allowed >= 35) toneClass = "text-[color:var(--color-emerald)]";
+  else if (allowed <= 22) toneClass = "text-[color:var(--color-flame-soft)]";
+
+  const firstName = playerName.split(" ")[0];
+
+  return (
+    <div className="mt-2 text-[11px] tracking-wide text-[color:var(--color-text-mute)]">
+      <span className="text-[10px] uppercase tracking-[0.18em] mr-1.5 text-[color:var(--color-text-soft)]/70">
+        Matchup
+      </span>
+      <span>
+        défendu par{" "}
+        <span className="font-semibold text-[color:var(--color-text)]">
+          {matchup.primary_def_name}
+        </span>{" "}
+        <span className="text-[color:var(--color-text-mute)]">
+          ({sharePct}%)
+        </span>
+        {" — "}
+        <span className={toneClass}>
+          {firstName} produit {allowed.toFixed(1)} TTFL/36
+        </span>{" "}
+        sur la série
+        {matchup.samples_count > 1
+          ? ` (${matchup.samples_count} matchs)`
+          : ""}
+      </span>
+    </div>
+  );
+}
 
 /**
  * Hero card for a Top-3 recommendation.
@@ -218,6 +273,8 @@ export default function RecommendationCard({
               </span>
             ) : null}
           </p>
+
+          <MatchupLine matchup={rec.matchup} playerName={player.name} />
 
           {/* badges */}
           <div className="flex flex-wrap gap-1.5 mt-3">

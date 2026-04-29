@@ -8,6 +8,7 @@ import {
   RecommendationWithPlayer,
   WatchlistEntry,
   Pick,
+  MatchupAggregate,
 } from "@/types";
 import SyncStatus from "@/components/SyncStatus";
 import GamesCollapsible from "@/components/GamesCollapsible";
@@ -52,7 +53,7 @@ async function getData() {
 
   const playersMap = new Map(players.map((p) => [p.id, p]));
 
-  const recsWithPlayers: RecommendationWithPlayer[] = recs
+  const recsWithoutMatchup: RecommendationWithPlayer[] = recs
     .map((r) => {
       const player = playersMap.get(r.player_id);
       const game = games.find(
@@ -62,6 +63,35 @@ async function getData() {
       return { ...r, player, game };
     })
     .filter(Boolean) as RecommendationWithPlayer[];
+
+  // Pull in-series matchup aggregates for tonight's recommended players.
+  // One IN(...) query keyed on player_id; we filter to the right
+  // opponent in JS since the (player_id, opponent) tuple isn't
+  // available as a server-side filter via the supabase-js builder.
+  let matchupRows: MatchupAggregate[] = [];
+  if (recsWithoutMatchup.length > 0) {
+    const playerIds = recsWithoutMatchup.map((r) => r.player_id);
+    const { data: matchupsData } = await supabase
+      .from("matchup_aggregates")
+      .select("*")
+      .in("player_id", playerIds);
+    matchupRows = (matchupsData || []) as MatchupAggregate[];
+  }
+  const matchupByKey = new Map<string, MatchupAggregate>();
+  for (const m of matchupRows) {
+    matchupByKey.set(`${m.player_id}:${m.opponent_team}`, m);
+  }
+
+  const recsWithPlayers: RecommendationWithPlayer[] = recsWithoutMatchup.map(
+    (r) => {
+      const opponent =
+        r.game.home_team === r.player.team
+          ? r.game.away_team
+          : r.game.home_team;
+      const matchup = matchupByKey.get(`${r.player_id}:${opponent}`) || null;
+      return { ...r, matchup };
+    }
+  );
 
   let gameDaysRemaining = 0;
   for (const s of series) {
