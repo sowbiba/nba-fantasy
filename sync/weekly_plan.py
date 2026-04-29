@@ -27,11 +27,12 @@ from scipy.optimize import linear_sum_assignment
 from sync import db
 from sync.advisor import generate_plan_argumentaire, generate_plan_verdict
 from sync.config import (
+    HARD_OUT_STATUSES,
     MIN_MINUTES_L10,
-    UNAVAILABLE_STATUSES,
     WATCHLIST_BASE,
     WATCHLIST_ELIM_BONUS,
     WATCHLIST_GAME3_SURGE,
+    play_probability,
 )
 from sync.scoring import compute_performance_score
 from sync.strategy import (
@@ -89,6 +90,10 @@ class Candidate:
     expected_remaining_after: float = 0.0   # E[games player still has after this slot]
     waste_cost: float = 0.0                 # absolute cost units (for verdict)
     tier_alternatives_at_risk: list[str] | None = None  # other watchlist names at risk
+    # Injury-aware EV: P(player actually plays given his current status).
+    # 1.0 for clean rotation players, 0.55 for Questionable, etc.
+    play_probability: float = 1.0
+    injury_status: str | None = None
 
 
 def _fr_day_label(iso_date: str) -> str:
@@ -274,7 +279,7 @@ def build_candidates(
                 # finite watchlist capital, not fall back to deep-bench fillers.
                 if p["id"] not in watchlist_map:
                     continue
-                if p.get("injury_status") in UNAVAILABLE_STATUSES:
+                if p.get("injury_status") in HARD_OUT_STATUSES:
                     continue
                 season_avg = p.get("avg_ttfl_season", 0) or 0
                 # Filter very-low-usage players to keep the matrix tractable
@@ -410,12 +415,18 @@ def build_candidates(
                 tier_value = TIER_CAPITAL_VALUE.get(priority, 0.0) if priority else 0.0
                 waste_cost_value = (1.0 - pick_prob) * tier_value
 
+                # Injury-aware EV (Q/DTD/Probable get downweighted; OUT/
+                # Doubtful are filtered above). Stacks multiplicatively with
+                # pick_prob: a Q player on a maybe-played G7 takes both hits.
+                play_prob = play_probability(p.get("injury_status"))
+
                 final_score = (
                     expected_utility
                     * (1.0 - reservation)
                     * (1.0 + watchlist_boost)
                     * surge_multiplier
                     * pick_prob
+                    * play_prob
                     - LAMBDA_RISK * waste_cost_value
                 )
                 # Don't let the assignment matrix see a negative cell — the
@@ -465,6 +476,8 @@ def build_candidates(
                     expected_remaining_after=float(expected_remaining),
                     waste_cost=float(waste_cost_value),
                     tier_alternatives_at_risk=alts_at_risk,
+                    play_probability=float(play_prob),
+                    injury_status=p.get("injury_status"),
                 ))
 
     return candidates, sorted(dates_with_games)

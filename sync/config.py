@@ -31,17 +31,39 @@ FATIGUE = {
     "rest_3plus": 0.03,
 }
 
-# Injury modifiers on estimated score
-INJURY_MODIFIER = {
-    "Questionable": -0.15,
-    "Day-To-Day": -0.10,
+# Probability that a player with a given ESPN injury_status will actually
+# suit up. Values come from rough historical observation (see TTFL post-
+# mortem on Q/DTD picks). Anything not in the map is treated as available
+# (probability 1.0).
+INJURY_PLAY_PROBABILITY = {
+    "Out": 0.00,
+    "Out For Season": 0.00,
+    "Suspended": 0.00,
+    "Doubtful": 0.20,
+    "Questionable": 0.55,
+    "Day-To-Day": 0.65,
+    "Game-Time Decision": 0.55,
+    "Probable": 0.85,
 }
 
-# Statuses that exclude a player from recommendations entirely.
-# Day-To-Day / Questionable are GTD (game-time decision) — uncertainty
-# high enough that we don't want the engine to propose them and risk a
-# DNP burning a watchlist slot.
-UNAVAILABLE_STATUSES = ("Out", "Doubtful", "Day-To-Day", "Questionable")
+# Hard exclusion: players with these statuses are removed from the
+# candidate pool entirely. Anything between (Q / DTD / Probable) stays
+# eligible but its estimated score is multiplied by play probability so
+# uncertainty maps onto EV.
+HARD_OUT_STATUSES = ("Out", "Doubtful", "Out For Season", "Suspended")
+
+# Kept for backward compat (older code paths still reference it). Mirrors
+# HARD_OUT_STATUSES — Q/DTD are no longer hard-excluded.
+UNAVAILABLE_STATUSES = HARD_OUT_STATUSES
+
+
+def play_probability(status: str | None) -> float:
+    """Return the modeled probability that a player will play given his
+    current injury_status string. Defaults to 1.0 when status is None or
+    unknown (clean rotation player)."""
+    if not status:
+        return 1.0
+    return INJURY_PLAY_PROBABILITY.get(status, 1.0)
 
 # Playoff strategy: burn threshold
 # If best future spot > tonight + 10%, recommend saving
