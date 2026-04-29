@@ -19,12 +19,13 @@ import numpy as np
 
 from sync import db
 from sync.config import (
+    HARD_OUT_STATUSES,
     MIN_MINUTES_L10,
     NBA_API_DELAY,
-    UNAVAILABLE_STATUSES,
     WATCHLIST_BASE,
     WATCHLIST_ELIM_BONUS,
     WATCHLIST_GAME3_SURGE,
+    play_probability,
 )
 from sync.fetcher import (
     fetch_today_scoreboard,
@@ -106,7 +107,11 @@ def run_sync():
             if game["status"] != "final":
                 continue
             print(f"  Fetching box score for {game['id']}...")
-            box_players = fetch_live_box_score(game["id"])
+            box_players = fetch_live_box_score(
+                game["id"],
+                home_tricode=game.get("home_team"),
+                game_date=game.get("date"),
+            )
             game_logs = []
             for bp in box_players:
                 game_logs.append({
@@ -324,7 +329,7 @@ def run_sync():
                     continue
                 if p["id"] in picked_ids:
                     continue
-                if p.get("injury_status") in UNAVAILABLE_STATUSES:
+                if p.get("injury_status") in HARD_OUT_STATUSES:
                     continue
                 # Rotation-fringe cutoff — see sync/weekly_plan.py for the
                 # same gate. Avoids surfacing benchers whose L5 is inflated
@@ -487,16 +492,23 @@ def run_sync():
             )
             surge_multiplier = WATCHLIST_GAME3_SURGE if game3_surge else 1.0
 
+            # Injury-aware EV: a Q player with a 55% chance to play has his
+            # expected score halved-ish, naturally pushing him below an
+            # equivalent clean candidate without a hard exclusion.
+            play_prob = play_probability(sp["player"].get("injury_status"))
+
             sp["strategy_score"] = strategy_score
             sp["reservation_penalty"] = reservation
             sp["watchlist_priority"] = priority
             sp["watchlist_boost"] = watchlist_boost
             sp["game3_surge"] = game3_surge
+            sp["play_probability"] = play_prob
             sp["estimated_score"] = (
                 strategy_score
                 * (1.0 - reservation)
                 * (1.0 + watchlist_boost)
                 * surge_multiplier
+                * play_prob
             )
             sp["series_score"] = series_score
             sp["game_number"] = game.get("game_number", 0) or 0

@@ -8,6 +8,7 @@ import time
 from datetime import date, datetime, timedelta
 
 from nba_api.stats.endpoints import (
+    BoxScoreTraditionalV3,
     LeagueDashTeamStats,
     CommonTeamRoster,
     PlayerGameLog,
@@ -73,16 +74,106 @@ def parse_today_games(scoreboard: dict, today: date) -> list[dict]:
     return games
 
 
-def fetch_live_box_score(game_id: str) -> list[dict]:
-    """Fetch box score for a finished/live game. Returns player stat dicts."""
+def _parse_v3_minutes(min_str: str | None) -> int:
+    """Parse 'mm:ss' from BoxScoreTraditionalV3 into integer minutes (DNP -> 0)."""
+    if not min_str or ":" not in min_str:
+        return 0
+    try:
+        return int(min_str.split(":")[0])
+    except (ValueError, IndexError):
+        return 0
+
+
+def fetch_box_score_stats_api(
+    game_id: str,
+    home_tricode: str | None = None,
+    game_date: str | None = None,
+) -> list[dict]:
+    """Persistent box-score fallback via NBA Stats API (BoxScoreTraditionalV3).
+
+    The CDN live boxscore JSON is only kept for a few hours after the final
+    buzzer. Once it's purged, the stats endpoint is the only way to recover
+    the player rows. Returns the same shape as `fetch_live_box_score`.
+    """
+    time.sleep(NBA_API_DELAY)
+    try:
+        box = BoxScoreTraditionalV3(game_id=game_id)
+        df = box.player_stats.get_data_frame()
+    except Exception:
+        return []
+
+    if df.empty:
+        return []
+
+    # Determine home team — pass-in is authoritative (we already store it on
+    # the games table). If missing, fall back to the team_stats endpoint
+    # which lists home/away teams in order.
+    home_resolved = home_tricode
+    if not home_resolved:
+        try:
+            team_df = box.team_stats.get_data_frame()
+            # team_stats rows are ordered: home first, then away.
+            if not team_df.empty:
+                home_resolved = team_df.iloc[0]["teamTricode"]
+        except Exception:
+            home_resolved = None
+
+    players = []
+    for _, row in df.iterrows():
+        minutes = _parse_v3_minutes(row.get("minutes"))
+        pts = int(row.get("points") or 0)
+        reb = int(row.get("reboundsTotal") or 0)
+        ast = int(row.get("assists") or 0)
+        stl = int(row.get("steals") or 0)
+        blk = int(row.get("blocks") or 0)
+        fgm = int(row.get("fieldGoalsMade") or 0)
+        fga = int(row.get("fieldGoalsAttempted") or 0)
+        tpm = int(row.get("threePointersMade") or 0)
+        tpa = int(row.get("threePointersAttempted") or 0)
+        ftm = int(row.get("freeThrowsMade") or 0)
+        fta = int(row.get("freeThrowsAttempted") or 0)
+        tov = int(row.get("turnovers") or 0)
+        ttfl = compute_ttfl_score(
+            pts, reb, ast, stl, blk, fgm, fga, tpm, tpa, ftm, fta, tov
+        )
+        is_home = (
+            home_resolved is not None and row.get("teamTricode") == home_resolved
+        )
+        players.append({
+            "player_id": int(row["personId"]),
+            "player_name": f"{row['firstName']} {row['familyName']}",
+            "team": row.get("teamTricode") or "",
+            "game_id": str(row.get("gameId") or game_id),
+            "date": game_date or "",
+            "pts": pts, "reb": reb, "ast": ast, "stl": stl, "blk": blk,
+            "fgm": fgm, "fga": fga, "tpm": tpm, "tpa": tpa,
+            "ftm": ftm, "fta": fta, "tov": tov,
+            "minutes": minutes,
+            "ttfl_score": ttfl,
+            "is_home": is_home,
+        })
+    return players
+
+
+def fetch_live_box_score(
+    game_id: str,
+    home_tricode: str | None = None,
+    game_date: str | None = None,
+) -> list[dict]:
+    """Fetch box score for a finished/live game. Returns player stat dicts.
+
+    Tries the CDN live endpoint first (instant, no rate limit). Falls back to
+    the persistent NBA Stats API when the CDN has purged the JSON — typically
+    a few hours after the final buzzer.
+    """
     try:
         box = BoxScore(game_id=game_id)
         data = box.get_dict()["game"]
     except Exception:
-        return []
+        return fetch_box_score_stats_api(game_id, home_tricode, game_date)
 
     players = []
-    game_date = data.get("gameTimeUTC", "")[:10]
+    cdn_game_date = data.get("gameTimeUTC", "")[:10] or game_date
 
     for side in ["homeTeam", "awayTeam"]:
         team = data[side]
@@ -127,7 +218,7 @@ def fetch_live_box_score(game_id: str) -> list[dict]:
                 "player_name": f"{p['firstName']} {p['familyName']}",
                 "team": team_tricode,
                 "game_id": data["gameId"],
-                "date": game_date,
+                "date": cdn_game_date,
                 "pts": pts, "reb": reb, "ast": ast, "stl": stl, "blk": blk,
                 "fgm": fgm, "fga": fga, "tpm": tpm, "tpa": tpa,
                 "ftm": ftm, "fta": fta, "tov": tov,
@@ -135,6 +226,11 @@ def fetch_live_box_score(game_id: str) -> list[dict]:
                 "ttfl_score": ttfl,
                 "is_home": is_home,
             })
+
+    # CDN sometimes returns the game shell with empty `players` arrays once
+    # it has started purging. Fall back to the stats API in that case.
+    if not players:
+        return fetch_box_score_stats_api(game_id, home_tricode, game_date)
 
     return players
 

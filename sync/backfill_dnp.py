@@ -25,7 +25,7 @@ def backfill(days: int = 60) -> None:
     start = today - timedelta(days=days)
 
     games = (
-        client.table("games").select("id, date, status")
+        client.table("games").select("id, date, status, home_team")
         .gte("date", start.isoformat()).lte("date", today.isoformat())
         .eq("status", "final")
         .order("date").execute().data
@@ -42,7 +42,11 @@ def backfill(days: int = 60) -> None:
 
     touched_player_ids: set[int] = set()
     for g in games:
-        box_players = fetch_live_box_score(g["id"])
+        box_players = fetch_live_box_score(
+            g["id"],
+            home_tricode=g.get("home_team"),
+            game_date=g.get("date"),
+        )
         if not box_players:
             print(f"  {g['date']} · {g['id']} · no box score returned (skip)")
             continue
