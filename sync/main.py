@@ -22,6 +22,7 @@ from sync.config import (
     HARD_OUT_STATUSES,
     MIN_MINUTES_L10,
     NBA_API_DELAY,
+    USE_PAIR_MATCHUP,
     WATCHLIST_BASE,
     WATCHLIST_ELIM_BONUS,
     WATCHLIST_GAME3_SURGE,
@@ -112,6 +113,21 @@ def run_sync():
                 home_tricode=game.get("home_team"),
                 game_date=game.get("date"),
             )
+            # Update per-pair matchup aggregates (best-effort — failures
+            # here shouldn't break the box-score sync).
+            try:
+                from sync.matchups import update_aggregates_for_game
+                touched = update_aggregates_for_game(
+                    client,
+                    game_id=game["id"],
+                    home_team=game["home_team"],
+                    away_team=game["away_team"],
+                    series_id=game.get("series_id"),
+                )
+                if touched:
+                    print(f"    matchup aggregates: {touched} pair(s) updated")
+            except Exception as e:
+                print(f"    (matchup aggregates skipped: {e})")
             game_logs = []
             for bp in box_players:
                 game_logs.append({
@@ -367,6 +383,32 @@ def run_sync():
                 else:
                     days_rest = 2
 
+                # Optional pair-matchup signal — gated behind USE_PAIR_MATCHUP.
+                # When enabled, the engine looks up `matchup_aggregates` for
+                # this (player, opponent) pair in the active series and
+                # blends the defender-specific allow rate into matchup_factor
+                # at a confidence weight set by accumulated matchup minutes.
+                pair_off_per36 = None
+                pair_minutes = 0.0
+                player_off_per36 = 0.0
+                if USE_PAIR_MATCHUP:
+                    from sync.matchups import lookup_pair_matchup
+                    pair_off_per36, pair_minutes = lookup_pair_matchup(
+                        client, p["id"], opponent
+                    )
+                    # Approximate the player's offensive-only TTFL per 36
+                    # from total avg + estimated split (≈70% for guards/
+                    # forwards, ≈60% for centers — REB/BLK weight more on
+                    # bigs). Good enough; the confidence weight on the
+                    # blended factor caps the impact.
+                    season_avg = p.get("avg_ttfl_season", 0) or 0
+                    avg_min = p.get("avg_minutes_l10", 0) or 24
+                    off_share = 0.60 if p["position"] == "C" else 0.70
+                    if avg_min > 0:
+                        player_off_per36 = (
+                            season_avg / avg_min * 36.0 * off_share
+                        )
+
                 perf_score = compute_performance_score(
                     avg_l5=p.get("avg_ttfl_l5", 0) or 0,
                     avg_l10=p.get("avg_ttfl_l10", 0) or 0,
@@ -380,6 +422,9 @@ def run_sync():
                     days_rest=days_rest,
                     recent_scores=recent_scores,
                     stddev=p.get("stddev_ttfl", 0) or 0,
+                    pair_allowed_off_ttfl_per36=pair_off_per36,
+                    pair_minutes_total=pair_minutes,
+                    player_off_avg_per36=player_off_per36,
                 )
 
                 scored_players.append({

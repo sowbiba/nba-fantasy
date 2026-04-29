@@ -74,6 +74,13 @@ BURN_THRESHOLD = 0.10
 # we don't want the engine to propose them.
 MIN_MINUTES_L10 = 12
 
+# Feature flag — when true, compute_performance_score blends the
+# defender-vs-player rate from `matchup_aggregates` into matchup_factor.
+# Off by default until backfill has populated enough data and we've
+# eyeballed a few syncs.
+USE_PAIR_MATCHUP = os.environ.get("USE_PAIR_MATCHUP", "").lower() in ("1", "true", "yes")
+
+
 # Watchlist priority boosts on estimated_score (multiplicative).
 # Priority 1 dominates so the franchise pick wins close calls;
 # 2 and 3 stay nudges only.

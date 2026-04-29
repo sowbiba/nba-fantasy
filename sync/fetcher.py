@@ -8,6 +8,7 @@ import time
 from datetime import date, datetime, timedelta
 
 from nba_api.stats.endpoints import (
+    BoxScoreMatchupsV3,
     BoxScoreTraditionalV3,
     LeagueDashTeamStats,
     CommonTeamRoster,
@@ -233,6 +234,50 @@ def fetch_live_box_score(
         return fetch_box_score_stats_api(game_id, home_tricode, game_date)
 
     return players
+
+
+def fetch_box_score_matchups(game_id: str) -> list[dict]:
+    """Per-pair matchup rows for a finished game.
+
+    Each row is one (offensive_player, primary_defender) pairing inside
+    this game, with matchup minutes and the offensive line the player
+    produced while that defender was on him. Source: NBA Stats
+    BoxScoreMatchupsV3 (post-game, persistent — unlike the live CDN).
+    """
+    time.sleep(NBA_API_DELAY)
+    try:
+        box = BoxScoreMatchupsV3(game_id=game_id)
+        df = box.player_stats.get_data_frame()
+    except Exception:
+        return []
+
+    if df.empty:
+        return []
+
+    rows = []
+    for _, r in df.iterrows():
+        seconds = float(r.get("matchupMinutesSort") or 0)
+        rows.append({
+            "game_id": str(r.get("gameId") or game_id),
+            "off_team": r.get("teamTricode") or "",
+            "off_player_id": int(r["personIdOff"]),
+            "off_player_name": f"{r['firstNameOff']} {r['familyNameOff']}",
+            "def_player_id": int(r["personIdDef"]),
+            "def_player_name": f"{r['firstNameDef']} {r['familyNameDef']}",
+            "matchup_seconds": seconds,
+            "partial_possessions": float(r.get("partialPossessions") or 0),
+            "player_points": int(r.get("playerPoints") or 0),
+            "matchup_assists": int(r.get("matchupAssists") or 0),
+            "matchup_turnovers": int(r.get("matchupTurnovers") or 0),
+            "matchup_blocks": int(r.get("matchupBlocks") or 0),
+            "matchup_fgm": int(r.get("matchupFieldGoalsMade") or 0),
+            "matchup_fga": int(r.get("matchupFieldGoalsAttempted") or 0),
+            "matchup_tpm": int(r.get("matchupThreePointersMade") or 0),
+            "matchup_tpa": int(r.get("matchupThreePointersAttempted") or 0),
+            "matchup_ftm": int(r.get("matchupFreeThrowsMade") or 0),
+            "matchup_fta": int(r.get("matchupFreeThrowsAttempted") or 0),
+        })
+    return rows
 
 
 def fetch_player_game_logs_nba_api(player_id: int, season: str = "2025-26") -> list[dict]:

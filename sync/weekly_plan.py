@@ -29,6 +29,7 @@ from sync.advisor import generate_plan_argumentaire, generate_plan_verdict
 from sync.config import (
     HARD_OUT_STATUSES,
     MIN_MINUTES_L10,
+    USE_PAIR_MATCHUP,
     WATCHLIST_BASE,
     WATCHLIST_ELIM_BONUS,
     WATCHLIST_GAME3_SURGE,
@@ -315,6 +316,19 @@ def build_candidates(
 
                 opp_ttfl = _opponent_ttfl(team_defense, opponent, p["position"])
 
+                pair_off_per36 = None
+                pair_minutes = 0.0
+                player_off_per36 = 0.0
+                if USE_PAIR_MATCHUP:
+                    from sync.matchups import lookup_pair_matchup
+                    pair_off_per36, pair_minutes = lookup_pair_matchup(
+                        client, p["id"], opponent
+                    )
+                    avg_min = p.get("avg_minutes_l10", 0) or 24
+                    off_share = 0.60 if p["position"] == "C" else 0.70
+                    if avg_min > 0:
+                        player_off_per36 = season_avg / avg_min * 36.0 * off_share
+
                 perf = compute_performance_score(
                     avg_l5=p.get("avg_ttfl_l5", 0) or 0,
                     avg_l10=p.get("avg_ttfl_l10", 0) or 0,
@@ -328,6 +342,9 @@ def build_candidates(
                     days_rest=days_rest,
                     recent_scores=recent_scores,
                     stddev=p.get("stddev_ttfl", 0) or 0,
+                    pair_allowed_off_ttfl_per36=pair_off_per36,
+                    pair_minutes_total=pair_minutes,
+                    player_off_avg_per36=player_off_per36,
                 )
 
                 # Elimination risk for this specific game's series

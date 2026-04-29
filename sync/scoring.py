@@ -19,10 +19,42 @@ def weighted_ttfl_average(avg_l5: float, avg_l10: float, avg_l20: float) -> floa
     return (avg_l5 * 3 + avg_l10 * 2 + avg_l20 * 1) / 6
 
 
-def matchup_factor(opponent_ttfl_at_position: float, league_avg_ttfl_at_position: float) -> float:
+def matchup_factor(
+    opponent_ttfl_at_position: float,
+    league_avg_ttfl_at_position: float,
+    pair_allowed_off_ttfl_per36: float | None = None,
+    pair_minutes_total: float = 0.0,
+    player_off_avg_per36: float = 0.0,
+) -> float:
+    """Adaptive matchup factor.
+
+    Falls back to the team-positional average when there's no in-series
+    pair sample (R1 G1, or pre-backfill). As soon as a real defender vs
+    this player has accumulated minutes, the factor blends in his
+    suppression rate, weighted by confidence:
+
+        confidence = clamp((minutes - 5) / 55, 0, 1)
+        factor = team_factor × (1 - c) + pair_factor × c
+
+    pair_factor uses *offensive-only* TTFL (PTS + AST + FG/3P/FT − misses
+    − TOV) so REB/STL/BLK_BY — which aren't matchup-attributable — don't
+    distort the comparison.
+    """
     if league_avg_ttfl_at_position == 0:
-        return 1.0
-    return opponent_ttfl_at_position / league_avg_ttfl_at_position
+        team_factor = 1.0
+    else:
+        team_factor = opponent_ttfl_at_position / league_avg_ttfl_at_position
+
+    if (
+        pair_allowed_off_ttfl_per36 is None
+        or pair_minutes_total < 5
+        or player_off_avg_per36 <= 0
+    ):
+        return team_factor
+
+    pair_factor = pair_allowed_off_ttfl_per36 / player_off_avg_per36
+    confidence = max(0.0, min(1.0, (pair_minutes_total - 5) / 55.0))
+    return team_factor * (1 - confidence) + pair_factor * confidence
 
 
 def home_away_factor(home_avg: float, away_avg: float, season_avg: float, is_home: bool) -> float:
@@ -77,10 +109,19 @@ def compute_performance_score(
     days_rest: int,
     recent_scores: list[int | float],
     stddev: float,
+    pair_allowed_off_ttfl_per36: float | None = None,
+    pair_minutes_total: float = 0.0,
+    player_off_avg_per36: float = 0.0,
 ) -> float:
     base = weighted_ttfl_average(avg_l5, avg_l10, avg_l20)
     factors = {
-        "matchup": matchup_factor(opponent_ttfl_at_position, league_avg_ttfl_at_position),
+        "matchup": matchup_factor(
+            opponent_ttfl_at_position,
+            league_avg_ttfl_at_position,
+            pair_allowed_off_ttfl_per36=pair_allowed_off_ttfl_per36,
+            pair_minutes_total=pair_minutes_total,
+            player_off_avg_per36=player_off_avg_per36,
+        ),
         "home_away": home_away_factor(home_avg, away_avg, season_avg, is_home),
         "fatigue": fatigue_factor(days_rest),
         "trend": trend_factor(recent_scores),
