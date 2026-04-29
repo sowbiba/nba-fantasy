@@ -29,18 +29,26 @@ def backfill(days: int = 30) -> None:
     print(f"{len(games)} final games in [{start} → {today}]")
 
     total_touched = 0
+    failures = 0
     for g in games:
-        touched = update_aggregates_for_game(
-            client,
-            game_id=g["id"],
-            home_team=g["home_team"],
-            away_team=g["away_team"],
-            series_id=g.get("series_id"),
-        )
+        try:
+            touched = update_aggregates_for_game(
+                client,
+                game_id=g["id"],
+                home_team=g["home_team"],
+                away_team=g["away_team"],
+                series_id=g.get("series_id"),
+            )
+        except Exception as e:
+            failures += 1
+            print(f"  {g['date']} · {g['id']} · FAILED ({type(e).__name__}: {e})")
+            continue
         total_touched += touched
         print(f"  {g['date']} · {g['id']} · {touched} (player, opponent) rows")
 
-    print(f"\nDone. {total_touched} aggregate rows touched.")
+    print(
+        f"\nDone. {total_touched} aggregate rows touched, {failures} game(s) failed."
+    )
 
 
 if __name__ == "__main__":

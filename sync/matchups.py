@@ -197,6 +197,64 @@ def lookup_pair_matchup(
     return None, 0.0
 
 
+def _retry(fn, *, attempts: int = 3, base_delay: float = 0.5):
+    """Run `fn` with exponential-backoff retry on transient transport
+    errors (Supabase HTTP/2 connection reset, NBA stats hiccups). Re-
+    raises after the last attempt so callers can decide what to do."""
+    import time as _time
+    last_exc: Exception | None = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:  # broad on purpose: httpcore + supabase wrap
+            last_exc = e
+            _time.sleep(base_delay * (2 ** i))
+    if last_exc is not None:
+        raise last_exc
+    return None
+
+
+def _blend_into(row: dict, payload: dict, game_id: str) -> dict | None:
+    """Merge one new payload into an existing aggregate row.
+
+    Returns the update payload, or None when the game is already
+    accounted for (idempotency guard).
+    """
+    if row.get("last_game_id") == game_id:
+        return None
+    old_min = float(row.get("primary_def_minutes") or 0)
+    new_min = payload["primary_def_minutes"]
+    total_min = old_min + new_min
+    if total_min <= 0:
+        return None
+
+    def blend(key):
+        return (
+            (float(row.get(key) or 0) * old_min)
+            + (payload[key] * new_min)
+        ) / total_min
+
+    merged = dict(payload)
+    merged["allowed_off_ttfl_per36"] = round(blend("allowed_off_ttfl_per36"), 2)
+    merged["allowed_pts_per36"] = round(blend("allowed_pts_per36"), 2)
+    merged["allowed_ast_per36"] = round(blend("allowed_ast_per36"), 2)
+    merged["allowed_to_per36"] = round(blend("allowed_to_per36"), 2)
+    merged["allowed_fg_pct"] = round(blend("allowed_fg_pct"), 3)
+    merged["allowed_3p_pct"] = round(blend("allowed_3p_pct"), 3)
+    merged["matchup_minutes_total"] = round(
+        float(row.get("matchup_minutes_total") or 0)
+        + payload["matchup_minutes_total"],
+        2,
+    )
+    merged["primary_def_minutes"] = round(total_min, 2)
+    merged["allowed_blk_against"] = (
+        int(row.get("allowed_blk_against") or 0)
+        + payload["allowed_blk_against"]
+    )
+    merged["samples_count"] = int(row.get("samples_count") or 0) + 1
+    return merged
+
+
 def update_aggregates_for_game(
     client,
     game_id: str,
@@ -206,23 +264,24 @@ def update_aggregates_for_game(
 ) -> int:
     """Pull matchup data for one game and merge it into matchup_aggregates.
 
-    Idempotent: re-running on the same game_id won't double-count
-    (samples are merged via game_id check). Returns the number of
-    (player, opponent) rows touched.
+    Batches the existence check into one query (instead of one per
+    player) — the per-player loop was hammering Supabase's HTTP/2
+    connection during the 30-day backfill and triggering peer resets.
+    Re-running on the same game_id is idempotent: rows whose
+    last_game_id already matches are skipped.
     """
     rows = fetch_box_score_matchups(game_id)
     if not rows:
         return 0
 
     by_off = _aggregate_rows(rows)
-    touched = 0
+    if not by_off:
+        return 0
 
+    # Build all payloads up front so we can batch the existence check.
+    payloads: list[dict] = []
     for off_id, slot in by_off.items():
-        # Opponent is the team the defender plays for. We don't have it
-        # directly, but the offensive player belongs to one of the two
-        # teams in this game; the opponent is the other.
         opponent = away_team if slot["off_team"] == home_team else home_team
-
         payload = _build_aggregate_payload(
             player_id=off_id,
             off_team=slot["off_team"],
@@ -231,79 +290,53 @@ def update_aggregates_for_game(
             by_off_slot=slot,
             last_game_id=game_id,
         )
-        if payload is None:
-            continue
+        if payload is not None:
+            payloads.append(payload)
 
-        # Read the existing aggregate (if any) and merge by averaging the
-        # per-36 rates weighted by primary_def_minutes. Skip the merge
-        # entirely when the row already references this game_id (re-run
-        # safety).
-        existing_q = (
+    if not payloads:
+        return 0
+
+    # One round-trip to fetch all relevant existing aggregates: filter
+    # by player_id IN (...) AND series_id (one bucket per game).
+    player_ids = list({p["player_id"] for p in payloads})
+
+    def _fetch_existing():
+        q = (
             client.table("matchup_aggregates")
             .select("*")
-            .eq("player_id", payload["player_id"])
-            .eq("opponent_team", payload["opponent_team"])
+            .in_("player_id", player_ids)
         )
-        if payload["series_id"] is None:
-            existing_q = existing_q.is_("series_id", "null")
+        if series_id is None:
+            q = q.is_("series_id", "null")
         else:
-            existing_q = existing_q.eq("series_id", payload["series_id"])
-        existing = existing_q.execute().data
+            q = q.eq("series_id", series_id)
+        return q.execute().data or []
 
-        if existing:
-            row = existing[0]
-            if row.get("last_game_id") == game_id:
-                # Already counted this game — nothing to do.
-                continue
-            old_min = float(row.get("primary_def_minutes") or 0)
-            new_min = payload["primary_def_minutes"]
-            total_min = old_min + new_min
-            if total_min <= 0:
-                continue
+    existing_rows = _retry(_fetch_existing) or []
+    existing_index: dict[tuple[int, str], dict] = {
+        (int(r["player_id"]), r["opponent_team"]): r for r in existing_rows
+    }
 
-            def blend(old_key, new_key):
-                return (
-                    (float(row.get(old_key) or 0) * old_min)
-                    + (payload[new_key] * new_min)
-                ) / total_min
+    inserts: list[dict] = []
+    updates: list[tuple[int, dict]] = []  # (id, payload)
+    for payload in payloads:
+        key = (payload["player_id"], payload["opponent_team"])
+        existing = existing_index.get(key)
+        if existing is None:
+            inserts.append(payload)
+            continue
+        merged = _blend_into(existing, payload, game_id)
+        if merged is None:
+            continue  # idempotent skip
+        updates.append((existing["id"], merged))
 
-            payload["allowed_off_ttfl_per36"] = round(
-                blend("allowed_off_ttfl_per36", "allowed_off_ttfl_per36"), 2
+    if inserts:
+        _retry(lambda: client.table("matchup_aggregates").insert(inserts).execute())
+    for row_id, merged in updates:
+        _retry(
+            lambda r=row_id, p=merged: (
+                client.table("matchup_aggregates").update(p).eq("id", r).execute()
             )
-            payload["allowed_pts_per36"] = round(
-                blend("allowed_pts_per36", "allowed_pts_per36"), 2
-            )
-            payload["allowed_ast_per36"] = round(
-                blend("allowed_ast_per36", "allowed_ast_per36"), 2
-            )
-            payload["allowed_to_per36"] = round(
-                blend("allowed_to_per36", "allowed_to_per36"), 2
-            )
-            payload["allowed_fg_pct"] = round(
-                blend("allowed_fg_pct", "allowed_fg_pct"), 3
-            )
-            payload["allowed_3p_pct"] = round(
-                blend("allowed_3p_pct", "allowed_3p_pct"), 3
-            )
-            payload["matchup_minutes_total"] = round(
-                float(row.get("matchup_minutes_total") or 0)
-                + payload["matchup_minutes_total"],
-                2,
-            )
-            payload["primary_def_minutes"] = round(total_min, 2)
-            payload["allowed_blk_against"] = (
-                int(row.get("allowed_blk_against") or 0)
-                + payload["allowed_blk_against"]
-            )
-            payload["samples_count"] = (
-                int(row.get("samples_count") or 0) + 1
-            )
-            client.table("matchup_aggregates").update(payload).eq(
-                "id", row["id"]
-            ).execute()
-        else:
-            client.table("matchup_aggregates").insert(payload).execute()
+        )
 
-        touched += 1
-
-    return touched
+    return len(inserts) + len(updates)
