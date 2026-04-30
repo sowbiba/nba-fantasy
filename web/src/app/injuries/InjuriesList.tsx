@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 export type InjuredPlayer = {
   id: number;
@@ -197,9 +198,10 @@ function TeamBlock({
             const returnStr = formatReturnDate(p.injury_return_date);
             const updateStr = formatUpdateAge(p.injury_updated_at);
             return (
-              <div
+              <Link
                 key={p.id}
-                className="px-4 py-3 relative"
+                href={`/player/${p.id}`}
+                className="block px-4 py-3 relative hover:bg-white/[0.02] transition-colors"
                 style={{
                   borderLeft: `2px solid ${brightColor}50`,
                 }}
@@ -243,7 +245,7 @@ function TeamBlock({
                     )}
                   </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>

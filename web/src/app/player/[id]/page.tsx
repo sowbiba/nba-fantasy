@@ -259,16 +259,25 @@ export default async function PlayerPage({
       )}
 
       {/* ----------------- pick cta (today only) ----------------- */}
-      {!isFuturePlan && game && rec && (
+      {/* Render whenever there's a game tonight, even if the engine
+          didn't produce a recommendation (e.g. player was Out at sync
+          time and is now Probable). Falls back to L5 avg as the
+          estimated_score so the column isn't left empty. */}
+      {!isFuturePlan && game && (
         <div className="mt-6">
           <PickButton
             playerId={player.id}
             gameId={game.id}
             playerName={player.name}
-            estimatedScore={rec.estimated_score}
+            estimatedScore={rec?.estimated_score ?? player.avg_ttfl_l5 ?? 0}
             alreadyPicked={alreadyPicked}
             pickedToday={pickedToday}
           />
+          {!rec && (
+            <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-text-mute)] text-center">
+              Hors top reco · pick manuel
+            </p>
+          )}
         </div>
       )}
     </div>
