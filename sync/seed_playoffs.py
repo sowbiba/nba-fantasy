@@ -51,10 +51,13 @@ def parse_series_text(text: str) -> tuple[int, int, str | None]:
     """Parse NBA seriesText into (leader_wins, trailer_wins, leader_team).
 
     Examples:
-      "Series tied 0-0"   -> (0, 0, None)
-      "Series tied 2-2"   -> (2, 2, None)
-      "NYK leads 1-0"     -> (1, 0, "NYK")
-      "ATL clinch 7 seed" -> (0, 0, None)  # play-in, handled separately
+      "Series tied 0-0"     -> (0, 0, None)
+      "Series tied 2-2"     -> (2, 2, None)
+      "NYK leads 1-0"       -> (1, 0, "NYK")
+      "ATL wins 4-1"        -> (4, 1, "ATL")  # series ended
+      "ATL won series 4-2"  -> (4, 2, "ATL")  # series ended
+      "ATL advances 4-0"    -> (4, 0, "ATL")  # series ended
+      "ATL clinch 7 seed"   -> (0, 0, None)   # play-in, handled separately
     """
     if not text:
         return (0, 0, None)
@@ -62,6 +65,17 @@ def parse_series_text(text: str) -> tuple[int, int, str | None]:
     if m:
         return (int(m.group(1)), int(m.group(2)), None)
     m = re.match(r"(\w{2,4}) leads (\d)-(\d)", text)
+    if m:
+        return (int(m.group(2)), int(m.group(3)), m.group(1))
+    # After a series ends, NBA's seriesText switches from "leads" to a
+    # closing variant. Without this branch the series stays at the last
+    # "leads 3-X" snapshot and is never marked completed, so phantom G6/G7
+    # keep feeding tonight's recos.
+    m = re.match(
+        r"(\w{2,4})\s+(?:wins?|won|advances?|sweeps?|clinch(?:es)?)"
+        r"(?:\s+series)?\s+(\d)-(\d)",
+        text,
+    )
     if m:
         return (int(m.group(2)), int(m.group(3)), m.group(1))
     return (0, 0, None)
@@ -218,6 +232,57 @@ def seed():
         updated_games += 1
 
     print(f"Linked {updated_games} games to their series.")
+
+    # Authoritative reconciliation: recompute each series' wins/status from
+    # the actual final-game results. NBA's `seriesText` lags reality — by
+    # several hours after a clincher, sometimes longer if the closing-
+    # variant string isn't in our regex. Final game scores are ground truth.
+    reconciled = 0
+    for unordered, sid in key_to_id.items():
+        # Pull all final games linked to this series.
+        finals = (
+            client.table("games")
+            .select("home_team,away_team,home_score,away_score,status")
+            .eq("series_id", sid)
+            .eq("status", "final")
+            .execute()
+            .data
+        ) or []
+        if not finals:
+            continue
+
+        series_row = (
+            client.table("series").select("*").eq("id", sid).execute().data
+        )
+        if not series_row:
+            continue
+        s = series_row[0]
+        home_team = s["home_team"]
+
+        hw = aw = 0
+        for fg in finals:
+            hs, as_ = fg.get("home_score"), fg.get("away_score")
+            if hs is None or as_ is None:
+                continue
+            winner = fg["home_team"] if hs > as_ else fg["away_team"]
+            if winner == home_team:
+                hw += 1
+            else:
+                aw += 1
+
+        new_status = "completed" if hw == 4 or aw == 4 else "active"
+        if (
+            hw != (s.get("home_wins") or 0)
+            or aw != (s.get("away_wins") or 0)
+            or new_status != s.get("status")
+        ):
+            client.table("series").update(
+                {"home_wins": hw, "away_wins": aw, "status": new_status}
+            ).eq("id", sid).execute()
+            reconciled += 1
+
+    if reconciled:
+        print(f"Reconciled {reconciled} series from final-game results.")
 
     # Summary — read from DB (not series_map) so completed/stale-protected
     # rows show their authoritative wins, not NBA's lagging snapshot.

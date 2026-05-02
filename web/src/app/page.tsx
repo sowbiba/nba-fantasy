@@ -51,9 +51,20 @@ async function getData() {
   // Phantom games (G6/G7 of a series that ended early) stay in the schedule
   // and keep getting upserted by load_schedule.py — drop them here so they
   // don't show up in tonight's matches or feed stale recommendations.
-  const games = allGames.filter(
-    (g) => !g.series_id || !completedSeriesIds.has(g.series_id)
+  // We match BOTH by series_id and by team-pair: seed_playoffs only links
+  // games whose gameLabel still carries the round name, and conditional
+  // games sometimes lose that label after the series clinches.
+  const completedPairs = new Set(
+    allSeries
+      .filter((s) => s.status === "completed")
+      .map((s) => [s.home_team, s.away_team].sort().join("|"))
   );
+  const games = allGames.filter((g) => {
+    if (g.series_id && completedSeriesIds.has(g.series_id)) return false;
+    const pair = [g.home_team, g.away_team].sort().join("|");
+    if (completedPairs.has(pair)) return false;
+    return true;
+  });
   const series = allSeries.filter((s) => s.status === "active");
   const recs = (recsRes.data || []) as Recommendation[];
   const players = (playersRes.data || []) as Player[];

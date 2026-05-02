@@ -124,19 +124,30 @@ def get_player_game_logs(client: Client, player_id: int, limit: int = 20) -> lis
 
 
 def get_today_games(client: Client, today: date) -> list[dict]:
-    # Drop games whose series is already completed (phantom G6/G7 from
-    # a series that ended early — the static NBA schedule keeps the
+    # Drop games belonging to a completed series (phantom G6/G7 from a
+    # series that ended early — the static NBA schedule keeps the
     # placeholder slots and we keep upserting them, but they will never
-    # be played).
-    completed = client.table("series").select("id").eq(
-        "status", "completed"
-    ).execute().data or []
+    # be played). Match both by series_id AND by team pair, since
+    # seed_playoffs.py only links games whose gameLabel still carries the
+    # round name; conditional games sometimes lose that label once the
+    # series clinches and end up with series_id=NULL.
+    completed = client.table("series").select(
+        "id,home_team,away_team"
+    ).eq("status", "completed").execute().data or []
     completed_ids = {row["id"] for row in completed}
+    completed_pairs = {
+        tuple(sorted((row["home_team"], row["away_team"]))) for row in completed
+    }
     result = client.table("games").select("*").eq("date", today.isoformat()).execute()
-    return [
-        g for g in result.data
-        if not g.get("series_id") or g["series_id"] not in completed_ids
-    ]
+    out = []
+    for g in result.data:
+        if g.get("series_id") and g["series_id"] in completed_ids:
+            continue
+        pair = tuple(sorted((g["home_team"], g["away_team"])))
+        if pair in completed_pairs:
+            continue
+        out.append(g)
+    return out
 
 
 def get_active_series(client: Client) -> list[dict]:

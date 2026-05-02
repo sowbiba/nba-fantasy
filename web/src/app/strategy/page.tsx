@@ -50,11 +50,21 @@ async function getData() {
   const completedSeriesIds = new Set(
     allSeries.filter((s) => s.status === "completed").map((s) => s.id)
   );
-  const allGames = (gamesRes.data || []) as Game[];
-  // Drop phantom games (G6/G7) of series that already ended.
-  const games = allGames.filter(
-    (g) => !g.series_id || !completedSeriesIds.has(g.series_id)
+  const completedPairs = new Set(
+    allSeries
+      .filter((s) => s.status === "completed")
+      .map((s) => [s.home_team, s.away_team].sort().join("|"))
   );
+  const allGames = (gamesRes.data || []) as Game[];
+  // Drop phantom games (G6/G7) of series that already ended. Match by
+  // series_id AND team-pair (some conditional games end up with
+  // series_id=NULL once the round label drops off the NBA schedule).
+  const games = allGames.filter((g) => {
+    if (g.series_id && completedSeriesIds.has(g.series_id)) return false;
+    const pair = [g.home_team, g.away_team].sort().join("|");
+    if (completedPairs.has(pair)) return false;
+    return true;
+  });
 
   return {
     recs: (recsRes.data || []) as Recommendation[],
