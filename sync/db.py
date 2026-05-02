@@ -124,8 +124,19 @@ def get_player_game_logs(client: Client, player_id: int, limit: int = 20) -> lis
 
 
 def get_today_games(client: Client, today: date) -> list[dict]:
+    # Drop games whose series is already completed (phantom G6/G7 from
+    # a series that ended early — the static NBA schedule keeps the
+    # placeholder slots and we keep upserting them, but they will never
+    # be played).
+    completed = client.table("series").select("id").eq(
+        "status", "completed"
+    ).execute().data or []
+    completed_ids = {row["id"] for row in completed}
     result = client.table("games").select("*").eq("date", today.isoformat()).execute()
-    return result.data
+    return [
+        g for g in result.data
+        if not g.get("series_id") or g["series_id"] not in completed_ids
+    ]
 
 
 def get_active_series(client: Client) -> list[dict]:

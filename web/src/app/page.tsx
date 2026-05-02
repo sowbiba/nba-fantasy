@@ -35,7 +35,7 @@ async function getData() {
     picksRes,
   ] = await Promise.all([
     supabase.from("games").select("*").eq("date", today).order("tip_off"),
-    supabase.from("series").select("*").eq("status", "active"),
+    supabase.from("series").select("*"),
     supabase.from("recommendations").select("*").eq("date", today).order("rank"),
     supabase.from("players").select("*"),
     supabase.from("sync_log").select("*").order("started_at", { ascending: false }).limit(1),
@@ -43,8 +43,18 @@ async function getData() {
     supabase.from("picks").select("*").eq("mode", "playoffs"),
   ]);
 
-  const games = (gamesRes.data || []) as Game[];
-  const series = (seriesRes.data || []) as Series[];
+  const allGames = (gamesRes.data || []) as Game[];
+  const allSeries = (seriesRes.data || []) as Series[];
+  const completedSeriesIds = new Set(
+    allSeries.filter((s) => s.status === "completed").map((s) => s.id)
+  );
+  // Phantom games (G6/G7 of a series that ended early) stay in the schedule
+  // and keep getting upserted by load_schedule.py — drop them here so they
+  // don't show up in tonight's matches or feed stale recommendations.
+  const games = allGames.filter(
+    (g) => !g.series_id || !completedSeriesIds.has(g.series_id)
+  );
+  const series = allSeries.filter((s) => s.status === "active");
   const recs = (recsRes.data || []) as Recommendation[];
   const players = (playersRes.data || []) as Player[];
   const sync = (syncRes.data?.[0] || null) as SyncLog | null;

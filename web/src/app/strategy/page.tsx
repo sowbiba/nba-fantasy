@@ -32,7 +32,7 @@ async function getData() {
     picksRes,
   ] = await Promise.all([
     supabase.from("recommendations").select("*").eq("date", today),
-    supabase.from("series").select("*").eq("status", "active").order("round"),
+    supabase.from("series").select("*").order("round"),
     supabase
       .from("games")
       .select("*")
@@ -46,10 +46,20 @@ async function getData() {
     supabase.from("picks").select("*").eq("mode", "playoffs"),
   ]);
 
+  const allSeries = (seriesRes.data || []) as Series[];
+  const completedSeriesIds = new Set(
+    allSeries.filter((s) => s.status === "completed").map((s) => s.id)
+  );
+  const allGames = (gamesRes.data || []) as Game[];
+  // Drop phantom games (G6/G7) of series that already ended.
+  const games = allGames.filter(
+    (g) => !g.series_id || !completedSeriesIds.has(g.series_id)
+  );
+
   return {
     recs: (recsRes.data || []) as Recommendation[],
-    series: (seriesRes.data || []) as Series[],
-    games: (gamesRes.data || []) as Game[],
+    series: allSeries.filter((s) => s.status === "active"),
+    games,
     plan: (planRes.data || []) as WeeklyPlanEntry[],
     players: (playersRes.data || []) as Pick<Player, "id" | "name" | "team" | "position">[],
     forecasts: (forecastRes.data || []) as SeriesForecast[],
