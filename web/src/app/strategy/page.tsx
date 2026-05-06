@@ -350,9 +350,10 @@ export default async function StrategyPage() {
                 Math.max(s.home_wins, s.away_wins) === 3 &&
                 Math.min(s.home_wins, s.away_wins) < 3;
               return (
-                <div
+                <Link
                   key={s.id}
-                  className="flex items-center justify-between gap-3 px-3 py-2 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/[0.04]"
+                  href={`/series/${s.id}`}
+                  className="flex items-center justify-between gap-3 px-3 py-2 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/[0.04] hover:border-[color:var(--color-emerald)]/40 transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-mono-num font-bold text-sm text-[color:var(--color-text)] tracking-wide">
@@ -381,7 +382,7 @@ export default async function StrategyPage() {
                       ~{estLeft}g
                     </span>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>

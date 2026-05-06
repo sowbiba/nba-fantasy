@@ -12,6 +12,7 @@ export interface Player {
   stddev_ttfl: number;
   home_avg: number;
   away_avg: number;
+  avg_minutes_l10: number;
   usage_rate: number;
   updated_at: string;
 }

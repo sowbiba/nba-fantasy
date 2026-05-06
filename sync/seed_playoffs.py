@@ -20,7 +20,10 @@ from sync.db import get_client
 
 NBA_SCHEDULE_URL = "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json"
 
-# Map NBA "gameLabel" → internal round number
+# Map NBA "gameLabel" → internal round number. NBA mixes formats: First
+# Round has no period ("East First Round") but Semifinals/Finals do
+# ("East Conf. Semifinals", "West Conf. Finals"). We normalize by
+# stripping periods before lookup so both forms match the same key.
 ROUND_LABELS = {
     "East First Round": 1,
     "West First Round": 1,
@@ -30,6 +33,10 @@ ROUND_LABELS = {
     "West Conf Finals": 3,
     "NBA Finals": 4,
 }
+
+
+def _normalize_label(label: str) -> str:
+    return label.replace(".", "").strip() if label else ""
 
 
 def fetch_schedule() -> list[dict]:
@@ -99,7 +106,7 @@ def seed():
 
         for g in gd.get("games", []):
             label = g.get("gameLabel", "")
-            round_num = ROUND_LABELS.get(label)
+            round_num = ROUND_LABELS.get(_normalize_label(label))
             if round_num is None:
                 continue
 
