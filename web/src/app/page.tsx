@@ -11,6 +11,7 @@ import {
   MatchupAggregate,
 } from "@/types";
 import SyncStatus from "@/components/SyncStatus";
+import NoPickBanner from "@/components/NoPickBanner";
 import GamesCollapsible from "@/components/GamesCollapsible";
 import StrategyBanner from "@/components/StrategyBanner";
 import RecommendationCard from "@/components/RecommendationCard";
@@ -192,6 +193,12 @@ export default async function TonightPage() {
         </div>
       </header>
 
+      <NoPickBanner
+        todayDate={todayNBA()}
+        hasGamesTonight={games.length > 0}
+        hasPickToday={picks.some((p) => p.date === todayNBA())}
+      />
+
       <SyncStatus sync={sync} />
 
       <div className="mt-3 px-3">
@@ -214,7 +221,7 @@ export default async function TonightPage() {
       <InjuryArbitrage recs={recsWithPlayers} />
 
       {/* -------------------- TOP 3 section -------------------- */}
-      <section className="mt-6 px-3">
+      <section id="top-3" className="mt-6 px-3">
         <div className="flex items-end justify-between mb-3 px-1">
           <h2 className="font-display text-3xl tracking-wide text-white leading-none">
             TOP <span className="gold-text">3</span>
