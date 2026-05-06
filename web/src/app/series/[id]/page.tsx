@@ -29,16 +29,20 @@ function computeVerdict(
   return "Cuisine";
 }
 
+// Colors are from the TTFL-pick perspective (not the defender's): green
+// = good pick for the offensive player, red = avoid. Étouffé means the
+// player got shut down → red (don't pick). Cuisine means he cooked →
+// green (great pick).
 const VERDICT_STYLES: Record<Verdict, { bg: string; text: string; border: string }> = {
   "Étouffé": {
-    bg: "bg-[color:var(--color-emerald)]/15",
-    text: "text-[color:var(--color-emerald)]",
-    border: "border-[color:var(--color-emerald)]/40",
+    bg: "bg-[color:var(--color-crimson)]/15",
+    text: "text-[color:var(--color-crimson)]",
+    border: "border-[color:var(--color-crimson)]/40",
   },
   Tenu: {
-    bg: "bg-[color:var(--color-emerald)]/8",
-    text: "text-[color:var(--color-emerald)]/85",
-    border: "border-[color:var(--color-emerald)]/25",
+    bg: "bg-[color:var(--color-flame)]/10",
+    text: "text-[color:var(--color-flame)]",
+    border: "border-[color:var(--color-flame)]/30",
   },
   Neutre: {
     bg: "bg-white/5",
@@ -46,14 +50,14 @@ const VERDICT_STYLES: Record<Verdict, { bg: string; text: string; border: string
     border: "border-white/10",
   },
   Productif: {
-    bg: "bg-[color:var(--color-flame)]/10",
-    text: "text-[color:var(--color-flame)]",
-    border: "border-[color:var(--color-flame)]/30",
+    bg: "bg-[color:var(--color-emerald)]/10",
+    text: "text-[color:var(--color-emerald)]/85",
+    border: "border-[color:var(--color-emerald)]/30",
   },
   Cuisine: {
-    bg: "bg-[color:var(--color-crimson)]/15",
-    text: "text-[color:var(--color-crimson)]",
-    border: "border-[color:var(--color-crimson)]/40",
+    bg: "bg-[color:var(--color-emerald)]/20",
+    text: "text-[color:var(--color-emerald)]",
+    border: "border-[color:var(--color-emerald)]/50",
   },
   Bruyant: {
     bg: "bg-white/5",
@@ -160,12 +164,12 @@ export default async function SeriesPage({
       <div className="mt-6 px-3 py-3 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/[0.04] text-[10px] uppercase tracking-[0.15em] text-[color:var(--color-text-mute)] leading-relaxed">
         <div className="font-bold text-[color:var(--color-text-soft)] mb-2">Verdicts</div>
         <div className="grid grid-cols-2 gap-1.5 normal-case tracking-normal mb-3">
-          <VerdictLegend v="Étouffé" desc="défense écrase la prod (delta < −15)" />
-          <VerdictLegend v="Tenu" desc="légère suppression (−15 à −5)" />
+          <VerdictLegend v="Cuisine" desc="à pick (delta > +15)" />
+          <VerdictLegend v="Productif" desc="bon pick (+5 à +15)" />
           <VerdictLegend v="Neutre" desc="à son niveau (±5)" />
-          <VerdictLegend v="Productif" desc="profite du matchup (+5 à +15)" />
-          <VerdictLegend v="Cuisine" desc="exploite à fond (delta > +15)" />
-          <VerdictLegend v="Bruyant" desc="< 5 min de matchup, sample trop fin" />
+          <VerdictLegend v="Tenu" desc="risqué (−5 à −15)" />
+          <VerdictLegend v="Étouffé" desc="à fuir (delta < −15)" />
+          <VerdictLegend v="Bruyant" desc="< 5 min, sample trop fin" />
         </div>
         <div className="font-bold text-[color:var(--color-text-soft)] mt-3 mb-1">Lecture</div>
         <div className="normal-case tracking-normal">
