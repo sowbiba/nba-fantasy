@@ -1,0 +1,52 @@
+name: Daily TTFL sync
+
+# Runs the full sync pipeline (scoreboard, box scores, aggregates,
+# strategy, weekly plan, recommendations) every morning so the user's
+# dashboard is fresh before the day's games tip off in Europe.
+#
+# Schedule: 05:30 UTC = 07:30 Paris (summer) / 06:30 Paris (winter).
+# Adjust by editing the cron expression below.
+
+on:
+  schedule:
+    - cron: "30 5 * * *"
+  # Manual trigger so we can re-run after a series result lands or
+  # debug from the Actions tab without waiting for tomorrow.
+  workflow_dispatch:
+
+concurrency:
+  group: daily-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          USE_PAIR_MATCHUP: ${{ vars.USE_PAIR_MATCHUP || '1' }}
+        run: python -m sync.main
+
+      - name: Tail log on failure
+        if: failure()
+        run: |
+          echo "Sync failed. Inspecting recent sync_log rows would normally help."
+          echo "Re-run from the Actions tab once the underlying issue is fixed."
