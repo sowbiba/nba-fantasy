@@ -43,11 +43,19 @@ GRID = {
     "DET": [
         ("Ausar Thompson", 1),
         ("Jalen Duren", 2),
+        # Burn-first extensions — added 2026-05-07 to cover a deeper run.
+        ("Isaiah Stewart", 3),
+        ("Caris LeVert", 4),
+        ("Ronald Holland II", 5),
+        ("Duncan Robinson", 6),
     ],
     "PHI": [
         ("VJ Edgecombe", 1),
         ("Paul George", 2),
         ("Kelly Oubre Jr.", 3),
+        # Burn-first extensions — added 2026-05-07.
+        ("Quentin Grimes", 4),
+        ("Andre Drummond", 5),
     ],
     "OKC": [
         ("Shai Gilgeous-Alexander", 1),
@@ -56,6 +64,14 @@ GRID = {
         ("Ajay Mitchell", 4),
         ("Alex Caruso", 5),
         ("Jaylin Williams", 6),
+        # Burn-first extensions — added 2026-05-07. Hartenstein at the
+        # bottom because he's the OKC-only exception the user takes
+        # tonight (sa, hot, Jaylin out boost) and from then on should
+        # behave like a regular burn candidate.
+        ("Isaiah Hartenstein", 7),
+        ("Aaron Wiggins", 8),
+        ("Isaiah Joe", 9),
+        ("Luguentz Dort", 10),
     ],
     "NYK": [
         ("Jalen Brunson", 1),
