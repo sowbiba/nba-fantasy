@@ -330,16 +330,28 @@ def fetch_player_game_logs_nba_api(player_id: int, season: str = "2025-26") -> l
 
 
 def fetch_team_rosters() -> dict[str, list[dict]]:
-    """Fetch all NBA team rosters. Returns {tricode: [{player_id, name, position}, ...]}"""
+    """Fetch all NBA team rosters. Returns {tricode: [{player_id, name, position}, ...]}.
+
+    Prints progress per team so a CI hang is observable. After three
+    consecutive failures we assume the egress IP is blocked by NBA and
+    short-circuit — the caller falls back to whatever rosters are
+    already in Supabase (rosters change rarely, stale data is fine for
+    a missed run). Roster calls use a 12s timeout because the endpoint
+    returns ~15 rows; longer than that means we're blocked, not slow.
+    """
     from nba_api.stats.static import teams as nba_teams
 
+    teams_list = nba_teams.get_teams()
+    total = len(teams_list)
     rosters = {}
-    for team in nba_teams.get_teams():
+    consecutive_failures = 0
+    failure_threshold = 3
+    for i, team in enumerate(teams_list, 1):
         time.sleep(NBA_API_DELAY)
         team_id = team["id"]
         tricode = team["abbreviation"]
         try:
-            roster = CommonTeamRoster(team_id=str(team_id))
+            roster = CommonTeamRoster(team_id=str(team_id), timeout=12)
             df = roster.get_data_frames()[0]
             players = []
             for _, row in df.iterrows():
@@ -359,8 +371,20 @@ def fetch_team_rosters() -> dict[str, list[dict]]:
                     "position": pos_short,
                 })
             rosters[tricode] = players
-        except Exception:
-            continue
+            consecutive_failures = 0
+            print(f"    rosters {i}/{total} {tricode}: {len(players)} players")
+        except Exception as e:
+            consecutive_failures += 1
+            print(
+                f"    rosters {i}/{total} {tricode}: FAIL ({type(e).__name__})"
+            )
+            if consecutive_failures >= failure_threshold:
+                print(
+                    f"    ⚠ {failure_threshold} consecutive roster failures — "
+                    f"assuming NBA API is blocking this IP. Skipping the rest "
+                    f"and falling back to the players already in Supabase."
+                )
+                break
     return rosters
 
 
