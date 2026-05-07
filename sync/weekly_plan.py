@@ -33,7 +33,12 @@ from sync.config import (
     WATCHLIST_BASE,
     WATCHLIST_ELIM_BONUS,
     WATCHLIST_GAME3_SURGE,
+    dnp_risk_factor,
     play_probability,
+)
+from sync.personal_strategy import (
+    PersonalContext,
+    compute_multiplier as compute_personal_multiplier,
 )
 from sync.scoring import compute_performance_score
 from sync.strategy import (
@@ -187,6 +192,30 @@ def build_candidates(
     except Exception:
         pass
 
+    # Personal-strategy layer: per-team outlook + per-player save rank.
+    # Optional; the plan still runs if the tables are missing.
+    team_outlook_map: dict[str, dict] = {}
+    player_rank_map: dict[int, int] = {}
+    try:
+        to_rows = client.table("team_outlook").select(
+            "team, outlook, home_save_top"
+        ).execute().data or []
+        team_outlook_map = {r["team"]: r for r in to_rows}
+    except Exception:
+        pass
+    try:
+        pr_rows = client.table("player_team_rank").select(
+            "player_id, save_rank"
+        ).execute().data or []
+        player_rank_map = {r["player_id"]: r["save_rank"] for r in pr_rows}
+    except Exception:
+        pass
+
+    # Eligible pool = union of watchlist and ranked players. The plan must
+    # allocate the user's finite, deliberately-chosen capital, not roam
+    # across the whole roster.
+    eligible_pool = set(watchlist_map.keys()) | set(player_rank_map.keys())
+
     # Remaining (not-yet-picked) watchlist counts per tier — drives the
     # tier_demand_factor for opportunity cost.
     picked_set = set(picked)
@@ -275,10 +304,10 @@ def build_candidates(
                     continue
                 if p["id"] in picked:
                     continue
-                # Watchlist defines the pool. Players not flagged as ★/★★/★★★
-                # by the user are not eligible — the plan must allocate the
-                # finite watchlist capital, not fall back to deep-bench fillers.
-                if p["id"] not in watchlist_map:
+                # Eligibility: watchlist OR per-team save rank. Players
+                # outside both are deep-bench candidates the user has not
+                # signed up for.
+                if p["id"] not in eligible_pool:
                     continue
                 if p.get("injury_status") in HARD_OUT_STATUSES:
                     continue
@@ -297,15 +326,17 @@ def build_candidates(
                 if avg_min > 0 and avg_min < MIN_MINUTES_L10:
                     continue
 
-                # Get recent scores (cached)
+                # Get recent scores + minutes (cached). Minutes feed
+                # dnp_risk_factor; ttfl_score feeds the trend factor.
                 if p["id"] not in recent_by_player:
                     logs = (
-                        client.table("game_logs").select("ttfl_score")
+                        client.table("game_logs").select("ttfl_score, minutes")
                         .eq("player_id", p["id"])
                         .order("date", desc=True).limit(10).execute().data
                     )
-                    recent_by_player[p["id"]] = [l["ttfl_score"] for l in logs]
-                recent_scores = recent_by_player[p["id"]]
+                    recent_by_player[p["id"]] = logs
+                recent_logs = recent_by_player[p["id"]]
+                recent_scores = [l["ttfl_score"] for l in recent_logs]
 
                 # Days rest approximated from the gap between today and the game
                 try:
@@ -436,6 +467,26 @@ def build_candidates(
                 # Doubtful are filtered above). Stacks multiplicatively with
                 # pick_prob: a Q player on a maybe-played G7 takes both hits.
                 play_prob = play_probability(p.get("injury_status"))
+                # Recent-DNP penalty for cases ESPN's flag hasn't caught up.
+                dnp_factor = dnp_risk_factor(recent_logs)
+
+                # Personal-strategy multiplier — the same overlay used for
+                # the daily reco. Spreads the user's bracket view across
+                # the multi-day plan: rank-1 OKC players naturally drift
+                # towards later days while LAL ranks fill earlier days.
+                team_row = team_outlook_map.get(team) or {}
+                personal_ctx = PersonalContext(
+                    save_rank=player_rank_map.get(p["id"]),
+                    team_outlook=team_row.get("outlook"),
+                    home_save_top=bool(team_row.get("home_save_top", True)),
+                    is_home_game=is_home,
+                    elimination_risk=elim,
+                    avg_l5=p.get("avg_ttfl_l5", 0) or 0,
+                    season_avg=season_avg,
+                )
+                personal_mult, _personal_reason = compute_personal_multiplier(
+                    personal_ctx
+                )
 
                 final_score = (
                     expected_utility
@@ -444,6 +495,8 @@ def build_candidates(
                     * surge_multiplier
                     * pick_prob
                     * play_prob
+                    * dnp_factor
+                    * personal_mult
                     - LAMBDA_RISK * waste_cost_value
                 )
                 # Don't let the assignment matrix see a negative cell — the
