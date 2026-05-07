@@ -50,6 +50,10 @@ from sync.strategy import (
     should_burn_elite,
 )
 from sync.advisor import generate_argumentaire, generate_verdict
+from sync.personal_strategy import (
+    PersonalContext,
+    compute_multiplier as compute_personal_multiplier,
+)
 from sync.ttfl import compute_ttfl_from_game_log
 from sync.future import compute_best_future_opportunity
 
@@ -495,6 +499,30 @@ def run_sync():
         except Exception as e:
             print(f"  (watchlist table missing, skipping boost: {e})")
 
+        # Personal strategy: per-team outlook + per-player save rank. Both
+        # tables are optional; when absent the multiplier degrades to 1.0
+        # and the engine behaves exactly like before.
+        team_outlook_map: dict[str, dict] = {}
+        player_rank_map: dict[int, int] = {}
+        try:
+            to_rows = client.table("team_outlook").select(
+                "team, outlook, home_save_top"
+            ).execute().data or []
+            team_outlook_map = {r["team"]: r for r in to_rows}
+            if team_outlook_map:
+                print(f"  {len(team_outlook_map)} team outlooks loaded")
+        except Exception as e:
+            print(f"  (team_outlook table missing, skipping: {e})")
+        try:
+            pr_rows = client.table("player_team_rank").select(
+                "player_id, save_rank"
+            ).execute().data or []
+            player_rank_map = {r["player_id"]: r["save_rank"] for r in pr_rows}
+            if player_rank_map:
+                print(f"  {len(player_rank_map)} player save ranks loaded")
+        except Exception as e:
+            print(f"  (player_team_rank table missing, skipping: {e})")
+
         for sp in scored_players:
             pid = sp["player"]["id"]
             tier = tiers.get(pid, "filler")
@@ -568,6 +596,22 @@ def run_sync():
             # 0 min last game). Compounds with play_prob.
             dnp_factor = dnp_risk_factor(sp["recent_logs"])
 
+            # Personal-strategy multiplier — overlays the user's bracket
+            # view onto the engine score. Hot streaks and elimination
+            # pressure auto-release the save penalty so this never traps
+            # the user into ignoring an obvious play.
+            team_row = team_outlook_map.get(sp["player"]["team"]) or {}
+            personal_ctx = PersonalContext(
+                save_rank=player_rank_map.get(pid),
+                team_outlook=team_row.get("outlook"),
+                home_save_top=bool(team_row.get("home_save_top", True)),
+                is_home_game=sp["is_home"],
+                elimination_risk=elim,
+                avg_l5=sp["player"].get("avg_ttfl_l5", 0) or 0,
+                season_avg=sp["player"].get("avg_ttfl_season", 0) or 0,
+            )
+            personal_mult, personal_reason = compute_personal_multiplier(personal_ctx)
+
             sp["strategy_score"] = strategy_score
             sp["reservation_penalty"] = reservation
             sp["watchlist_priority"] = priority
@@ -575,6 +619,10 @@ def run_sync():
             sp["game3_surge"] = game3_surge
             sp["play_probability"] = play_prob
             sp["dnp_risk_factor"] = dnp_factor
+            sp["personal_multiplier"] = personal_mult
+            sp["personal_reason"] = personal_reason
+            sp["save_rank"] = personal_ctx.save_rank
+            sp["team_outlook"] = personal_ctx.team_outlook
             sp["estimated_score"] = (
                 strategy_score
                 * (1.0 - reservation)
@@ -582,6 +630,7 @@ def run_sync():
                 * surge_multiplier
                 * play_prob
                 * dnp_factor
+                * personal_mult
             )
             sp["series_score"] = series_score
             sp["game_number"] = game.get("game_number", 0) or 0
@@ -652,6 +701,10 @@ def run_sync():
                 "recent_minutes": [
                     (log.get("minutes") or 0) for log in sp.get("recent_logs", [])[:3]
                 ],
+                "personal_multiplier": sp.get("personal_multiplier", 1.0),
+                "personal_reason": sp.get("personal_reason", ""),
+                "save_rank": sp.get("save_rank"),
+                "team_outlook": sp.get("team_outlook"),
                 "elimination": sp["elimination"],
                 "home_avg": p.get("home_avg", 0) or 0,
                 "away_avg": p.get("away_avg", 0) or 0,
@@ -714,6 +767,9 @@ def run_sync():
                 tags.append("teammate_out")
             if sp.get("dnp_risk_factor", 1.0) < 1.0:
                 tags.append("dnp_risk")
+            personal_reason = sp.get("personal_reason") or ""
+            if personal_reason and personal_reason not in ("no_outlook", "no_rank"):
+                tags.append(personal_reason)
             if sp.get("watchlist_priority"):
                 tags.append(f"watchlist_p{sp['watchlist_priority']}")
             if sp.get("game3_surge"):

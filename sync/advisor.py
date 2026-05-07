@@ -159,6 +159,52 @@ def generate_argumentaire(context: dict) -> tuple[list[str], list[str]]:
                 "officialisée, à vérifier 1h avant le match"
             )
 
+    # --- Stratégie perso (team_outlook + save_rank) ---
+    p_reason = context.get("personal_reason") or ""
+    p_rank = context.get("save_rank")
+    p_outlook = context.get("team_outlook")
+    if p_reason.startswith("save_advance"):
+        msg = (
+            f"🔒 Save perso (rank {p_rank}, équipe attendue en finales) : "
+            f"l'engine te recommande de le garder pour un round plus tard"
+        )
+        if "_hot" in p_reason:
+            msg += " — mais il est hot, la pénalité est allégée"
+        cons.append(msg)
+    elif p_reason == "elim_critical_release":
+        pros.append(
+            "🚨 Élimination critique : l'engine relâche toute réserve, "
+            "c'est le moment de le brûler"
+        )
+    elif p_reason == "elim_high_release":
+        pros.append(
+            "⏰ Série tendue (down 0-2 ou 1-2) : la pénalité de save est levée, "
+            "le pool va se réduire vite"
+        )
+    elif p_reason.startswith("eliminate_home"):
+        pros.append(
+            f"🏠 Équipe en sursis + match à domicile : ton (rank {p_rank}) "
+            f"est dans le bon spot"
+        )
+    elif p_reason.startswith("eliminate_away"):
+        msg = (
+            f"✈️ Équipe en sursis mais à l'extérieur : tu peux attendre un "
+            f"home pour ton (rank {p_rank})"
+        )
+        if "_hot" in p_reason:
+            msg += " — sauf qu'il est hot, joue-le quand même"
+        cons.append(msg)
+    elif p_reason.startswith("tossup_midlist"):
+        pros.append(
+            f"🎯 Série équilibrée + milieu de liste (rank {p_rank}) : "
+            f"spot raisonnable en attendant que la série décante"
+        )
+    elif p_reason.startswith("tossup_save"):
+        cons.append(
+            f"⏳ Série équilibrée : ton (rank {p_rank}) reste un save "
+            f"jusqu'à clarification"
+        )
+
     # --- Stratégie : gestion du capital ---
     tier = context["tier"]
     elites = context["elites_remaining"]
