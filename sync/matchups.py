@@ -261,6 +261,65 @@ def _blend_into(row: dict, payload: dict, game_id: str) -> dict | None:
     return merged
 
 
+def find_unprocessed_final_games(client, days_back: int = 14) -> list[dict]:
+    """Find final games whose matchups never made it into the aggregates.
+
+    Two failure modes the daily-yesterday flow doesn't cover:
+      1. NBA hasn't published BoxScoreMatchupsV3 yet at sync time
+         (Akamai returns 200 with empty player arrays).
+      2. The runner IP got transiently rate-limited by stats.nba.com
+         and the call timed out.
+    Both leave the game silently absent from `processed_game_ids`. Once
+    NBA does publish — usually within 24-48h of the game — the next
+    sync should re-attempt that exact game. This function returns the
+    list of (game_id, home_team, away_team, series_id) tuples to retry.
+    """
+    from datetime import date, timedelta
+
+    today = date.today()
+    start = today - timedelta(days=days_back)
+    games_res = (
+        client.table("games")
+        .select("id, home_team, away_team, series_id, date")
+        .eq("status", "final")
+        .gte("date", start.isoformat())
+        .lte("date", today.isoformat())
+        .order("date")
+        .execute()
+        .data
+    ) or []
+    if not games_res:
+        return []
+
+    series_ids = {g["series_id"] for g in games_res if g.get("series_id") is not None}
+    processed: set[str] = set()
+    if series_ids:
+        agg_res = (
+            client.table("matchup_aggregates")
+            .select("processed_game_ids")
+            .in_("series_id", list(series_ids))
+            .execute()
+            .data
+        ) or []
+        for row in agg_res:
+            for gid in row.get("processed_game_ids") or []:
+                processed.add(str(gid))
+    # Also catch regular-season pairings (series_id null) so the
+    # backfill stays useful outside playoffs.
+    null_series_aggs = (
+        client.table("matchup_aggregates")
+        .select("processed_game_ids")
+        .is_("series_id", "null")
+        .execute()
+        .data
+    ) or []
+    for row in null_series_aggs:
+        for gid in row.get("processed_game_ids") or []:
+            processed.add(str(gid))
+
+    return [g for g in games_res if str(g["id"]) not in processed]
+
+
 def update_aggregates_for_game(
     client,
     game_id: str,

@@ -205,6 +205,51 @@ def run_sync():
         if updated_picks > 0:
             print(f"  Updated {updated_picks} pick(s) with actual score.")
 
+        # --- Step 2b: Catch-up for matchup aggregates ---
+        # NBA's BoxScoreMatchupsV3 sometimes returns empty for a game
+        # that has just gone final (data isn't published yet) or times
+        # out from a rate-limited runner IP. The yesterday-only loop in
+        # Step 2 doesn't notice the miss — the game silently never enters
+        # processed_game_ids. Each sync rescans the last 14 days for
+        # final games we haven't aggregated yet and retries them.
+        try:
+            from sync.matchups import (
+                find_unprocessed_final_games,
+                update_aggregates_for_game,
+            )
+            stragglers = find_unprocessed_final_games(client, days_back=14)
+            if stragglers:
+                print(f"  Catch-up: {len(stragglers)} unaggregated final game(s)")
+                catchup_touched = 0
+                catchup_empty = 0
+                for g in stragglers:
+                    try:
+                        touched = update_aggregates_for_game(
+                            client,
+                            game_id=g["id"],
+                            home_team=g["home_team"],
+                            away_team=g["away_team"],
+                            series_id=g.get("series_id"),
+                        )
+                    except Exception as e:
+                        print(f"    {g['date']} {g['id']}: ERROR ({type(e).__name__})")
+                        continue
+                    if touched:
+                        catchup_touched += touched
+                        print(f"    {g['date']} {g['id']}: +{touched} pair rows")
+                    else:
+                        catchup_empty += 1
+                        print(
+                            f"    {g['date']} {g['id']}: empty (NBA hasn't "
+                            f"published yet, will retry next sync)"
+                        )
+                print(
+                    f"  Catch-up done: {catchup_touched} pair rows added, "
+                    f"{catchup_empty} game(s) still empty"
+                )
+        except Exception as e:
+            print(f"  (matchup catch-up skipped: {e})")
+
         # --- Step 3: Fetch rosters + update players ---
         print("  Fetching rosters...")
         rosters = fetch_team_rosters()
