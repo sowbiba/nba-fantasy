@@ -21,7 +21,12 @@ import InjuryArbitrage from "@/components/InjuryArbitrage";
 import WatchlistAlerts from "@/components/WatchlistAlerts";
 import { todayNBA } from "@/lib/date";
 
-export const revalidate = 300;
+// 0 = always fresh on every request. The home page banner depends on
+// whether the user has picked tonight — a 5-min ISR window meant the
+// "pas encore pické" banner stayed visible after the pick was made,
+// until the cache expired. Picking is a low-frequency action so the
+// extra Supabase round-trip is fine in exchange for instant feedback.
+export const revalidate = 0;
 
 async function getData() {
   const today = todayNBA();

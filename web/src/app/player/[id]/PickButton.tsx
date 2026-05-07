@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 interface Props {
@@ -22,6 +23,7 @@ export default function PickButton({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const router = useRouter();
 
   const disabled = alreadyPicked || pickedToday || done;
 
@@ -40,6 +42,10 @@ export default function PickButton({
     setLoading(false);
     if (!error) {
       setDone(true);
+      // Re-render server components so the "pas encore pické" banner
+      // and any other pick-dependent UI update without waiting for a
+      // navigation or a manual refresh.
+      router.refresh();
     } else {
       alert(`Erreur: ${error.message}`);
     }
