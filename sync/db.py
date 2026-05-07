@@ -141,11 +141,16 @@ def get_today_games(client: Client, today: date) -> list[dict]:
     result = client.table("games").select("*").eq("date", today.isoformat()).execute()
     out = []
     for g in result.data:
-        if g.get("series_id") and g["series_id"] in completed_ids:
-            continue
-        pair = tuple(sorted((g["home_team"], g["away_team"])))
-        if pair in completed_pairs:
-            continue
+        # Real played games (final/live) are kept even if their series is now
+        # marked completed — Game 7 of a 4-3 series legitimately belongs to a
+        # completed series. Only `scheduled` placeholders are phantoms.
+        is_played = g.get("status") in ("final", "live")
+        if not is_played:
+            if g.get("series_id") and g["series_id"] in completed_ids:
+                continue
+            pair = tuple(sorted((g["home_team"], g["away_team"])))
+            if pair in completed_pairs:
+                continue
         out.append(g)
     return out
 

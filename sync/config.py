@@ -65,6 +65,37 @@ def play_probability(status: str | None) -> float:
         return 1.0
     return INJURY_PLAY_PROBABILITY.get(status, 1.0)
 
+
+def dnp_risk_factor(recent_logs: list[dict]) -> float:
+    """Probability multiplier for an unflagged DNP pattern.
+
+    ESPN's injury feed lags: a player benched the last game can still
+    show injury_status=NULL when the recommendations are computed. This
+    looks at the 3 most recent gamelogs' minutes (recent_logs ordered
+    most-recent-first) and downweights candidates who have been on the
+    sideline regardless of what ESPN says.
+
+    Returns 1.0 when the pattern is clean. Compounds multiplicatively
+    with play_probability so a Q player who just missed gets a double
+    haircut.
+    """
+    if not recent_logs:
+        return 1.0
+    last3 = recent_logs[:3]
+    dnp = sum(1 for log in last3 if (log.get("minutes") or 0) == 0)
+    if len(last3) < 3:
+        if dnp == len(last3) and dnp >= 1:
+            return 0.55
+        return 1.0
+    if dnp == 3:
+        return 0.30
+    if dnp == 2:
+        return 0.55
+    if dnp == 1:
+        most_recent_dnp = (last3[0].get("minutes") or 0) == 0
+        return 0.75 if most_recent_dnp else 0.90
+    return 1.0
+
 # Playoff strategy: burn threshold
 # If best future spot > tonight + 10%, recommend saving
 BURN_THRESHOLD = 0.10

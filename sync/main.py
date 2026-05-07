@@ -26,6 +26,7 @@ from sync.config import (
     WATCHLIST_BASE,
     WATCHLIST_ELIM_BONUS,
     WATCHLIST_GAME3_SURGE,
+    dnp_risk_factor,
     play_probability,
 )
 from sync.fetcher import (
@@ -154,6 +155,15 @@ def run_sync():
             "id, player_id, game_id, date"
         ).filter("actual_score", "is", "null").execute().data or []
         updated_picks = 0
+        # Cache "is the box score for this game actually synced?" lookups so
+        # we don't re-query for every pick. A game counts as synced as soon
+        # as at least one player row exists in game_logs — that proves the
+        # box-score fetch returned something. Without this guard we used to
+        # mark picks as DNP (0 pts) whenever fetch_live_box_score happened
+        # to return empty (CDN purged + stats API not yet populated, rate
+        # limit, transient network failure), which is wrong: the player
+        # likely played, we just didn't have the data yet.
+        boxscore_synced: dict[str, bool] = {}
         for pick in unscored_picks:
             log_res = client.table("game_logs").select("ttfl_score").eq(
                 "player_id", pick["player_id"]
@@ -165,17 +175,29 @@ def run_sync():
                 }).eq("id", pick["id"]).execute()
                 updated_picks += 1
                 continue
-            # No game_log row. If the game is final, the picked player
-            # wasn't even in the box score (not dressed / inactive list).
-            # That's a DNP → lock in 0 so the pick stops showing as "—".
+            # No row for this player. Only treat this as a confirmed DNP if
+            # (a) the game is final AND (b) we actually have box-score rows
+            # for OTHER players in this game — otherwise the box score
+            # simply hasn't been ingested yet and the pick should stay "—".
             game_res = client.table("games").select("status").eq(
                 "id", pick["game_id"]
             ).execute()
-            if game_res.data and game_res.data[0]["status"] == "final":
-                client.table("picks").update({
-                    "actual_score": 0
-                }).eq("id", pick["id"]).execute()
-                updated_picks += 1
+            if not (game_res.data and game_res.data[0]["status"] == "final"):
+                continue
+            gid = pick["game_id"]
+            if gid not in boxscore_synced:
+                any_log = client.table("game_logs").select("player_id").eq(
+                    "game_id", gid
+                ).limit(1).execute()
+                boxscore_synced[gid] = bool(any_log.data)
+            if not boxscore_synced[gid]:
+                # Box score not yet ingested — leave pick unscored, retry
+                # next sync.
+                continue
+            client.table("picks").update({
+                "actual_score": 0
+            }).eq("id", pick["id"]).execute()
+            updated_picks += 1
         if updated_picks > 0:
             print(f"  Updated {updated_picks} pick(s) with actual score.")
 
@@ -431,6 +453,7 @@ def run_sync():
                     "player": p, "game": g, "perf_score": perf_score,
                     "is_home": is_home, "opponent": opponent,
                     "days_rest": days_rest, "recent_scores": recent_scores,
+                    "recent_logs": logs,
                 })
 
         # --- Step 7: Apply playoff strategy ---
@@ -541,6 +564,9 @@ def run_sync():
             # expected score halved-ish, naturally pushing him below an
             # equivalent clean candidate without a hard exclusion.
             play_prob = play_probability(sp["player"].get("injury_status"))
+            # Catches DNP patterns ESPN hasn't flagged yet (status=NULL but
+            # 0 min last game). Compounds with play_prob.
+            dnp_factor = dnp_risk_factor(sp["recent_logs"])
 
             sp["strategy_score"] = strategy_score
             sp["reservation_penalty"] = reservation
@@ -548,12 +574,14 @@ def run_sync():
             sp["watchlist_boost"] = watchlist_boost
             sp["game3_surge"] = game3_surge
             sp["play_probability"] = play_prob
+            sp["dnp_risk_factor"] = dnp_factor
             sp["estimated_score"] = (
                 strategy_score
                 * (1.0 - reservation)
                 * (1.0 + watchlist_boost)
                 * surge_multiplier
                 * play_prob
+                * dnp_factor
             )
             sp["series_score"] = series_score
             sp["game_number"] = game.get("game_number", 0) or 0
@@ -620,6 +648,10 @@ def run_sync():
                 "stddev": p.get("stddev_ttfl", 0) or 0,
                 "floor": floor_val, "ceiling": ceiling_val,
                 "injury_status": p.get("injury_status"), "teammate_out": teammate_out,
+                "dnp_risk_factor": sp.get("dnp_risk_factor", 1.0),
+                "recent_minutes": [
+                    (log.get("minutes") or 0) for log in sp.get("recent_logs", [])[:3]
+                ],
                 "elimination": sp["elimination"],
                 "home_avg": p.get("home_avg", 0) or 0,
                 "away_avg": p.get("away_avg", 0) or 0,
@@ -680,6 +712,8 @@ def run_sync():
                 tags.append("elimination_high")
             if teammate_out:
                 tags.append("teammate_out")
+            if sp.get("dnp_risk_factor", 1.0) < 1.0:
+                tags.append("dnp_risk")
             if sp.get("watchlist_priority"):
                 tags.append(f"watchlist_p{sp['watchlist_priority']}")
             if sp.get("game3_surge"):

@@ -16,11 +16,25 @@ from nba_api.stats.endpoints import (
     ScoreboardV3,
 )
 from nba_api.live.nba.endpoints import BoxScore, ScoreBoard
+from nba_api.live.nba.library import http as _live_http
+from nba_api.stats.library import http as _stats_http
 
 from sync.config import NBA_API_DELAY
 from sync.ttfl import compute_ttfl_score
 
 import numpy as np
+
+# Akamai on cdn.nba.com / stats.nba.com rejects requests without a Referer
+# pointing at www.nba.com (HTTP 403 "Access Denied"). nba_api's default
+# headers omit Referer, so we inject it here.
+_live_http.NBALiveHTTP.headers = {
+    **_live_http.NBALiveHTTP.headers,
+    "Referer": "https://www.nba.com/",
+}
+_stats_http.NBAStatsHTTP.headers = {
+    **_stats_http.NBAStatsHTTP.headers,
+    "Referer": "https://www.nba.com/",
+}
 
 
 def fetch_today_scoreboard() -> dict:

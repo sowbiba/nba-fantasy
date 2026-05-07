@@ -142,6 +142,23 @@ def generate_argumentaire(context: dict) -> tuple[list[str], list[str]]:
                 "🔶 Statut GTD : peut jouer mais minutes potentiellement limitées"
             )
 
+    # --- DNP récent (indépendant du flag ESPN) ---
+    dnp_factor = context.get("dnp_risk_factor", 1.0)
+    if dnp_factor < 1.0:
+        recent_min = context.get("recent_minutes") or []
+        dnp_count = sum(1 for m in recent_min if m == 0)
+        total = len(recent_min)
+        if dnp_count >= 2:
+            cons.append(
+                f"🚑 DNP récents ({dnp_count}/{total} derniers matchs à 0 min) : "
+                f"statut ESPN n'a peut-être pas été mis à jour, à vérifier"
+            )
+        elif dnp_count == 1 and recent_min and recent_min[0] == 0:
+            cons.append(
+                "🚑 N'a pas joué le dernier match : possible blessure non encore "
+                "officialisée, à vérifier 1h avant le match"
+            )
+
     # --- Stratégie : gestion du capital ---
     tier = context["tier"]
     elites = context["elites_remaining"]
