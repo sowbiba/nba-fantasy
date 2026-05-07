@@ -4,12 +4,19 @@ name: Daily TTFL sync
 # strategy, weekly plan, recommendations) every morning so the user's
 # dashboard is fresh before the day's games tip off in Europe.
 #
-# Schedule: 05:30 UTC = 07:30 Paris (summer) / 06:30 Paris (winter).
-# Adjust by editing the cron expression below.
+# Schedule: 4 runs per day, mirroring the user's local crontab on the
+# always-on PC (07/12/17/22 Paris). Times here are UTC because that's
+# what GitHub Actions cron uses. The mapping below is correct in
+# summer (CEST = UTC+2); during winter (CET = UTC+1) every run lands
+# one hour earlier in Paris (06/11/16/21). Change to "0 6,11,16,21"
+# in late October if you want to keep Paris-local clock alignment.
 
 on:
   schedule:
-    - cron: "30 5 * * *"
+    - cron: "0 5 * * *"   # 07:00 Paris (CEST)
+    - cron: "0 10 * * *"  # 12:00 Paris
+    - cron: "0 15 * * *"  # 17:00 Paris
+    - cron: "0 20 * * *"  # 22:00 Paris
   # Manual trigger so we can re-run after a series result lands or
   # debug from the Actions tab without waiting for tomorrow.
   workflow_dispatch:
