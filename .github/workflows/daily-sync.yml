@@ -50,7 +50,11 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           USE_PAIR_MATCHUP: ${{ vars.USE_PAIR_MATCHUP || '1' }}
-        run: python -m sync.main
+          # Without this CI never sees a print statement until the script
+          # exits — debugging hangs becomes guesswork.
+          PYTHONUNBUFFERED: "1"
+        # `python -u` is belt-and-braces with PYTHONUNBUFFERED.
+        run: python -u -m sync.main
 
       - name: Tail log on failure
         if: failure()

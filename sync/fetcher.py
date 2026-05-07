@@ -36,6 +36,30 @@ _stats_http.NBAStatsHTTP.headers = {
     "Referer": "https://www.nba.com/",
 }
 
+# nba_api's send_api_request accepts timeout=None by default, which means
+# requests waits forever. From cloud egress IPs (GitHub Actions, Vercel)
+# Akamai sometimes accepts the connection and never sends bytes back —
+# the sync then hangs until the runner timeout (25 min). Patch every
+# call to enforce a hard timeout so a stuck endpoint surfaces as a
+# normal exception we can log and skip.
+_NBA_API_DEFAULT_TIMEOUT = 30  # seconds
+
+
+def _wrap_with_timeout(send_method):
+    def _patched(self, *args, **kwargs):
+        if kwargs.get("timeout") is None:
+            kwargs["timeout"] = _NBA_API_DEFAULT_TIMEOUT
+        return send_method(self, *args, **kwargs)
+    return _patched
+
+
+_live_http.NBALiveHTTP.send_api_request = _wrap_with_timeout(
+    _live_http.NBALiveHTTP.send_api_request
+)
+_stats_http.NBAStatsHTTP.send_api_request = _wrap_with_timeout(
+    _stats_http.NBAStatsHTTP.send_api_request
+)
+
 
 def fetch_today_scoreboard() -> dict:
     """Fetch today's scoreboard from nba_api live endpoint."""
