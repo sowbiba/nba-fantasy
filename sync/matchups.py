@@ -342,6 +342,222 @@ def _is_game_already_aggregated(client, game_id: str) -> bool:
         return False
 
 
+def _persist_raw_rows(
+    client,
+    rows: list[dict],
+    series_id: int | None,
+    home_team: str,
+    away_team: str,
+) -> None:
+    """Save the raw BoxScoreMatchupsV3 payload before we aggregate.
+
+    Stops the data from being lost if NBA later deprecates v3 or our IP
+    is blocked when we want to re-aggregate. UPSERT on (game_id,
+    off_player_id, def_player_id) makes this safe to call repeatedly
+    on the same game.
+    """
+    if not rows:
+        return
+    raw_payload = []
+    for r in rows:
+        off_team = r.get("off_team") or ""
+        def_team = away_team if off_team == home_team else home_team
+        raw_payload.append({
+            "game_id": str(r.get("game_id") or ""),
+            "off_player_id": int(r["off_player_id"]),
+            "def_player_id": int(r["def_player_id"]),
+            "off_team": off_team,
+            "def_team": def_team,
+            "series_id": series_id,
+            "off_player_name": r.get("off_player_name"),
+            "def_player_name": r.get("def_player_name"),
+            "matchup_seconds": float(r.get("matchup_seconds") or 0),
+            "partial_possessions": float(r.get("partial_possessions") or 0),
+            "player_points": int(r.get("player_points") or 0),
+            "matchup_assists": int(r.get("matchup_assists") or 0),
+            "matchup_turnovers": int(r.get("matchup_turnovers") or 0),
+            "matchup_blocks": int(r.get("matchup_blocks") or 0),
+            "matchup_fgm": int(r.get("matchup_fgm") or 0),
+            "matchup_fga": int(r.get("matchup_fga") or 0),
+            "matchup_tpm": int(r.get("matchup_tpm") or 0),
+            "matchup_tpa": int(r.get("matchup_tpa") or 0),
+            "matchup_ftm": int(r.get("matchup_ftm") or 0),
+            "matchup_fta": int(r.get("matchup_fta") or 0),
+        })
+    _retry(lambda: client.table("box_score_matchups_raw").upsert(
+        raw_payload, on_conflict="game_id,off_player_id,def_player_id"
+    ).execute())
+
+
+def rebuild_aggregates_from_raw(
+    client,
+    series_id: int | None = None,
+    game_ids: list[str] | None = None,
+) -> int:
+    """Recompute matchup_aggregates from box_score_matchups_raw without
+    touching NBA. Use after a schema change in the aggregation logic, or
+    to populate aggregates we lost track of.
+
+    Scope: pass `series_id` to rebuild one series, `game_ids` to rebuild
+    only certain games (the affected aggregates are inferred from the
+    raw rows of those games), or both. Without args, rebuilds nothing
+    (intentional: full table rebuild is risky, run via a script).
+
+    Returns the number of aggregate rows touched.
+    """
+    if series_id is None and not game_ids:
+        return 0
+
+    q = client.table("box_score_matchups_raw").select("*")
+    if series_id is not None:
+        q = q.eq("series_id", series_id)
+    if game_ids:
+        q = q.in_("game_id", [str(g) for g in game_ids])
+    raw_rows = _retry(lambda: q.execute()) or _NoData()
+    raw_rows = getattr(raw_rows, "data", []) or []
+    if not raw_rows:
+        return 0
+
+    # Group raw rows by (series_id, game_id) so we can replay the same
+    # _aggregate_rows + _build_aggregate_payload + _blend_into pipeline
+    # the live path uses, in chronological order.
+    by_game: dict[tuple, list[dict]] = defaultdict(list)
+    for r in raw_rows:
+        key = (r.get("series_id"), str(r["game_id"]))
+        by_game[key].append({
+            "game_id": r["game_id"],
+            "off_team": r.get("off_team") or "",
+            "off_player_id": int(r["off_player_id"]),
+            "off_player_name": r.get("off_player_name") or "",
+            "def_player_id": int(r["def_player_id"]),
+            "def_player_name": r.get("def_player_name") or "",
+            "matchup_seconds": float(r.get("matchup_seconds") or 0),
+            "partial_possessions": float(r.get("partial_possessions") or 0),
+            "player_points": int(r.get("player_points") or 0),
+            "matchup_assists": int(r.get("matchup_assists") or 0),
+            "matchup_turnovers": int(r.get("matchup_turnovers") or 0),
+            "matchup_blocks": int(r.get("matchup_blocks") or 0),
+            "matchup_fgm": int(r.get("matchup_fgm") or 0),
+            "matchup_fga": int(r.get("matchup_fga") or 0),
+            "matchup_tpm": int(r.get("matchup_tpm") or 0),
+            "matchup_tpa": int(r.get("matchup_tpa") or 0),
+            "matchup_ftm": int(r.get("matchup_ftm") or 0),
+            "matchup_fta": int(r.get("matchup_fta") or 0),
+        })
+
+    # Determine per-game home/away teams from games table.
+    all_game_ids = list({k[1] for k in by_game.keys()})
+    games_lookup: dict[str, dict] = {}
+    if all_game_ids:
+        games_res = _retry(lambda: (
+            client.table("games").select("id, home_team, away_team")
+            .in_("id", all_game_ids).execute()
+        ))
+        for g in (getattr(games_res, "data", None) or []):
+            games_lookup[str(g["id"])] = g
+
+    # Drop existing aggregates for the affected (series_id, off_player,
+    # opponent_team) tuples — we'll rebuild from scratch by replaying
+    # all raw games in chronological order.
+    affected_series = {k[0] for k in by_game.keys()}
+    if affected_series:
+        # Wipe existing aggregates only for series we're rebuilding.
+        for sid in affected_series:
+            del_q = client.table("matchup_aggregates").delete()
+            if sid is None:
+                del_q = del_q.is_("series_id", "null")
+            else:
+                del_q = del_q.eq("series_id", sid)
+            _retry(lambda q=del_q: q.execute())
+
+    touched = 0
+    # Order games by id for chronological-ish replay (NBA game ids are
+    # roughly time-sequential within a season).
+    for (sid, gid) in sorted(by_game.keys(), key=lambda x: x[1]):
+        rows = by_game[(sid, gid)]
+        game_meta = games_lookup.get(gid, {})
+        home = game_meta.get("home_team") or ""
+        away = game_meta.get("away_team") or ""
+        n = _ingest_one_game_payload(
+            client, rows, gid, home, away, sid
+        )
+        touched += n
+    return touched
+
+
+def _ingest_one_game_payload(
+    client,
+    rows: list[dict],
+    game_id: str,
+    home_team: str,
+    away_team: str,
+    series_id: int | None,
+) -> int:
+    """Same logic as the post-fetch path of update_aggregates_for_game,
+    factored so rebuild_aggregates_from_raw can replay it."""
+    by_off = _aggregate_rows(rows)
+    if not by_off:
+        return 0
+    payloads: list[dict] = []
+    for off_id, slot in by_off.items():
+        opponent = away_team if slot["off_team"] == home_team else home_team
+        payload = _build_aggregate_payload(
+            player_id=off_id,
+            off_team=slot["off_team"],
+            opponent_team=opponent,
+            series_id=series_id,
+            by_off_slot=slot,
+            last_game_id=game_id,
+        )
+        if payload is not None:
+            payloads.append(payload)
+    if not payloads:
+        return 0
+    player_ids = list({p["player_id"] for p in payloads})
+
+    def _fetch_existing():
+        q = (
+            client.table("matchup_aggregates")
+            .select("*")
+            .in_("player_id", player_ids)
+        )
+        if series_id is None:
+            q = q.is_("series_id", "null")
+        else:
+            q = q.eq("series_id", series_id)
+        return q.execute().data or []
+
+    existing_rows = _retry(_fetch_existing) or []
+    existing_index: dict[tuple[int, str], dict] = {
+        (int(r["player_id"]), r["opponent_team"]): r for r in existing_rows
+    }
+    inserts: list[dict] = []
+    updates: list[tuple[int, dict]] = []
+    for payload in payloads:
+        key = (payload["player_id"], payload["opponent_team"])
+        existing = existing_index.get(key)
+        if existing is None:
+            inserts.append(payload)
+            continue
+        merged = _blend_into(existing, payload, game_id)
+        if merged is None:
+            continue
+        updates.append((existing["id"], merged))
+    if inserts:
+        _retry(lambda: client.table("matchup_aggregates").insert(inserts).execute())
+    for row_id, merged in updates:
+        _retry(
+            lambda r=row_id, p=merged: (
+                client.table("matchup_aggregates").update(p).eq("id", r).execute()
+            )
+        )
+    return len(inserts) + len(updates)
+
+
+class _NoData:
+    data: list = []
+
+
 def update_aggregates_for_game(
     client,
     game_id: str,
@@ -349,13 +565,13 @@ def update_aggregates_for_game(
     away_team: str,
     series_id: int | None,
 ) -> int:
-    """Pull matchup data for one game and merge it into matchup_aggregates.
+    """Pull matchup data for one game, persist the raw rows, and merge
+    into matchup_aggregates.
 
-    Batches the existence check into one query (instead of one per
-    player) — the per-player loop was hammering Supabase's HTTP/2
-    connection during the 30-day backfill and triggering peer resets.
-    Re-running on the same game_id is idempotent: rows whose
-    last_game_id already matches are skipped.
+    The raw rows go to box_score_matchups_raw FIRST so they're safe even
+    if the aggregate update fails halfway. Re-running is idempotent on
+    both tables: raw upserts on (game_id, off_player, def_player), and
+    aggregates skip via processed_game_ids.
 
     Belt-and-braces: short-circuit before the network call when this
     exact game id is already present in some row's processed_game_ids.
@@ -367,6 +583,12 @@ def update_aggregates_for_game(
     rows = fetch_box_score_matchups(game_id)
     if not rows:
         return 0
+    # Persist raw before doing anything else — if the aggregation logic
+    # changes tomorrow we can rebuild without re-fetching.
+    try:
+        _persist_raw_rows(client, rows, series_id, home_team, away_team)
+    except Exception as e:
+        print(f"    (raw matchups persist failed: {type(e).__name__}: {e})")
 
     by_off = _aggregate_rows(rows)
     if not by_off:

@@ -11,8 +11,13 @@ SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 ESPN_INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{team_id}/injuries"
 ESPN_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 
-# NBA API request delay (avoid rate limiting)
-NBA_API_DELAY = 0.6  # seconds between requests
+# NBA API request delay (avoid rate limiting). 0.6s was burning Akamai
+# credit on roster bursts (30 calls in 18s). NBA stats has no public
+# rate-limit documentation; community wisdom converges on ~5s+ between
+# stats.nba.com calls and 1s for cdn.nba.com (live). 2.5s is a
+# conservative middle ground that keeps the daily sync under a minute
+# while staying well clear of Cloudflare's "burst" trigger.
+NBA_API_DELAY = 2.5  # seconds between requests
 
 # Scoring weights
 WEIGHTS = {
