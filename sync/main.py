@@ -297,13 +297,12 @@ def run_sync():
             print(f"  (matchup catch-up skipped: {e})")
 
         # --- Step 3: Fetch rosters + update players ---
-        # Rosters change rarely (mid-season trades, 10-day contracts). Hitting
-        # CommonTeamRoster 30× per sync was burning Akamai rate-limit credit
-        # for almost no signal change. Skip the fetch when a recent run
-        # already pulled fresh rosters; the 23:50 local cron + the daily GHA
-        # rotation guarantee at least one full refresh per day under normal
-        # conditions.
-        ROSTER_REFRESH_INTERVAL_HOURS = 18
+        # Rosters change rarely. In playoffs especially they're frozen
+        # (no trades after the deadline, two-way contracts converted or
+        # waived already). 30 CommonTeamRoster calls eat ~80s of NBA_API_DELAY
+        # plus burn Akamai budget for almost no signal change — refresh
+        # every 48h is plenty.
+        ROSTER_REFRESH_INTERVAL_HOURS = 48
         recent_logs = (
             client.table("sync_log")
             .select("started_at, players_updated, status")
