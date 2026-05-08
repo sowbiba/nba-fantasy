@@ -108,23 +108,85 @@ def run_sync():
                 print(f"  (team defense refresh skipped: {e})")
 
         # --- Step 2: Fetch yesterday's box scores (for actual_score updates) ---
+        # Skip games we've already ingested so the 4-runs-a-day cadence
+        # doesn't keep poking NBA for data we already have. A game with at
+        # least one row in game_logs has been fetched once and final stats
+        # don't change. Step 2b below catches the truly unprocessed
+        # matchup_aggregates separately.
         yesterday_games = db.get_today_games(client, yesterday)
+
+        # Pre-fetch all (game_id) rows currently in game_logs and matchup_aggregates
+        # so we can skip without per-game round-trips.
+        yesterday_final_ids = [
+            g["id"] for g in yesterday_games if g["status"] == "final"
+        ]
+        already_logged_games: set[str] = set()
+        already_aggregated_games: set[str] = set()
+        if yesterday_final_ids:
+            try:
+                logged_rows = (
+                    client.table("game_logs").select("game_id")
+                    .in_("game_id", yesterday_final_ids)
+                    .execute().data or []
+                )
+                already_logged_games = {str(r["game_id"]) for r in logged_rows}
+            except Exception:
+                pass
+            try:
+                agg_rows = (
+                    client.table("matchup_aggregates")
+                    .select("processed_game_ids")
+                    .execute().data or []
+                )
+                for r in agg_rows:
+                    for gid in r.get("processed_game_ids") or []:
+                        already_aggregated_games.add(str(gid))
+            except Exception:
+                pass
+
         for game in yesterday_games:
             if game["status"] != "final":
                 continue
-            print(f"  Fetching box score for {game['id']}...")
-            box_players = fetch_live_box_score(
-                game["id"],
-                home_tricode=game.get("home_team"),
-                game_date=game.get("date"),
-            )
-            # Update per-pair matchup aggregates (best-effort — failures
-            # here shouldn't break the box-score sync).
+            gid = str(game["id"])
+
+            if gid in already_logged_games:
+                print(f"  Box score for {gid} already cached, skipping fetch")
+            else:
+                print(f"  Fetching box score for {gid}...")
+                box_players = fetch_live_box_score(
+                    gid,
+                    home_tricode=game.get("home_team"),
+                    game_date=game.get("date"),
+                )
+                game_logs = []
+                for bp in box_players:
+                    game_logs.append({
+                        "player_id": bp["player_id"],
+                        "game_id": bp["game_id"],
+                        "date": bp["date"],
+                        "pts": bp["pts"], "reb": bp["reb"], "ast": bp["ast"],
+                        "stl": bp["stl"], "blk": bp["blk"],
+                        "fgm": bp["fgm"], "fga": bp["fga"],
+                        "tpm": bp["tpm"], "tpa": bp["tpa"],
+                        "ftm": bp["ftm"], "fta": bp["fta"],
+                        "tov": bp["tov"], "minutes": bp["minutes"],
+                        "ttfl_score": bp["ttfl_score"],
+                        "is_home": bp["is_home"],
+                    })
+                if game_logs:
+                    db.upsert_game_logs(client, game_logs)
+
+            # Per-pair matchup aggregates: skip if we've already merged
+            # this game's data. update_aggregates_for_game is internally
+            # idempotent (processed_game_ids check) but the API call still
+            # fires before the dedup — we want to skip the call entirely.
+            if gid in already_aggregated_games:
+                continue
             try:
                 from sync.matchups import update_aggregates_for_game
                 touched = update_aggregates_for_game(
                     client,
-                    game_id=game["id"],
+                    game_id=gid,
                     home_team=game["home_team"],
                     away_team=game["away_team"],
                     series_id=game.get("series_id"),
@@ -133,22 +195,6 @@ def run_sync():
                     print(f"    matchup aggregates: {touched} pair(s) updated")
             except Exception as e:
                 print(f"    (matchup aggregates skipped: {e})")
-            game_logs = []
-            for bp in box_players:
-                game_logs.append({
-                    "player_id": bp["player_id"],
-                    "game_id": bp["game_id"],
-                    "date": bp["date"],
-                    "pts": bp["pts"], "reb": bp["reb"], "ast": bp["ast"],
-                    "stl": bp["stl"], "blk": bp["blk"],
-                    "fgm": bp["fgm"], "fga": bp["fga"],
-                    "tpm": bp["tpm"], "tpa": bp["tpa"],
-                    "ftm": bp["ftm"], "fta": bp["fta"],
-                    "tov": bp["tov"], "minutes": bp["minutes"],
-                    "ttfl_score": bp["ttfl_score"],
-                    "is_home": bp["is_home"],
-                })
-            db.upsert_game_logs(client, game_logs)
 
         # Step 2b: update actual_score on picks now that box scores are final.
         # Match on (player_id, game_id) — the game_id is stable whereas the
