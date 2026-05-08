@@ -297,13 +297,12 @@ def run_sync():
             print(f"  (matchup catch-up skipped: {e})")
 
         # --- Step 3: Fetch rosters + update players ---
-        # Rosters change rarely. In playoffs especially they're frozen
-        # (no trades after the deadline, two-way contracts converted or
-        # waived already). 30 CommonTeamRoster calls × 5s NBA_API_DELAY
-        # = ~150s of sleep per refresh — refresh every 72h covers the
-        # only realistic risk (a bench player waived between rounds)
-        # while keeping the GHA sync routinely fast.
-        ROSTER_REFRESH_INTERVAL_HOURS = 72
+        # Rosters change rarely and a bench-end signing or waiver isn't
+        # a TTFL signal we care about. In playoffs they're frozen anyway;
+        # in regular season the only events worth catching mid-week are
+        # the trade deadline and impactful buyouts, both of which we'll
+        # trigger manually with a one-shot sync. Default cadence: weekly.
+        ROSTER_REFRESH_INTERVAL_HOURS = 168
         recent_logs = (
             client.table("sync_log")
             .select("started_at, players_updated, status")
