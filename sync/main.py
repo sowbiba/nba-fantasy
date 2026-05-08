@@ -171,6 +171,7 @@ def run_sync():
                         "tpm": bp["tpm"], "tpa": bp["tpa"],
                         "ftm": bp["ftm"], "fta": bp["fta"],
                         "tov": bp["tov"], "minutes": bp["minutes"],
+                        "fouls": bp.get("fouls", 0),
                         "ttfl_score": bp["ttfl_score"],
                         "is_home": bp["is_home"],
                     })

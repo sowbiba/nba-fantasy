@@ -172,6 +172,13 @@ def fetch_box_score_stats_api(
         ftm = int(row.get("freeThrowsMade") or 0)
         fta = int(row.get("freeThrowsAttempted") or 0)
         tov = int(row.get("turnovers") or 0)
+        # NBA Stats v3 column: foulsPersonal (sometimes personalFoulsTotal)
+        fouls = int(
+            row.get("foulsPersonal")
+            or row.get("personalFoulsTotal")
+            or row.get("personalFouls")
+            or 0
+        )
         ttfl = compute_ttfl_score(
             pts, reb, ast, stl, blk, fgm, fga, tpm, tpa, ftm, fta, tov
         )
@@ -187,6 +194,7 @@ def fetch_box_score_stats_api(
             "pts": pts, "reb": reb, "ast": ast, "stl": stl, "blk": blk,
             "fgm": fgm, "fga": fga, "tpm": tpm, "tpa": tpa,
             "ftm": ftm, "fta": fta, "tov": tov,
+            "fouls": fouls,
             "minutes": minutes,
             "ttfl_score": ttfl,
             "is_home": is_home,
@@ -249,6 +257,8 @@ def fetch_live_box_score(
             ftm = (stats or {}).get("freeThrowsMade", 0)
             fta = (stats or {}).get("freeThrowsAttempted", 0)
             tov = (stats or {}).get("turnovers", 0)
+            # cdn.nba.com live payload uses foulsPersonal
+            fouls = (stats or {}).get("foulsPersonal", 0)
 
             ttfl = compute_ttfl_score(pts, reb, ast, stl, blk, fgm, fga, tpm, tpa, ftm, fta, tov)
 
@@ -261,6 +271,7 @@ def fetch_live_box_score(
                 "pts": pts, "reb": reb, "ast": ast, "stl": stl, "blk": blk,
                 "fgm": fgm, "fga": fga, "tpm": tpm, "tpa": tpa,
                 "ftm": ftm, "fta": fta, "tov": tov,
+                "fouls": fouls,
                 "minutes": minutes,
                 "ttfl_score": ttfl,
                 "is_home": is_home,

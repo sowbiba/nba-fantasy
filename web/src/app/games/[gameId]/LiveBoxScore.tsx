@@ -25,6 +25,7 @@ type LivePlayer = {
   ftm: number;
   fta: number;
   tov: number;
+  fouls: number;
   ttfl_score: number;
 };
 
@@ -231,6 +232,7 @@ const statHeaders = [
   { key: "tp", label: "3P" },
   { key: "ft", label: "FT" },
   { key: "tov", label: "TO" },
+  { key: "fouls", label: "PF" },
 ];
 
 function TeamStatsTable({
@@ -310,6 +312,17 @@ function TeamStatsTable({
                   </td>
                   <td className="text-center px-1.5 py-1.5 text-[color:var(--color-text-mute)]">
                     {p.tov}
+                  </td>
+                  <td
+                    className={`text-center px-1.5 py-1.5 ${
+                      p.fouls >= 5
+                        ? "text-[color:var(--color-crimson)] font-semibold"
+                        : p.fouls >= 4
+                          ? "text-[color:var(--color-flame)]"
+                          : "text-[color:var(--color-text-mute)]"
+                    }`}
+                  >
+                    {p.fouls}
                   </td>
                   <td className="text-center px-1.5 py-1.5 text-[color:var(--color-text-dim)]">
                     {p.minutes}

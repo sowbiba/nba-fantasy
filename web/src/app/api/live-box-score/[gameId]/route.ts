@@ -18,6 +18,7 @@ type StoredLog = {
   ftm: number | null;
   fta: number | null;
   tov: number | null;
+  fouls: number | null;
   minutes: number | null;
   ttfl_score: number | null;
   is_home: boolean;
@@ -40,7 +41,7 @@ async function buildFromGameLogs(
     .from("game_logs")
     .select(
       `player_id, pts, reb, ast, stl, blk, fgm, fga, tpm, tpa, ftm, fta,
-       tov, minutes, ttfl_score, is_home, players ( name )`,
+       tov, fouls, minutes, ttfl_score, is_home, players ( name )`,
     )
     .eq("game_id", gameId);
 
@@ -67,6 +68,7 @@ async function buildFromGameLogs(
     ftm: l.ftm ?? 0,
     fta: l.fta ?? 0,
     tov: l.tov ?? 0,
+    fouls: l.fouls ?? 0,
     ttfl_score: l.ttfl_score ?? 0,
   }));
 
@@ -101,6 +103,7 @@ type RawStats = {
   freeThrowsMade?: number;
   freeThrowsAttempted?: number;
   turnovers?: number;
+  foulsPersonal?: number;
 };
 
 type RawPlayer = {
@@ -153,6 +156,7 @@ function mapPlayer(p: RawPlayer, isHome: boolean, teamTricode: string) {
     ftm: s.freeThrowsMade ?? 0,
     fta: s.freeThrowsAttempted ?? 0,
     tov: s.turnovers ?? 0,
+    fouls: s.foulsPersonal ?? 0,
   };
   return {
     player_id: p.personId,
