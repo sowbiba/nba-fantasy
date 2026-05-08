@@ -297,15 +297,50 @@ def run_sync():
             print(f"  (matchup catch-up skipped: {e})")
 
         # --- Step 3: Fetch rosters + update players ---
-        print("  Fetching rosters...")
-        rosters = fetch_team_rosters()
-        all_players_list = []
-        for tricode, players in rosters.items():
-            for p in players:
-                all_players_list.append(p)
-        db.upsert_players(client, all_players_list)
-        players_updated = len(all_players_list)
-        print(f"  {players_updated} players updated")
+        # Rosters change rarely (mid-season trades, 10-day contracts). Hitting
+        # CommonTeamRoster 30× per sync was burning Akamai rate-limit credit
+        # for almost no signal change. Skip the fetch when a recent run
+        # already pulled fresh rosters; the 23:50 local cron + the daily GHA
+        # rotation guarantee at least one full refresh per day under normal
+        # conditions.
+        ROSTER_REFRESH_INTERVAL_HOURS = 18
+        recent_logs = (
+            client.table("sync_log")
+            .select("started_at, players_updated, status")
+            .eq("status", "success")
+            .gt("players_updated", 0)
+            .order("started_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        ) or []
+        skip_rosters = False
+        if recent_logs:
+            last_iso = recent_logs[0]["started_at"]
+            try:
+                last_dt = datetime.fromisoformat(last_iso.replace("Z", "+00:00"))
+                age_h = (datetime.now(UTC) - last_dt).total_seconds() / 3600
+                if age_h < ROSTER_REFRESH_INTERVAL_HOURS:
+                    skip_rosters = True
+                    print(
+                        f"  Rosters fresh ({age_h:.1f}h old < "
+                        f"{ROSTER_REFRESH_INTERVAL_HOURS}h), skipping fetch"
+                    )
+            except (ValueError, TypeError):
+                pass
+
+        if skip_rosters:
+            players_updated = 0
+        else:
+            print("  Fetching rosters...")
+            rosters = fetch_team_rosters()
+            all_players_list = []
+            for tricode, players in rosters.items():
+                for p in players:
+                    all_players_list.append(p)
+            db.upsert_players(client, all_players_list)
+            players_updated = len(all_players_list)
+            print(f"  {players_updated} players updated")
 
         # Games happening today (local), fetched from the DB — this is what
         # Steps 4/5/6 iterate on. Decoupled from the scoreboard so that a

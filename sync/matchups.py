@@ -320,6 +320,28 @@ def find_unprocessed_final_games(client, days_back: int = 14) -> list[dict]:
     return [g for g in games_res if str(g["id"]) not in processed]
 
 
+def _is_game_already_aggregated(client, game_id: str) -> bool:
+    """Has this game already been merged into matchup_aggregates?
+
+    Cheap: probes any row whose `processed_game_ids` array contains the id.
+    Used to short-circuit before hitting BoxScoreMatchupsV3 — playoffs
+    games are final, NBA's data is immutable, so a cached merge is
+    authoritative and we have no reason to re-fetch.
+    """
+    try:
+        existing = (
+            client.table("matchup_aggregates")
+            .select("id")
+            .contains("processed_game_ids", [str(game_id)])
+            .limit(1)
+            .execute()
+            .data
+        ) or []
+        return bool(existing)
+    except Exception:
+        return False
+
+
 def update_aggregates_for_game(
     client,
     game_id: str,
@@ -334,7 +356,14 @@ def update_aggregates_for_game(
     connection during the 30-day backfill and triggering peer resets.
     Re-running on the same game_id is idempotent: rows whose
     last_game_id already matches are skipped.
+
+    Belt-and-braces: short-circuit before the network call when this
+    exact game id is already present in some row's processed_game_ids.
+    Final games never change, so a cached merge is the authoritative
+    answer.
     """
+    if _is_game_already_aggregated(client, game_id):
+        return 0
     rows = fetch_box_score_matchups(game_id)
     if not rows:
         return 0
