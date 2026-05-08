@@ -13,11 +13,12 @@ ESPN_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/
 
 # NBA API request delay (avoid rate limiting). 0.6s was burning Akamai
 # credit on roster bursts (30 calls in 18s). NBA stats has no public
-# rate-limit documentation; community wisdom converges on ~5s+ between
-# stats.nba.com calls and 1s for cdn.nba.com (live). 2.5s is a
-# conservative middle ground that keeps the daily sync under a minute
-# while staying well clear of Cloudflare's "burst" trigger.
-NBA_API_DELAY = 2.5  # seconds between requests
+# rate-limit documentation; community wisdom converges on ~5-10s
+# between stats.nba.com calls. 5s is the lower bound of that range and
+# keeps us ~30× under typical Cloudflare burst thresholds. The slowest
+# sync path (full roster refresh, 30 calls) is ~150s = 2.5min, run
+# only every 72h.
+NBA_API_DELAY = 5.0  # seconds between requests
 
 # Scoring weights
 WEIGHTS = {

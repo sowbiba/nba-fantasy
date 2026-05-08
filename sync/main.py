@@ -299,10 +299,11 @@ def run_sync():
         # --- Step 3: Fetch rosters + update players ---
         # Rosters change rarely. In playoffs especially they're frozen
         # (no trades after the deadline, two-way contracts converted or
-        # waived already). 30 CommonTeamRoster calls eat ~80s of NBA_API_DELAY
-        # plus burn Akamai budget for almost no signal change — refresh
-        # every 48h is plenty.
-        ROSTER_REFRESH_INTERVAL_HOURS = 48
+        # waived already). 30 CommonTeamRoster calls × 5s NBA_API_DELAY
+        # = ~150s of sleep per refresh — refresh every 72h covers the
+        # only realistic risk (a bench player waived between rounds)
+        # while keeping the GHA sync routinely fast.
+        ROSTER_REFRESH_INTERVAL_HOURS = 72
         recent_logs = (
             client.table("sync_log")
             .select("started_at, players_updated, status")
