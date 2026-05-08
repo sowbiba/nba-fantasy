@@ -10,6 +10,7 @@
 7. Generate argumentaires for top 50
 8. Push everything to Supabase
 """
+import os
 import sys
 import time
 import traceback
@@ -303,6 +304,9 @@ def run_sync():
         # the trade deadline and impactful buyouts, both of which we'll
         # trigger manually with a one-shot sync. Default cadence: weekly.
         ROSTER_REFRESH_INTERVAL_HOURS = 168
+        force_rosters = os.environ.get("FORCE_ROSTERS", "").lower() in (
+            "1", "true", "yes", "y"
+        )
         recent_logs = (
             client.table("sync_log")
             .select("started_at, players_updated, status")
@@ -314,7 +318,9 @@ def run_sync():
             .data
         ) or []
         skip_rosters = False
-        if recent_logs:
+        if force_rosters:
+            print("  FORCE_ROSTERS set, fetching rosters regardless of cache age")
+        elif recent_logs:
             last_iso = recent_logs[0]["started_at"]
             try:
                 last_dt = datetime.fromisoformat(last_iso.replace("Z", "+00:00"))

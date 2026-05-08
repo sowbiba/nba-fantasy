@@ -20,6 +20,12 @@ on:
   # Manual trigger so we can re-run after a series result lands or
   # debug from the Actions tab without waiting for tomorrow.
   workflow_dispatch:
+    inputs:
+      force_rosters:
+        description: "Bypass the 168h cache and refetch all 30 team rosters"
+        required: false
+        default: "false"
+        type: boolean
 
 concurrency:
   group: daily-sync
@@ -50,6 +56,9 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           USE_PAIR_MATCHUP: ${{ vars.USE_PAIR_MATCHUP || '1' }}
+          # Set by the workflow_dispatch toggle when re-running manually
+          # right after a trade or buyout. No-op for cron runs.
+          FORCE_ROSTERS: ${{ inputs.force_rosters || 'false' }}
           # Without this CI never sees a print statement until the script
           # exits — debugging hangs becomes guesswork.
           PYTHONUNBUFFERED: "1"
