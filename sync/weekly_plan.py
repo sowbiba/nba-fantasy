@@ -35,6 +35,7 @@ from sync.config import (
     WATCHLIST_GAME3_SURGE,
     dnp_risk_factor,
     play_probability,
+    save_tax_for_game,
 )
 from sync.personal_strategy import (
     PersonalContext,
@@ -226,6 +227,24 @@ def build_candidates(
         if pr in remaining_by_tier:
             remaining_by_tier[pr] += 1
     expected_picks_left = max(1, len(games))  # rough proxy: candidate game days
+
+    # Per-team ranking of available (non-cramed) players by season avg.
+    # Used by save_tax_for_game to identify which specific ranks
+    # (TEAM_SAVE_RANKS) to protect against Hungarian-greedy burn.
+    # Computed once per sync — the picked set doesn't change mid-window.
+    team_rank_map: dict[int, int] = {}
+    for t in {p["team"] for p in all_players}:
+        teammates_available = sorted(
+            (
+                pp for pp in all_players
+                if pp["team"] == t
+                and pp["id"] not in picked
+                and (pp.get("avg_ttfl_season") or 0) > 0
+            ),
+            key=lambda x: -(x.get("avg_ttfl_season") or 0),
+        )
+        for rank, pp in enumerate(teammates_available):
+            team_rank_map[pp["id"]] = rank
 
     # Per-team single-game win prob & expected remaining player games. Cached
     # per team so we don't hit Markov for every (player, day) combo.
@@ -488,6 +507,17 @@ def build_candidates(
                     personal_ctx
                 )
 
+                # Team save tax: penalize top-N players of thin-pool teams
+                # so the Hungarian solver defers them to late-series spots
+                # (G6/G7) or releases them on critical elimination. The
+                # decay across game_number 2→6 means the engine naturally
+                # spreads "burns" of mid-tier players first while keeping
+                # ★ candidates available for must-win contexts.
+                player_team_rank = team_rank_map.get(p["id"], 999)
+                save_tax = save_tax_for_game(
+                    team, player_team_rank, g.get("game_number"), elim
+                )
+
                 final_score = (
                     expected_utility
                     * (1.0 - reservation)
@@ -497,6 +527,7 @@ def build_candidates(
                     * play_prob
                     * dnp_factor
                     * personal_mult
+                    * (1.0 - save_tax)
                     - LAMBDA_RISK * waste_cost_value
                 )
                 # Don't let the assignment matrix see a negative cell — the

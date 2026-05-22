@@ -127,3 +127,102 @@ WATCHLIST_BASE = {1: 0.20, 2: 0.08, 3: 0.03}
 WATCHLIST_ELIM_BONUS = {"critical": 0.35, "high": 0.15, "none": 0.0}
 # Challenger Game 3 at home after 0-2 deficit — watchlist players only.
 WATCHLIST_GAME3_SURGE = 1.12
+
+
+# ---------- Team save tax (Finals dignity hedge) ----------
+#
+# When a team's elite pool has been thinned by R1/R2 cramages, the user
+# wants to preserve specific top performers (not necessarily all top-N)
+# so Finals doesn't collapse into a 2nd-tier filler purgatory if that
+# team advances. We encode this by **penalizing** (multiplying down)
+# specific ranks of each team in the weekly_plan optimization so the
+# Hungarian solver defers them — unless an elimination trigger fires.
+#
+# TEAM_SAVE_RANKS: list of ranks (0 = highest season avg among
+# non-cramed teammates) that should be saved. Lets the user say "save
+# rank 1 but let rank 0 burn at peak" (a SAS/CLE pattern where the top
+# is intended to burn at G2-G3 home spots while the second-best is
+# preserved for Finals).
+#
+# Example (R3 2026 state, post-2026-05-22):
+#   NYK lost KAT+OG_Anunoby+Hart → only ★★★ left is Brunson, must save
+#     → ranks [0]
+#   OKC lost Hartenstein+A.Mitchell+Holmgren → save BOTH remaining top
+#     2 (SGA + J. Williams)
+#     → ranks [0, 1]
+#   SAS lost Wemby+Castle → user framework "burn Fox at G3 peak, save
+#     Harper for Finals" → tax rank 1 only, leave rank 0 burnable
+#     → ranks [1]
+#   CLE lost Mobley+Harden → user framework "burn Mitchell at G3 peak,
+#     save Allen for Finals" → tax rank 1 only
+#     → ranks [1]
+TEAM_SAVE_RANKS: dict[str, list[int]] = {
+    "NYK": [0],
+    "OKC": [0, 1],
+    "SAS": [1],
+    "CLE": [1],
+}
+
+# Base intensity of the save penalty (0 = no save, 1 = fully blocked).
+# Heavier per team = stronger insistence on preserving them. Calibrated
+# so the protected ranks' value at G2-G3 drops below mid-tier
+# alternatives (forcing the Hungarian solver to defer to G6+ or
+# Finals), while the step decay (see save_tax_for_game) releases the
+# tax progressively in late-series spots.
+TEAM_SAVE_TAX_BASE: dict[str, float] = {
+    "NYK": 0.95,  # Brunson sole ★★★ — must save until G6+/Finals
+    "OKC": 0.92,  # Save both SGA + J. Williams
+    "SAS": 0.90,  # Save Harper specifically; Fox burnable at peak
+    "CLE": 0.90,  # Save Allen specifically; Mitchell burnable at peak
+}
+
+
+def save_tax_for_game(
+    team: str,
+    player_team_rank: int,
+    game_number: int | None,
+    elim: str,
+) -> float:
+    """Return the multiplicative save penalty fraction for a candidate cell.
+
+    The save tax follows a step-down schedule across the series. Heavy
+    in G2-G3 (defer aggressively), medium in G4, light at G5 (burn if
+    no good alternative), near-zero at G6 (most series-deciders), and
+    fully released at G7 or critical elimination (must-win-or-lose).
+
+    The schedule (calibrated so protected elites stay below mid-tier
+    alternatives until at least G5, then release progressively):
+        G2/G3 : base × 1.0    (full save — no chance of burn)
+        G4    : base × 0.80   (medium — defer unless no alternative)
+        G5    : base × 0.65   (close call — may burn vs weak alt)
+        G6    : base × 0.30   (mostly release — protected burns here)
+        G7+   : 0             (full burn — last chance)
+        crit  : 0             (release on elimination game)
+
+    Returns a value in [0, 1] applied as `final_score *= (1 - tax)`.
+
+    Args:
+        team: Player's team abbreviation.
+        player_team_rank: Player's rank within his non-cramed teammates,
+            0 = highest season avg. Anyone outside TEAM_SAVE_RANKS gets
+            tax=0 (i.e. is freely burnable).
+        game_number: 1..7 (None = unknown/Finals).
+        elim: "critical" | "high" | "none" — pulled from elimination_risk.
+    """
+    saved_ranks = TEAM_SAVE_RANKS.get(team) or []
+    if player_team_rank not in saved_ranks:
+        return 0.0
+    if elim == "critical":
+        return 0.0
+    if game_number is None:
+        return 0.0
+    if game_number >= 7:
+        return 0.0
+    base = TEAM_SAVE_TAX_BASE.get(team, 0.5)
+    if game_number == 6:
+        return base * 0.40
+    if game_number == 5:
+        return base * 0.75
+    if game_number == 4:
+        return base * 0.90
+    return base  # G2 and G3 — full save
