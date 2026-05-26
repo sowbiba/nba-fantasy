@@ -1,6 +1,5 @@
 import { supabase } from "@/lib/supabase";
 import {
-  Recommendation,
   Series,
   Game,
   WeeklyPlanEntry,
@@ -25,7 +24,6 @@ async function getData() {
   const futureDateStr = future.toISOString().split("T")[0];
 
   const [
-    recsRes,
     seriesRes,
     gamesRes,
     planRes,
@@ -34,7 +32,6 @@ async function getData() {
     watchlistRes,
     picksRes,
   ] = await Promise.all([
-    supabase.from("recommendations").select("*").eq("date", today),
     supabase.from("series").select("*").order("round"),
     supabase
       .from("games")
@@ -70,7 +67,6 @@ async function getData() {
   });
 
   return {
-    recs: (recsRes.data || []) as Recommendation[],
     series: allSeries.filter((s) => s.status === "active"),
     games,
     plan: (planRes.data || []) as WeeklyPlanEntry[],
@@ -83,7 +79,6 @@ async function getData() {
 
 export default async function StrategyPage() {
   const {
-    recs,
     series,
     games,
     plan,

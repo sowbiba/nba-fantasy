@@ -4,7 +4,7 @@ import BackButton from "../../player/[id]/BackButton";
 
 export const revalidate = 300;
 
-interface PlayerLite extends Pick<Player, "id" | "name" | "team" | "avg_ttfl_season" | "avg_minutes_l10"> {}
+type PlayerLite = Pick<Player, "id" | "name" | "team" | "avg_ttfl_season" | "avg_minutes_l10">;
 
 type Verdict =
   | "Étouffé"
