@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { SyncLog } from "@/types";
+import { todayParis } from "@/lib/date";
 
 /**
  * External store that emits the current minute as an epoch-minute bucket.
@@ -49,7 +50,14 @@ export default function SyncStatus({ sync }: { sync: SyncLog | null }) {
       })
     : "";
 
-  const isToday = finishedAt?.toDateString() === new Date().toDateString();
+  // Compare calendar days explicitly in Paris tz (not the runtime's tz) so
+  // SSR and client agree and "aujourd'hui" is correct for the user.
+  const finishedDayParis = sync.finished_at
+    ? new Date(sync.finished_at).toLocaleDateString("en-CA", {
+        timeZone: "Europe/Paris",
+      })
+    : null;
+  const isToday = finishedDayParis === todayParis();
 
   const dotColor = isError
     ? "bg-[color:var(--color-crimson)]"

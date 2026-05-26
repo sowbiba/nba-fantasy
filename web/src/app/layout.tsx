@@ -28,7 +28,8 @@ export const viewport: Viewport = {
   themeColor: "#050507",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // No maximumScale — blocking pinch-zoom is an a11y anti-pattern (WCAG 1.4.4)
+  // and the default already prevents the iOS input-focus zoom jump.
 };
 
 export default function RootLayout({

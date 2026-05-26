@@ -28,6 +28,15 @@ import { todayNBA } from "@/lib/date";
 // extra Supabase round-trip is fine in exchange for instant feedback.
 export const revalidate = 0;
 
+// Mirror sync/config.py HARD_OUT_STATUSES — players who can't suit up and
+// must never surface as a recommendation, even on a stale rec row.
+const HARD_OUT_STATUSES = new Set([
+  "Out",
+  "Doubtful",
+  "Out For Season",
+  "Suspended",
+]);
+
 async function getData() {
   const today = todayNBA();
 
@@ -87,6 +96,11 @@ async function getData() {
         (g) => g.home_team === player?.team || g.away_team === player?.team
       );
       if (!player || !game) return null;
+      // Drop a player ruled out AFTER the sync that generated this rec — the
+      // backend filters hard-outs at sync time, but injuries flip between
+      // syncs and `player` here is fetched fresh, so injury_status is current.
+      if (player.injury_status && HARD_OUT_STATUSES.has(player.injury_status))
+        return null;
       return { ...r, player, game };
     })
     .filter(Boolean) as RecommendationWithPlayer[];

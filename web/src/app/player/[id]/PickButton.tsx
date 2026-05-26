@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { todayNBA } from "@/lib/date";
 
 interface Props {
   playerId: number;
@@ -23,6 +24,7 @@ export default function PickButton({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const router = useRouter();
 
   const disabled = alreadyPicked || pickedToday || done;
@@ -30,11 +32,11 @@ export default function PickButton({
   const handlePick = async () => {
     if (disabled) return;
     setLoading(true);
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    setErrorMsg(null);
     const { error } = await supabase.from("picks").insert({
       player_id: playerId,
       game_id: gameId,
-      date: today,
+      date: todayNBA(),
       mode: "playoffs",
       estimated_score: estimatedScore,
       picked_at: new Date().toISOString(),
@@ -47,7 +49,14 @@ export default function PickButton({
       // navigation or a manual refresh.
       router.refresh();
     } else {
-      alert(`Erreur: ${error.message}`);
+      // 23505 = unique_violation on picks(date): a pick already exists for
+      // today (e.g. made on another device/tab). Map known codes to a human
+      // message instead of dumping the raw Postgres error in an alert().
+      setErrorMsg(
+        error.code === "23505"
+          ? "Tu as déjà pické aujourd'hui."
+          : "Échec de l'enregistrement — réessaie."
+      );
     }
   };
 
@@ -105,6 +114,7 @@ export default function PickButton({
   }
 
   return (
+    <>
     <button
       onClick={handlePick}
       disabled={disabled || loading}
@@ -126,5 +136,14 @@ export default function PickButton({
       )}
       <span className="relative">{loading ? "..." : label}</span>
     </button>
+    {errorMsg && (
+      <p
+        role="alert"
+        className="mt-2 text-center text-xs text-[color:var(--color-crimson)]"
+      >
+        {errorMsg}
+      </p>
+    )}
+    </>
   );
 }

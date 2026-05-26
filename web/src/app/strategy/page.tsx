@@ -17,9 +17,12 @@ export const revalidate = 300;
 
 async function getData() {
   const today = todayNBA();
-  const futureDate = new Date();
-  futureDate.setDate(futureDate.getDate() + 7);
-  const futureDateStr = futureDate.toISOString().split("T")[0];
+  // today + 7 days as a pure date string, consistent with `today`. The old
+  // new Date()+7 mixed the runtime/UTC day with the Eastern lower bound and
+  // could include or drop a game at the window boundary.
+  const future = new Date(today + "T00:00:00Z");
+  future.setUTCDate(future.getUTCDate() + 7);
+  const futureDateStr = future.toISOString().split("T")[0];
 
   const [
     recsRes,
