@@ -159,6 +159,25 @@ def build_candidates(
         and g.get("status") != "final"
     ]
 
+    # Drop phantom games of series that already ended: the static NBA schedule
+    # keeps G5-G7 placeholder slots for a series that clinched early, they stay
+    # `scheduled` and will never be played. Mirror the frontend / db helper —
+    # match by series_id AND by team-pair, since conditional games sometimes
+    # lose their series link once the round label drops off the schedule.
+    completed = (
+        client.table("series").select("id, home_team, away_team")
+        .eq("status", "completed").execute().data or []
+    )
+    completed_ids = {s["id"] for s in completed}
+    completed_pairs = {
+        tuple(sorted((s["home_team"], s["away_team"]))) for s in completed
+    }
+    games = [
+        g for g in games
+        if g.get("series_id") not in completed_ids
+        and tuple(sorted((g["home_team"], g["away_team"]))) not in completed_pairs
+    ]
+
     all_players = client.table("players").select("*").execute().data
 
     # Already picked players (excluded from plan)
