@@ -206,15 +206,15 @@ def build_candidates(
             "team, outlook, home_save_top"
         ).execute().data or []
         team_outlook_map = {r["team"]: r for r in to_rows}
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  (warn: team_outlook load failed: {e})")
     try:
         pr_rows = client.table("player_team_rank").select(
             "player_id, save_rank"
         ).execute().data or []
         player_rank_map = {r["player_id"]: r["save_rank"] for r in pr_rows}
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  (warn: player_team_rank load failed: {e})")
 
     # Eligible pool = union of watchlist and ranked players. The plan must
     # allocate the user's finite, deliberately-chosen capital, not roam

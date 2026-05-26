@@ -1,4 +1,19 @@
 -- supabase/schema.sql
+--
+-- ⚠️ NOT the authoritative schema. This file is the ORIGINAL base snapshot.
+-- The source of truth is the ordered files in `migrations/`, which add
+-- several tables and columns NOT reflected below, notably:
+--   005 player_watchlist · 006 series_forecast · 009/010/011 matchup_aggregates
+--   012 team_outlook + player_team_rank · 013 box_score_matchups_raw
+--   014 game_logs.fouls  (and others)
+--
+-- To build a fresh database, run THIS file first, then every migration in
+-- `migrations/` in filename order. Migrations are idempotent
+-- (`create table if not exists` / `add column if not exists`), so this is
+-- safe and complete. Running only schema.sql leaves the app broken — the
+-- frontend and sync read the migration-added tables. Do not duplicate the
+-- migration DDL here (that just creates a second source of truth that drifts);
+-- regenerate a consolidated dump with `supabase db dump` if you need one.
 
 -- Players with aggregated stats
 create table players (

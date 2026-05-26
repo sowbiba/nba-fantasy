@@ -135,8 +135,8 @@ def run_sync():
                     .execute().data or []
                 )
                 already_logged_games = {str(r["game_id"]) for r in logged_rows}
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  (warn: already-logged-games cache load failed, may re-fetch: {e})")
             try:
                 agg_rows = (
                     client.table("matchup_aggregates")
@@ -146,8 +146,8 @@ def run_sync():
                 for r in agg_rows:
                     for gid in r.get("processed_game_ids") or []:
                         already_aggregated_games.add(str(gid))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  (warn: already-aggregated-games cache load failed, may re-process: {e})")
 
         for game in yesterday_games:
             if game["status"] != "final":

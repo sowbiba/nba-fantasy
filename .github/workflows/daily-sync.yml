@@ -31,6 +31,12 @@ concurrency:
   group: daily-sync
   cancel-in-progress: false
 
+# The failure-notification step opens/updates an alert issue (which emails
+# the repo owner) so a broken sync never fails silently again.
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -65,8 +71,19 @@ jobs:
         # `python -u` is belt-and-braces with PYTHONUNBUFFERED.
         run: python -u -m sync.main
 
-      - name: Tail log on failure
+      # Active alerting: open (or comment on) a GitHub issue so a failed sync
+      # surfaces by email instead of dying silently like the local cron did.
+      - name: Alert on failure
         if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Sync failed. Inspecting recent sync_log rows would normally help."
-          echo "Re-run from the Actions tab once the underlying issue is fixed."
+          title="🔴 Daily TTFL sync failed"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body=$(printf 'Sync failed — the dashboard may be serving stale data.\n\nRun: %s\nCommit: %s\n\nFix the issue, re-run from the Actions tab, then close this issue.' "$run_url" "${{ github.sha }}")
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
