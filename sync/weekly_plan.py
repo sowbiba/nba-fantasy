@@ -41,7 +41,11 @@ from sync.personal_strategy import (
     PersonalContext,
     compute_multiplier as compute_personal_multiplier,
 )
-from sync.scoring import compute_performance_score
+from sync.scoring import (
+    compute_performance_score,
+    league_avg_by_position,
+    position_def_column,
+)
 from sync.strategy import (
     K_VAR,
     LAMBDA_RISK,
@@ -57,9 +61,6 @@ from sync.strategy import (
     team_single_game_win_prob,
     tier_demand_factor,
 )
-
-
-LEAGUE_AVG_TTFL = 40
 
 
 @dataclass
@@ -88,6 +89,7 @@ class Candidate:
     ceiling: float = 0.0
     floor: float = 0.0
     opp_ttfl_at_position: float = 0.0
+    league_avg_at_position: float = 10.5  # matchup denominator actually used
     watchlist_priority: int | None = None
     game3_surge: bool = False
     # Probabilistic engine fields
@@ -115,17 +117,18 @@ def _fr_day_label(iso_date: str) -> str:
     return f"{fr_days[d.weekday()]} {d.day}"
 
 
-def _opponent_ttfl(team_defense: dict[str, dict], opponent: str, position: str) -> float:
+def _opponent_ttfl(
+    team_defense: dict[str, dict],
+    opponent: str,
+    position: str,
+    league_avg_by_key: dict[str, float],
+) -> float:
+    col = position_def_column(position)
+    fallback = league_avg_by_key[col]  # same-scale neutral when data missing
     td = team_defense.get(opponent)
     if not td:
-        return LEAGUE_AVG_TTFL
-    if position == "G":
-        v = td.get("vs_guards_ttfl_avg") or 0
-    elif position == "F":
-        v = td.get("vs_forwards_ttfl_avg") or 0
-    else:
-        v = td.get("vs_centers_ttfl_avg") or 0
-    return v or LEAGUE_AVG_TTFL
+        return fallback
+    return (td.get(col) or 0) or fallback
 
 
 def build_candidates(
@@ -161,9 +164,10 @@ def build_candidates(
     # Already picked players (excluded from plan)
     picked = db.get_picked_player_ids(client, mode=mode)
 
-    # Team defense cache
+    # Team defense cache + dynamic per-position league means (matchup denom)
     td_rows = client.table("team_defense").select("*").execute().data
     team_defense = {r["team"]: r for r in td_rows}
+    league_avg_by_key = league_avg_by_position(td_rows)
 
     # Active series for elimination detection
     active_series = db.get_active_series(client)
@@ -364,7 +368,10 @@ def build_candidates(
                 except (ValueError, TypeError):
                     days_rest = 2
 
-                opp_ttfl = _opponent_ttfl(team_defense, opponent, p["position"])
+                opp_ttfl = _opponent_ttfl(
+                    team_defense, opponent, p["position"], league_avg_by_key
+                )
+                league_avg_pos = league_avg_by_key[position_def_column(p["position"])]
 
                 pair_off_per36 = None
                 pair_minutes = 0.0
@@ -384,7 +391,7 @@ def build_candidates(
                     avg_l10=p.get("avg_ttfl_l10", 0) or 0,
                     avg_l20=p.get("avg_ttfl_l20", 0) or 0,
                     opponent_ttfl_at_position=opp_ttfl,
-                    league_avg_ttfl_at_position=LEAGUE_AVG_TTFL,
+                    league_avg_ttfl_at_position=league_avg_pos,
                     home_avg=p.get("home_avg", 0) or 0,
                     away_avg=p.get("away_avg", 0) or 0,
                     season_avg=season_avg,
@@ -569,6 +576,7 @@ def build_candidates(
                     ceiling=float(recent_ceiling),
                     floor=float(recent_floor),
                     opp_ttfl_at_position=float(opp_ttfl),
+                    league_avg_at_position=float(league_avg_pos),
                     watchlist_priority=priority,
                     game3_surge=game3_surge,
                     pick_probability=float(pick_prob),
@@ -684,7 +692,7 @@ def push_plan(client, plan: list[Candidate], generated_at: datetime | None = Non
             "ceiling": cand.ceiling,
             "floor": cand.floor,
             "opp_ttfl_at_position": cand.opp_ttfl_at_position,
-            "league_avg_ttfl": LEAGUE_AVG_TTFL,
+            "league_avg_ttfl": cand.league_avg_at_position,
             "opponent": cand.opponent,
             "position": cand.position,
             "is_home": cand.is_home,

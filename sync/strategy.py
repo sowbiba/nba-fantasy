@@ -8,7 +8,11 @@ from sync.config import BURN_THRESHOLD
 
 
 # --- Reservation penalty (shared with weekly_plan) -------------------------
-MAX_RESERVATION_PENALTY = 0.55
+# Best-available : 0.0 neutralise la reservation tax (reco du jour ET
+# weekly_plan). Était 0.55 — taxait les élites season_avg>28 et a contribué
+# à la chute de moyenne 36.5→21.1 (feedback 2026-05-26). Remettre >0 pour
+# réactiver la préservation d'élites multi-rounds.
+MAX_RESERVATION_PENALTY = 0.0
 ROUND_RESERVATION_FACTOR = {1: 1.0, 2: 0.55, 3: 0.2, 4: 0.0}
 
 TEAM_POTENTIAL_TOP_SEED = 1.0

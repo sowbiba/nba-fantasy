@@ -3,10 +3,11 @@ of scheduled games. Used by the burn-or-save decision.
 """
 from datetime import date, datetime, timedelta
 
-from sync.scoring import compute_performance_score
-
-
-LEAGUE_AVG_TTFL_AT_POSITION = 40  # rough default until per-position stats are populated
+from sync.scoring import (
+    compute_performance_score,
+    league_avg_by_position,
+    position_def_column,
+)
 
 _FR_DAYS = {
     "Monday": "lundi", "Tuesday": "mardi", "Wednesday": "mercredi",
@@ -33,17 +34,14 @@ def _opponent_ttfl_at_position(
     team_defense_cache: dict[str, dict],
     opponent: str,
     position: str,
+    league_avg_by_key: dict[str, float],
 ) -> float:
+    col = position_def_column(position)
+    fallback = league_avg_by_key[col]  # same-scale neutral when data missing
     opp_def = team_defense_cache.get(opponent)
     if not opp_def:
-        return LEAGUE_AVG_TTFL_AT_POSITION
-    if position == "G":
-        val = opp_def.get("vs_guards_ttfl_avg")
-    elif position == "F":
-        val = opp_def.get("vs_forwards_ttfl_avg")
-    else:
-        val = opp_def.get("vs_centers_ttfl_avg")
-    return val if val else LEAGUE_AVG_TTFL_AT_POSITION
+        return fallback
+    return (opp_def.get(col) or 0) or fallback
 
 
 def compute_best_future_opportunity(
@@ -65,6 +63,7 @@ def compute_best_future_opportunity(
     if player_season_avg == 0:
         return 0, None
 
+    league_avg_by_key = league_avg_by_position(team_defense_cache.values())
     cutoff_iso = (today + timedelta(days=days_ahead)).isoformat()
     today_iso = today.isoformat()
     best_score = 0.0
@@ -80,7 +79,9 @@ def compute_best_future_opportunity(
     for game in candidates:
         is_home = game["home_team"] == player_team
         opponent = game["away_team"] if is_home else game["home_team"]
-        opp_ttfl = _opponent_ttfl_at_position(team_defense_cache, opponent, player["position"])
+        opp_ttfl = _opponent_ttfl_at_position(
+            team_defense_cache, opponent, player["position"], league_avg_by_key
+        )
 
         try:
             game_dt = datetime.strptime(game["date"], "%Y-%m-%d").date()
@@ -93,7 +94,7 @@ def compute_best_future_opportunity(
             avg_l10=player.get("avg_ttfl_l10", 0) or 0,
             avg_l20=player.get("avg_ttfl_l20", 0) or 0,
             opponent_ttfl_at_position=opp_ttfl,
-            league_avg_ttfl_at_position=LEAGUE_AVG_TTFL_AT_POSITION,
+            league_avg_ttfl_at_position=league_avg_by_key[position_def_column(player["position"])],
             home_avg=player.get("home_avg", 0) or 0,
             away_avg=player.get("away_avg", 0) or 0,
             season_avg=player_season_avg,

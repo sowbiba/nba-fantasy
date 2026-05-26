@@ -6,7 +6,35 @@ from sync.scoring import (
     trend_factor,
     consistency_factor,
     compute_performance_score,
+    league_avg_by_position,
+    position_def_column,
 )
+
+
+def test_position_def_column():
+    assert position_def_column("G") == "vs_guards_ttfl_avg"
+    assert position_def_column("F") == "vs_forwards_ttfl_avg"
+    assert position_def_column("C") == "vs_centers_ttfl_avg"
+    assert position_def_column("G-F") == "vs_centers_ttfl_avg"  # unknown → centers
+
+
+def test_league_avg_by_position_means():
+    rows = [
+        {"vs_guards_ttfl_avg": 8.0, "vs_forwards_ttfl_avg": 10.0, "vs_centers_ttfl_avg": 12.0},
+        {"vs_guards_ttfl_avg": 12.0, "vs_forwards_ttfl_avg": 14.0, "vs_centers_ttfl_avg": 16.0},
+    ]
+    means = league_avg_by_position(rows)
+    assert means["vs_guards_ttfl_avg"] == 10.0
+    assert means["vs_forwards_ttfl_avg"] == 12.0
+    assert means["vs_centers_ttfl_avg"] == 14.0
+
+
+def test_league_avg_by_position_skips_falsy_and_uses_default():
+    rows = [{"vs_guards_ttfl_avg": 0, "vs_forwards_ttfl_avg": None, "vs_centers_ttfl_avg": 11.0}]
+    means = league_avg_by_position(rows, default=10.5)
+    assert means["vs_guards_ttfl_avg"] == 10.5   # all falsy → default
+    assert means["vs_forwards_ttfl_avg"] == 10.5  # None → default
+    assert means["vs_centers_ttfl_avg"] == 11.0
 
 
 def test_weighted_average_full_data():
@@ -33,6 +61,16 @@ def test_home_away_home_game():
 def test_home_away_away_game():
     factor = home_away_factor(home_avg=55, away_avg=48, season_avg=51, is_home=False)
     assert round(factor, 3) == 0.941
+
+def test_home_away_capped_high():
+    # +63% home split must be capped at +15%.
+    factor = home_away_factor(home_avg=49, away_avg=20, season_avg=30, is_home=True)
+    assert round(factor, 3) == 1.15
+
+def test_home_away_capped_low():
+    # -50% away split capped at -15%.
+    factor = home_away_factor(home_avg=40, away_avg=15, season_avg=30, is_home=False)
+    assert round(factor, 3) == 0.85
 
 def test_fatigue_b2b():
     factor = fatigue_factor(days_rest=0)

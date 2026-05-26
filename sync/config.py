@@ -108,8 +108,22 @@ BURN_THRESHOLD = 0.10
 
 # Minimum average minutes over the last 10 games for a player to be a
 # candidate. Below this, DNP/garbage-time outliers dominate the signal and
-# we don't want the engine to propose them.
-MIN_MINUTES_L10 = 12
+# we don't want the engine to propose them. Bumped 12→15 (2026-05-26) to
+# drop rotation-fringe benchers whose L5 is inflated by starter-rest blowouts.
+MIN_MINUTES_L10 = 15
+
+# L5 sanity cap. For a sub-rotation player (avg_minutes_l10 < L5_CAP_MINUTES)
+# whose L5 is more than L5_CAP_RATIO× his season average, the L5 is almost
+# always an artifact of 1-2 garbage-time / starter-rest blowouts (the
+# Carlson/Sandfort pattern), not a real hot streak. Cap it. Full-minute
+# starters are never touched — their hot streaks are real signal.
+L5_CAP_MINUTES = 20
+L5_CAP_RATIO = 1.5
+
+# Minimum games in a home/away split before we trust it. Below this the split
+# is noise, so home_avg/away_avg fall back to the season average (neutral
+# home/away factor) instead of swinging the score on a 1-2 game fluke.
+MIN_SPLIT_GAMES = 4
 
 # Feature flag — when true, compute_performance_score blends the
 # defender-vs-player rate from `matchup_aggregates` into matchup_factor.
@@ -156,12 +170,13 @@ WATCHLIST_GAME3_SURGE = 1.12
 #   CLE lost Mobley+Harden → user framework "burn Mitchell at G3 peak,
 #     save Allen for Finals" → tax rank 1 only
 #     → ranks [1]
-TEAM_SAVE_RANKS: dict[str, list[int]] = {
-    "NYK": [0],
-    "OKC": [0, 1],
-    "SAS": [1],
-    "CLE": [1],
-}
+TEAM_SAVE_RANKS: dict[str, list[int]] = {}   # best-available : aucune save tax (cf feedback 2026-05-26 — la save-discipline a fait chuter la moyenne 36.5→21.1)
+
+# Best-available master switch. False = neutralise la couche personal_strategy
+# (ADVANCE_PENALTY / TOSSUP_CURVE / save-rank). compute_multiplier renvoie 1.0.
+# Mis à False le 2026-05-26 : la reco du jour suit le score projeté pur. Voir
+# aussi MAX_RESERVATION_PENALTY=0 dans strategy.py.
+ENABLE_PERSONAL_STRATEGY = False
 
 # Base intensity of the save penalty (0 = no save, 1 = fully blocked).
 # Heavier per team = stronger insistence on preserving them. Calibrated

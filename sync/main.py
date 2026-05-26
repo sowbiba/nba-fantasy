@@ -39,7 +39,11 @@ from sync.fetcher import (
     compute_player_aggregates,
 )
 from sync.injuries import fetch_all_injuries, match_injury_to_player
-from sync.scoring import compute_performance_score
+from sync.scoring import (
+    compute_performance_score,
+    league_avg_by_position,
+    position_def_column,
+)
 from sync.strategy import (
     TEAM_POTENTIAL_UNKNOWN,
     classify_tiers,
@@ -494,6 +498,16 @@ def run_sync():
         picked_ids = db.get_picked_player_ids(client, mode="playoffs")
         active_series = db.get_active_series(client)
 
+        # League-average TTFL allowed at each position = the denominator of
+        # the matchup factor. It MUST be on the same scale as team_defense's
+        # vs_*_ttfl_avg columns (~8-13). Was hardcoded to 40, which silently
+        # crushed every perf_score to ~55% (matchup factor ≈0.2 instead of
+        # ≈0.8 — e.g. SGA 42→23). Computed live so it tracks the season.
+        # The dict also caches team_defense to avoid an N-query loop.
+        _all_defense = client.table("team_defense").select("*").execute().data or []
+        team_defense_by_team = {r["team"]: r for r in _all_defense}
+        league_avg_by_key = league_avg_by_position(_all_defense)
+
         scored_players = []
         for g in today_games:
             if g["status"] == "final":
@@ -515,18 +529,13 @@ def run_sync():
 
                 is_home = p["team"] == g["home_team"]
                 opponent = g["away_team"] if is_home else g["home_team"]
-                opp_defense = db.get_team_defense(client, opponent)
+                opp_defense = team_defense_by_team.get(opponent)
 
-                league_avg = 40
-                opp_ttfl = league_avg
-                if opp_defense:
-                    if p["position"] == "G":
-                        pos_key = "vs_guards_ttfl_avg"
-                    elif p["position"] == "F":
-                        pos_key = "vs_forwards_ttfl_avg"
-                    else:
-                        pos_key = "vs_centers_ttfl_avg"
-                    opp_ttfl = opp_defense.get(pos_key, league_avg) or league_avg
+                # Matchup factor = opp's TTFL allowed at this position over the
+                # league average at that position (same ~10.5 scale).
+                pos_key = position_def_column(p["position"])
+                league_avg = league_avg_by_key[pos_key]
+                opp_ttfl = (opp_defense.get(pos_key) if opp_defense else None) or league_avg
 
                 logs = db.get_player_game_logs(client, p["id"], limit=10)
                 recent_scores = [l["ttfl_score"] for l in logs]

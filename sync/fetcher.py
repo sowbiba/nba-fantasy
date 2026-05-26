@@ -19,7 +19,12 @@ from nba_api.live.nba.endpoints import BoxScore, ScoreBoard
 from nba_api.live.nba.library import http as _live_http
 from nba_api.stats.library import http as _stats_http
 
-from sync.config import NBA_API_DELAY
+from sync.config import (
+    NBA_API_DELAY,
+    L5_CAP_MINUTES,
+    L5_CAP_RATIO,
+    MIN_SPLIT_GAMES,
+)
 from sync.ttfl import compute_ttfl_score
 
 import numpy as np
@@ -446,13 +451,31 @@ def compute_player_aggregates(game_logs: list[dict]) -> dict:
     away_scores = [g["ttfl_score"] for g in played if not g["is_home"]]
     minutes = [g["minutes"] for g in played]
 
+    season_avg = float(np.mean(scores))
+    avg_l5 = float(np.mean(scores[:5]))
+    avg_l10 = float(np.mean(scores[:10]))
+    avg_l20 = float(np.mean(scores[:20]))
+    avg_minutes_l10 = float(np.mean(minutes[:10]))
+
+    # L5 sanity cap for sub-rotation players (see config). Stops a bencher's
+    # 1-2 starter-rest blowouts from masquerading as an elite hot streak.
+    if avg_minutes_l10 < L5_CAP_MINUTES and avg_l5 > season_avg * L5_CAP_RATIO:
+        avg_l5 = max(season_avg * L5_CAP_RATIO, avg_l10)
+
+    # Home/away split only trusted above a minimum sample, else fall back to
+    # the season average so home_away_factor stays neutral (≈1.0) instead of
+    # swinging — and so a player with zero home games so far doesn't get a
+    # 0-multiplier for a home game (the previous `else 0` was a latent bug).
+    home_avg = float(np.mean(home_scores)) if len(home_scores) >= MIN_SPLIT_GAMES else season_avg
+    away_avg = float(np.mean(away_scores)) if len(away_scores) >= MIN_SPLIT_GAMES else season_avg
+
     return {
-        "avg_ttfl_l5": float(np.mean(scores[:5])) if len(scores) >= 1 else 0,
-        "avg_ttfl_l10": float(np.mean(scores[:10])) if len(scores) >= 1 else 0,
-        "avg_ttfl_l20": float(np.mean(scores[:20])) if len(scores) >= 1 else 0,
-        "avg_ttfl_season": float(np.mean(scores)),
+        "avg_ttfl_l5": avg_l5,
+        "avg_ttfl_l10": avg_l10,
+        "avg_ttfl_l20": avg_l20,
+        "avg_ttfl_season": season_avg,
         "stddev_ttfl": float(np.std(scores)) if len(scores) >= 3 else 0,
-        "home_avg": float(np.mean(home_scores)) if home_scores else 0,
-        "away_avg": float(np.mean(away_scores)) if away_scores else 0,
-        "avg_minutes_l10": float(np.mean(minutes[:10])) if minutes else 0,
+        "home_avg": home_avg,
+        "away_avg": away_avg,
+        "avg_minutes_l10": avg_minutes_l10,
     }

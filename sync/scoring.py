@@ -12,6 +12,36 @@ import numpy as np
 from sync.config import WEIGHTS, FATIGUE
 
 
+# team_defense column holding TTFL allowed to each position.
+POS_DEF_COLUMN = {
+    "G": "vs_guards_ttfl_avg",
+    "F": "vs_forwards_ttfl_avg",
+    "C": "vs_centers_ttfl_avg",
+}
+
+
+def position_def_column(position: str) -> str:
+    """Defense column for a player's position (anything non-G/F → centers)."""
+    return POS_DEF_COLUMN.get(position, "vs_centers_ttfl_avg")
+
+
+def league_avg_by_position(defense_rows, default: float = 10.5) -> dict[str, float]:
+    """League-mean TTFL allowed at each position, keyed by team_defense
+    column name — the *denominator* of the matchup factor.
+
+    Computed from the live `team_defense` rows so it tracks the season and
+    stays on the same scale (~8-13) as the vs_*_ttfl_avg numerators. A
+    hardcoded denominator (the old 40) silently crushes every matchup factor.
+    `default` is used only for a position whose column is entirely empty.
+    """
+    rows = list(defense_rows)
+    out: dict[str, float] = {}
+    for col in POS_DEF_COLUMN.values():
+        vals = [r[col] for r in rows if r.get(col)]
+        out[col] = sum(vals) / len(vals) if vals else default
+    return out
+
+
 def weighted_ttfl_average(avg_l5: float, avg_l10: float, avg_l20: float) -> float:
     # L5 dominates (50%), L10 reinforces (33%), L20 anchors (17%).
     # Skews recent: in playoffs, the L20 quickly fills with playoff games
@@ -62,7 +92,11 @@ def home_away_factor(home_avg: float, away_avg: float, season_avg: float, is_hom
         return 1.0
     relevant_avg = home_avg if is_home else away_avg
     delta = (relevant_avg - season_avg) / season_avg
-    return 1.0 + delta
+    # Cap at ±15% like the other situational factors — a home/away split
+    # shouldn't single-handedly swing the projection (sample-size guard lives
+    # in fetcher.compute_player_aggregates, which neutralizes thin splits).
+    capped = max(-0.15, min(0.15, delta))
+    return 1.0 + capped
 
 
 def fatigue_factor(days_rest: int) -> float:
@@ -125,7 +159,10 @@ def compute_performance_score(
         "home_away": home_away_factor(home_avg, away_avg, season_avg, is_home),
         "fatigue": fatigue_factor(days_rest),
         "trend": trend_factor(recent_scores),
-        "consistency": consistency_factor(stddev, season_avg),
+        # Consistency is a recency signal → measured against L10 form, not the
+        # whole-season mean (which in playoffs still carries regular-season
+        # residue). Falls back to season_avg when L10 isn't available.
+        "consistency": consistency_factor(stddev, avg_l10 or season_avg),
     }
     combined_multiplier = 1.0
     non_base_total_weight = sum(WEIGHTS[k] for k in factors.keys())

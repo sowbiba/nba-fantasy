@@ -28,7 +28,7 @@ def compute_and_push():
     page = 1000
     while True:
         res = c.table("game_logs").select(
-            "player_id, game_id, ttfl_score, is_home"
+            "player_id, game_id, ttfl_score, is_home, minutes"
         ).range(offset, offset + page - 1).execute()
         chunk = res.data
         if not chunk:
@@ -73,18 +73,31 @@ def compute_and_push():
         if opponent in ("UNK", "TBD", ""):
             continue
 
-        per_team.setdefault(opponent, {"G": [], "F": [], "C": []})
-        per_team[opponent][position].append(log["ttfl_score"])
+        # Minutes-weight the sample: a 6-min garbage-time scrub must not count
+        # as much as a 36-min starter. DNPs carry no defensive signal.
+        mins = log.get("minutes") or 0
+        if mins <= 0:
+            continue
 
-    # Compute averages and push
+        per_team.setdefault(opponent, {"G": [], "F": [], "C": []})
+        per_team[opponent][position].append((log["ttfl_score"], mins))
+
+    # Compute minutes-weighted averages and push
+    def _weighted_mean(pairs: list[tuple[float, float]]) -> float:
+        """Minutes-weighted mean TTFL: Σ(ttfl×min) / Σmin."""
+        total_min = sum(m for _, m in pairs)
+        if total_min <= 0:
+            return 0.0
+        return sum(s * m for s, m in pairs) / total_min
+
     print("Pushing team defense averages...")
     rows = []
     for team, pos_scores in per_team.items():
         row = {
             "team": team,
-            "vs_guards_ttfl_avg": float(np.mean(pos_scores["G"])) if pos_scores["G"] else 0,
-            "vs_forwards_ttfl_avg": float(np.mean(pos_scores["F"])) if pos_scores["F"] else 0,
-            "vs_centers_ttfl_avg": float(np.mean(pos_scores["C"])) if pos_scores["C"] else 0,
+            "vs_guards_ttfl_avg": _weighted_mean(pos_scores["G"]),
+            "vs_forwards_ttfl_avg": _weighted_mean(pos_scores["F"]),
+            "vs_centers_ttfl_avg": _weighted_mean(pos_scores["C"]),
             "def_rating": 0,  # populated separately by fetcher.fetch_team_defense_stats
             "updated_at": datetime.now(UTC).isoformat(),
         }

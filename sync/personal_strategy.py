@@ -35,6 +35,8 @@ Two override channels keep the static ranking from being too rigid:
 """
 from dataclasses import dataclass
 
+from sync.config import ENABLE_PERSONAL_STRATEGY
+
 
 # Save penalties for outlook='advance'. Below 1.0 = de-prioritized so
 # the engine prefers a different candidate at equal floor.
@@ -91,6 +93,10 @@ def compute_multiplier(ctx: PersonalContext) -> tuple[float, str]:
     Multiplier is clamped to [0.40, 1.30]. The reason tag is short and
     machine-friendly so the advisor layer can map it to a French line.
     """
+    # Best-available mode: no personal-strategy distortion at all.
+    if not ENABLE_PERSONAL_STRATEGY:
+        return 1.0, "best_available"
+
     # Elimination always wins: if you might never see this player again,
     # all save logic is moot.
     if ctx.elimination_risk == "critical":

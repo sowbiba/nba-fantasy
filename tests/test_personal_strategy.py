@@ -1,3 +1,6 @@
+import pytest
+
+import sync.personal_strategy as personal_strategy
 from sync.personal_strategy import (
     PersonalContext,
     compute_multiplier,
@@ -18,6 +21,24 @@ def _ctx(**overrides) -> PersonalContext:
     )
     base.update(overrides)
     return PersonalContext(**base)
+
+
+@pytest.fixture(autouse=True)
+def _force_personal_strategy_on(monkeypatch):
+    """The tests below cover the personal_strategy LOGIC, which is gated
+    behind ENABLE_PERSONAL_STRATEGY (False = best-available, the current
+    default). Force it on so the logic stays under test if ever re-enabled."""
+    monkeypatch.setattr(personal_strategy, "ENABLE_PERSONAL_STRATEGY", True)
+
+
+def test_disabled_flag_returns_best_available(monkeypatch):
+    """Flag off (best-available default) → every context is neutral 1.0."""
+    monkeypatch.setattr(personal_strategy, "ENABLE_PERSONAL_STRATEGY", False)
+    mult, reason = compute_multiplier(_ctx(
+        team_outlook="advance", save_rank=1, elimination_risk="none",
+    ))
+    assert mult == 1.0
+    assert reason == "best_available"
 
 
 # --- is_hot --------------------------------------------------------------
