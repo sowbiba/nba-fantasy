@@ -74,7 +74,8 @@ class Candidate:
     game_id: str
     opponent: str
     is_home: bool
-    estimated_score: float
+    estimated_score: float          # honest projection — displayed/stored
+    assignment_score: float = 0.0   # optimizer objective — drives the Hungarian matrix
     game_number: int | None = None
     series_score: tuple[int, int] = (0, 0)
     elimination: str = "none"
@@ -561,6 +562,13 @@ def build_candidates(
                 # scores would still be picked but inflate weirdly.
                 final_score = max(0.0, final_score)
 
+                # Honest projection for display (mirrors the daily reco's
+                # estimated_score): perf, injury-adjusted, WITHOUT the boost /
+                # surge / opp-cost / risk terms that only shape the assignment.
+                honest_estimate = max(
+                    0.0, perf * play_prob * dnp_factor * personal_mult
+                )
+
                 recent_ceiling = max(recent_scores) if recent_scores else 0
                 recent_floor = min(recent_scores) if recent_scores else 0
 
@@ -581,7 +589,8 @@ def build_candidates(
                     game_id=g["id"],
                     opponent=opponent,
                     is_home=is_home,
-                    estimated_score=float(final_score),
+                    estimated_score=float(honest_estimate),
+                    assignment_score=float(final_score),
                     raw_perf_score=float(perf),
                     reservation_penalty=reservation,
                     game_number=g.get("game_number"),
@@ -636,11 +645,11 @@ def optimize_plan(
     best_cand: dict[tuple[int, str], Candidate] = {}
     for c in candidates:
         key = (c.player_id, c.date)
-        if key not in best_cand or c.estimated_score > best_cand[key].estimated_score:
+        if key not in best_cand or c.assignment_score > best_cand[key].assignment_score:
             best_cand[key] = c
 
     for (pid, d), c in best_cand.items():
-        cost[pid_to_row[pid], day_to_col[d]] = -c.estimated_score
+        cost[pid_to_row[pid], day_to_col[d]] = -c.assignment_score
 
     # linear_sum_assignment works on rectangular matrices. Since n_players
     # >> n_days usually, it returns n_days assignments (one per column in
