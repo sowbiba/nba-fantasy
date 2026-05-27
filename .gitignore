@@ -18,3 +18,6 @@ web/.env.local
 
 # Claude Code local config
 .claude/
+
+# Supabase CLI local scratch (linked-project state, temp dumps)
+supabase/.temp/
