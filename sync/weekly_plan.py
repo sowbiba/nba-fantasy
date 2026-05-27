@@ -29,6 +29,7 @@ from sync.advisor import generate_plan_argumentaire, generate_plan_verdict
 from sync.config import (
     HARD_OUT_STATUSES,
     MIN_MINUTES_L10,
+    MINUTES_ADJUSTED_BASE,
     USE_PAIR_MATCHUP,
     WATCHLIST_BASE,
     WATCHLIST_ELIM_BONUS,
@@ -44,6 +45,7 @@ from sync.personal_strategy import (
 from sync.scoring import (
     compute_performance_score,
     league_avg_by_position,
+    minutes_adjusted_base,
     position_def_column,
 )
 from sync.strategy import (
@@ -406,6 +408,10 @@ def build_candidates(
                     if avg_min > 0:
                         player_off_per36 = season_avg / avg_min * 36.0 * off_share
 
+                base = (
+                    minutes_adjusted_base(recent_logs, season_avg)
+                    if MINUTES_ADJUSTED_BASE else None
+                )
                 perf = compute_performance_score(
                     avg_l5=p.get("avg_ttfl_l5", 0) or 0,
                     avg_l10=p.get("avg_ttfl_l10", 0) or 0,
@@ -422,6 +428,7 @@ def build_candidates(
                     pair_allowed_off_ttfl_per36=pair_off_per36,
                     pair_minutes_total=pair_minutes,
                     player_off_avg_per36=player_off_per36,
+                    base_override=base,
                 )
 
                 # Elimination risk for this specific game's series

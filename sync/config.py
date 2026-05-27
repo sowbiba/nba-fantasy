@@ -125,6 +125,14 @@ L5_CAP_RATIO = 1.5
 # home/away factor) instead of swinging the score on a 1-2 game fluke.
 MIN_SPLIT_GAMES = 4
 
+# Minutes-aware base projection. True = the scoring base is recent efficiency
+# (TTFL/min) × expected minutes (recency-weighted, DNP-inclusive) instead of
+# the raw L5/L10/L20 average. Fixes role-change overrates (a starter dropped
+# to bench minutes when a teammate returns) and the DNP blind spot (a recently
+# sidelined player projects ≈0 instead of carrying his pre-injury form).
+# Set False to revert to the classic weighted average. See scoring.minutes_adjusted_base.
+MINUTES_ADJUSTED_BASE = True
+
 # Feature flag — when true, compute_performance_score blends the
 # defender-vs-player rate from `matchup_aggregates` into matchup_factor.
 # Off by default until backfill has populated enough data and we've

@@ -8,7 +8,43 @@ from sync.scoring import (
     compute_performance_score,
     league_avg_by_position,
     position_def_column,
+    minutes_adjusted_base,
 )
+
+
+def _mlog(ttfl, minutes):
+    return {"ttfl_score": ttfl, "minutes": minutes}
+
+
+def test_minutes_adjusted_empty_returns_season():
+    assert minutes_adjusted_base([], season_avg=30.0) == 30.0
+
+
+def test_minutes_adjusted_all_dnp_returns_zero():
+    assert minutes_adjusted_base([_mlog(0, 0)] * 3, season_avg=30.0) == 0.0
+
+
+def test_minutes_adjusted_stable_starter_reproduces_average():
+    logs = [_mlog(45, 36) for _ in range(6)]
+    assert abs(minutes_adjusted_base(logs, season_avg=45.0) - 45.0) < 0.5
+
+
+def test_minutes_adjusted_role_drop_projects_low():
+    # Bench role now (20min) after starting before (46min / 45 TTFL) — Harper pattern.
+    logs = [_mlog(9, 20), _mlog(8, 20), _mlog(7, 18), _mlog(45, 46), _mlog(44, 44)]
+    assert minutes_adjusted_base(logs, season_avg=30.0) < 15
+
+
+def test_minutes_adjusted_recent_dnp_projects_near_zero():
+    # Sidelined: 3 recent DNPs, one old big game — Jalen pattern.
+    logs = [_mlog(0, 0), _mlog(0, 0), _mlog(0, 0), _mlog(7, 7), _mlog(35, 37)]
+    assert minutes_adjusted_base(logs, season_avg=28.0) < 6
+
+
+def test_minutes_adjusted_role_rise_projects_higher():
+    # Playoff role bump (Caruso pattern): recent 28-31 min / 35-40 TTFL, low before.
+    logs = [_mlog(39, 30), _mlog(35, 28), _mlog(40, 31), _mlog(12, 12), _mlog(8, 10)]
+    assert minutes_adjusted_base(logs, season_avg=15.0) > 25
 
 
 def test_position_def_column():

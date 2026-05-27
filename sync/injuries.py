@@ -100,14 +100,25 @@ def fetch_all_injuries(teams: list[str] | None = None) -> dict[str, list[dict]]:
     return all_injuries
 
 
+import re
 import unicodedata
 
 
 def _normalize(name: str) -> str:
-    """Lowercase, strip accents, normalize whitespace for fuzzy name matching."""
+    """Lowercase, strip accents AND punctuation, collapse whitespace.
+
+    Stripping punctuation makes 'P.J. Washington' == 'PJ Washington' and
+    "De'Aaron" == 'DeAaron', so they match via the exact path instead of
+    leaning on the loose first-initial fallback (which cross-merged Jalen
+    vs Jaylin Williams).
+    """
     nfkd = unicodedata.normalize("NFKD", name)
     stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
-    return stripped.lower().strip()
+    stripped = re.sub(r"[^a-z0-9 ]", "", stripped.lower())
+    # Drop generational suffixes so 'Jaren Jackson Jr.' == 'Jaren Jackson'
+    # (and the surname stays 'jackson', not 'jr'). Common in the NBA.
+    stripped = re.sub(r"\b(jr|sr|ii|iii|iv)\b", " ", stripped)
+    return re.sub(r"\s+", " ", stripped).strip()
 
 
 def match_injury_to_player(
@@ -121,12 +132,18 @@ def match_injury_to_player(
         player_lower = _normalize(p["name"])
         if player_lower == injury_lower:
             return p["id"]
-        injury_last = injury_lower.split()[-1] if injury_lower else ""
-        player_last = player_lower.split()[-1] if player_lower else ""
+        injury_parts = injury_lower.split()
+        player_parts = player_lower.split()
+        injury_last = injury_parts[-1] if injury_parts else ""
+        player_last = player_parts[-1] if player_parts else ""
         if injury_last and injury_last == player_last:
-            if len(injury_lower.split()) >= 2 and len(player_lower.split()) >= 2:
-                if injury_lower.split()[0][0] == player_lower.split()[0][0]:
+            # Same surname → require the FIRST name to match too, otherwise
+            # teammates sharing a surname AND first initial (Jalen vs Jaylin
+            # Williams) cross-match and the wrong player gets flagged.
+            # Single-word names fall back to surname-only.
+            if len(injury_parts) >= 2 and len(player_parts) >= 2:
+                if injury_parts[0] == player_parts[0]:
                     return p["id"]
-            elif injury_last == player_last:
+            else:
                 return p["id"]
     return None

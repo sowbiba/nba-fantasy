@@ -22,6 +22,7 @@ from sync import db
 from sync.config import (
     HARD_OUT_STATUSES,
     MIN_MINUTES_L10,
+    MINUTES_ADJUSTED_BASE,
     NBA_API_DELAY,
     USE_PAIR_MATCHUP,
     WATCHLIST_BASE,
@@ -42,6 +43,7 @@ from sync.injuries import fetch_all_injuries, match_injury_to_player
 from sync.scoring import (
     compute_performance_score,
     league_avg_by_position,
+    minutes_adjusted_base,
     position_def_column,
 )
 from sync.strategy import (
@@ -576,6 +578,13 @@ def run_sync():
                             season_avg / avg_min * 36.0 * off_share
                         )
 
+                # Minutes-aware base: recent TTFL/min × expected minutes
+                # (DNP-inclusive) so role changes and injuries don't carry
+                # stale high-minute games. `logs` already includes DNP rows.
+                base = (
+                    minutes_adjusted_base(logs, p.get("avg_ttfl_season", 0) or 0)
+                    if MINUTES_ADJUSTED_BASE else None
+                )
                 perf_score = compute_performance_score(
                     avg_l5=p.get("avg_ttfl_l5", 0) or 0,
                     avg_l10=p.get("avg_ttfl_l10", 0) or 0,
@@ -592,6 +601,7 @@ def run_sync():
                     pair_allowed_off_ttfl_per36=pair_off_per36,
                     pair_minutes_total=pair_minutes,
                     player_off_avg_per36=player_off_per36,
+                    base_override=base,
                 )
 
                 scored_players.append({

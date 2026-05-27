@@ -49,6 +49,38 @@ def weighted_ttfl_average(avg_l5: float, avg_l10: float, avg_l20: float) -> floa
     return (avg_l5 * 3 + avg_l10 * 2 + avg_l20 * 1) / 6
 
 
+def minutes_adjusted_base(recent_logs: list[dict], season_avg: float) -> float:
+    """Projected TTFL = recent efficiency (TTFL/min) × expected minutes.
+
+    `recent_logs` is most-recent-first and MUST include DNP rows (minutes=0).
+    This self-corrects the two blind spots of the DNP-excluded L5/L10 averages:
+
+      - Role change: a starter dropped to bench minutes (e.g. a teammate
+        returns from injury) sees `expected minutes` fall, so the projection
+        tracks the new role instead of carrying his old high-minute games.
+      - Injury / DNP: recent zero-minute games pull `expected minutes` toward
+        0, so a sidelined player projects ≈0 even if his last *played* games
+        (and thus his L5) still look strong.
+
+    Recency-weighted with a 0.5 decay so the last 2-3 games dominate. Falls
+    back to `season_avg` with no data; returns 0 when every recent game is a DNP.
+    A steady starter reproduces his usual average (efficiency × stable minutes).
+    """
+    if not recent_logs:
+        return season_avg
+    logs = recent_logs[:8]
+    weights = [0.5 ** i for i in range(len(logs))]  # 1, .5, .25 … most-recent first
+    exp_min = sum((l.get("minutes") or 0) * w for l, w in zip(logs, weights)) / sum(weights)
+    played = [(l, w) for l, w in zip(logs, weights) if (l.get("minutes") or 0) > 0]
+    if not played:
+        return 0.0
+    num = sum((l.get("ttfl_score") or 0) * w for l, w in played)
+    den = sum(l["minutes"] * w for l, w in played)
+    if den <= 0:
+        return season_avg
+    return (num / den) * exp_min
+
+
 def matchup_factor(
     opponent_ttfl_at_position: float,
     league_avg_ttfl_at_position: float,
@@ -146,8 +178,11 @@ def compute_performance_score(
     pair_allowed_off_ttfl_per36: float | None = None,
     pair_minutes_total: float = 0.0,
     player_off_avg_per36: float = 0.0,
+    base_override: float | None = None,
 ) -> float:
-    base = weighted_ttfl_average(avg_l5, avg_l10, avg_l20)
+    # base_override lets the caller pass a minutes-adjusted projection
+    # (see minutes_adjusted_base); falls back to the classic L5/L10/L20 blend.
+    base = base_override if base_override is not None else weighted_ttfl_average(avg_l5, avg_l10, avg_l20)
     factors = {
         "matchup": matchup_factor(
             opponent_ttfl_at_position,
