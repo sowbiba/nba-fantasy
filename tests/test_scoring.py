@@ -10,10 +10,22 @@ from sync.scoring import (
     position_def_column,
     minutes_adjusted_base,
 )
+from datetime import date as _date, timedelta as _timedelta
 
 
 def _mlog(ttfl, minutes):
     return {"ttfl_score": ttfl, "minutes": minutes}
+
+
+_TODAY = _date(2026, 5, 27)
+
+
+def _dlog(ttfl, minutes, days_ago):
+    return {
+        "ttfl_score": ttfl,
+        "minutes": minutes,
+        "date": (_TODAY - _timedelta(days=days_ago)).isoformat(),
+    }
 
 
 def test_minutes_adjusted_empty_returns_season():
@@ -45,6 +57,30 @@ def test_minutes_adjusted_role_rise_projects_higher():
     # Playoff role bump (Caruso pattern): recent 28-31 min / 35-40 TTFL, low before.
     logs = [_mlog(39, 30), _mlog(35, 28), _mlog(40, 31), _mlog(12, 12), _mlog(8, 10)]
     assert minutes_adjusted_base(logs, season_avg=15.0) > 25
+
+
+def test_minutes_adjusted_stale_only_returns_zero():
+    # Out of rotation: last games are end-of-regular-season spikes 40+ days
+    # ago (Carlson/Sandfort pattern) → projects 0, not the stale 40.
+    logs = [_dlog(43, 42, 44), _dlog(39, 37, 46)]
+    assert minutes_adjusted_base(logs, season_avg=11.0, today=_TODAY) == 0.0
+
+
+def test_minutes_adjusted_recent_in_window_counts():
+    logs = [_dlog(35, 30, 1), _dlog(40, 31, 3)]
+    assert minutes_adjusted_base(logs, season_avg=12.0, today=_TODAY) > 25
+
+
+def test_minutes_adjusted_drops_stale_keeps_recent():
+    # One recent bench game + old starter spikes → only the recent one counts.
+    logs = [_dlog(8, 14, 2), _dlog(43, 42, 44), _dlog(39, 37, 46)]
+    assert minutes_adjusted_base(logs, season_avg=11.0, today=_TODAY) < 12
+
+
+def test_minutes_adjusted_no_dates_skips_guard():
+    # Date-less logs + today set → guard is skipped (graceful), projects normally.
+    logs = [_mlog(45, 36) for _ in range(4)]
+    assert abs(minutes_adjusted_base(logs, season_avg=45.0, today=_TODAY) - 45.0) < 0.5
 
 
 def test_position_def_column():

@@ -8,6 +8,8 @@ Factors and weights (from config):
   - trend:         10%  linear regression slope on L10
   - consistency:   10%  stddev-based reliability
 """
+from datetime import date, timedelta
+
 import numpy as np
 from sync.config import WEIGHTS, FATIGUE
 
@@ -49,25 +51,52 @@ def weighted_ttfl_average(avg_l5: float, avg_l10: float, avg_l20: float) -> floa
     return (avg_l5 * 3 + avg_l10 * 2 + avg_l20 * 1) / 6
 
 
-def minutes_adjusted_base(recent_logs: list[dict], season_avg: float) -> float:
+def _log_date(log: dict) -> date | None:
+    d = log.get("date")
+    if isinstance(d, date):
+        return d
+    if isinstance(d, str):
+        try:
+            return date.fromisoformat(d[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def minutes_adjusted_base(
+    recent_logs: list[dict],
+    season_avg: float,
+    today: date | None = None,
+    window_days: int = 21,
+) -> float:
     """Projected TTFL = recent efficiency (TTFL/min) × expected minutes.
 
     `recent_logs` is most-recent-first and MUST include DNP rows (minutes=0).
-    This self-corrects the two blind spots of the DNP-excluded L5/L10 averages:
+    Self-corrects the blind spots of DNP-excluded L5/L10 averages:
 
-      - Role change: a starter dropped to bench minutes (e.g. a teammate
-        returns from injury) sees `expected minutes` fall, so the projection
-        tracks the new role instead of carrying his old high-minute games.
-      - Injury / DNP: recent zero-minute games pull `expected minutes` toward
-        0, so a sidelined player projects ≈0 even if his last *played* games
-        (and thus his L5) still look strong.
+      - Role change: a starter dropped to bench minutes (a teammate returns)
+        sees `expected minutes` fall, so the projection tracks the new role
+        instead of carrying his old high-minute games.
+      - Injury / DNP: recent zero-minute games pull `expected minutes` → 0.
+      - Out of rotation (needs `today`): a player whose most recent game is
+        older than `window_days` left no recent box-score rows at all (deep
+        bench / season-ending DNP), so his stored logs reach back weeks to a
+        garbage-time spike. The window discards those → he projects 0, not a
+        stale 30+ (the Carlson/Sandfort end-of-regular-season pattern).
 
-    Recency-weighted with a 0.5 decay so the last 2-3 games dominate. Falls
-    back to `season_avg` with no data; returns 0 when every recent game is a DNP.
-    A steady starter reproduces his usual average (efficiency × stable minutes).
+    Recency-weighted (0.5 decay) so the last 2-3 games dominate. Falls back to
+    `season_avg` with no data; 0 when every in-window game is a DNP. A steady
+    starter reproduces his usual average (efficiency × stable minutes).
     """
     if not recent_logs:
         return season_avg
+    # Time-recency guard — applied only when dates are present (graceful
+    # otherwise, so callers passing date-less logs aren't all zeroed out).
+    if today is not None and any(_log_date(l) for l in recent_logs):
+        cutoff = today - timedelta(days=window_days)
+        recent_logs = [l for l in recent_logs if (_log_date(l) and _log_date(l) >= cutoff)]
+        if not recent_logs:
+            return 0.0
     logs = recent_logs[:8]
     weights = [0.5 ** i for i in range(len(logs))]  # 1, .5, .25 … most-recent first
     exp_min = sum((l.get("minutes") or 0) * w for l, w in zip(logs, weights)) / sum(weights)

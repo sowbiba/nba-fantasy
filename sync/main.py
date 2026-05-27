@@ -582,7 +582,9 @@ def run_sync():
                 # (DNP-inclusive) so role changes and injuries don't carry
                 # stale high-minute games. `logs` already includes DNP rows.
                 base = (
-                    minutes_adjusted_base(logs, p.get("avg_ttfl_season", 0) or 0)
+                    minutes_adjusted_base(
+                        logs, p.get("avg_ttfl_season", 0) or 0, today=date.today()
+                    )
                     if MINUTES_ADJUSTED_BASE else None
                 )
                 perf_score = compute_performance_score(

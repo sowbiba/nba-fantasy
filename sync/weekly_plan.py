@@ -375,7 +375,7 @@ def build_candidates(
                 # dnp_risk_factor; ttfl_score feeds the trend factor.
                 if p["id"] not in recent_by_player:
                     logs = (
-                        client.table("game_logs").select("ttfl_score, minutes")
+                        client.table("game_logs").select("date, ttfl_score, minutes")
                         .eq("player_id", p["id"])
                         .order("date", desc=True).limit(10).execute().data
                     )
@@ -409,7 +409,7 @@ def build_candidates(
                         player_off_per36 = season_avg / avg_min * 36.0 * off_share
 
                 base = (
-                    minutes_adjusted_base(recent_logs, season_avg)
+                    minutes_adjusted_base(recent_logs, season_avg, today=today)
                     if MINUTES_ADJUSTED_BASE else None
                 )
                 perf = compute_performance_score(
