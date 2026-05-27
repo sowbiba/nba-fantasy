@@ -764,21 +764,30 @@ def run_sync():
             sp["personal_reason"] = personal_reason
             sp["save_rank"] = personal_ctx.save_rank
             sp["team_outlook"] = personal_ctx.team_outlook
+            # Honest projection — this is what we display and compare against
+            # the actual score. It deliberately excludes the watchlist boost
+            # and the G3 surge: those are user-preference nudges, not forecasts
+            # of TTFL output (a starred player doesn't score more, you just
+            # prefer to play him).
             sp["estimated_score"] = (
                 strategy_score
                 * (1.0 - reservation)
-                * (1.0 + watchlist_boost)
-                * surge_multiplier
                 * play_prob
                 * dnp_factor
                 * personal_mult
+            )
+            # Ranking score — drives the reco ordering (and therefore `rank`)
+            # so a starred must-play wins close calls. Not stored: its effect
+            # is the rank itself; estimated_score above stays honest.
+            sp["rank_score"] = (
+                sp["estimated_score"] * (1.0 + watchlist_boost) * surge_multiplier
             )
             sp["series_score"] = series_score
             sp["game_number"] = game.get("game_number", 0) or 0
             sp["elimination"] = elim
             sp["player_series_is_home"] = player_series_is_home
 
-        scored_players.sort(key=lambda x: x["estimated_score"], reverse=True)
+        scored_players.sort(key=lambda x: x["rank_score"], reverse=True)
         top_50 = scored_players[:50]
 
         # --- Prefetch for future-opportunity scoring (Step B) ---
