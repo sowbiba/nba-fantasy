@@ -5,8 +5,8 @@ Outil d'aide à la décision pour la **TrashTalk Fantasy League** (TTFL) — le 
 App live : **https://ttfl-advisor.vercel.app/** (PWA installable sur mobile)
 
 <p>
-  <img width="45%" alt="Écran Ce soir : matchs du jour et alertes capital sur les must-play à risque" src="docs/img/ce-soir.jpg" />
-  <img width="45%" alt="Écran Stratégie : plan de la semaine, un pick optimal par jour via l'algo hongrois" src="docs/img/strategie.jpg" />
+  <img width="300" alt="Écran Ce soir : matchs du jour et alertes capital sur les must-play à risque" src="docs/img/ce-soir.jpg" />
+  <img width="300" alt="Écran Stratégie : plan de la semaine, un pick optimal par jour via l'algo hongrois" src="docs/img/strategie.jpg" />
 </p>
 
 *À gauche, l'accueil « Ce soir » : les matchs du jour et les alertes sur les joueurs à jouer d'urgence. À droite, le plan de la semaine : un pick optimal par jour, calculé par l'algo hongrois. [Plus de captures dans le guide utilisateur.](docs/guide-utilisateur.md)*

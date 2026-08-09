@@ -25,8 +25,8 @@
 - Un match terminé se déplie sur les **matchups défensifs** : qui a défendu sur qui, TTFL offensif produit face à chaque défenseur, verdicts (étouffé / tenu / neutre / productif / cuisine)
 
 <p>
-  <img width="45%" alt="Écran Matchs : calendrier et résultats par jour" src="img/matchs.jpg" />
-  <img width="45%" alt="Détail d'un match : matchups défensifs par joueur avec verdicts" src="img/matchups-defensifs.jpg" />
+  <img width="300" alt="Écran Matchs : calendrier et résultats par jour" src="img/matchs.jpg" />
+  <img width="300" alt="Détail d'un match : matchups défensifs par joueur avec verdicts" src="img/matchups-defensifs.jpg" />
 </p>
 
 ### `/picks` — Mes picks
@@ -36,7 +36,7 @@
 - Historique complet des picks avec badge x2 bonus si applicable
 - **Précision moteur** : écart absolu moyen et biais entre score estimé et score réel
 
-<img width="45%" alt="Écran Mes picks : totaux playoffs, moyenne, meilleur et pire pick, précision du moteur" src="img/picks.jpg" />
+<img width="300" alt="Écran Mes picks : totaux playoffs, moyenne, meilleur et pire pick, précision du moteur" src="img/picks.jpg" />
 
 ### `/strategy` — Stratégie
 
@@ -51,7 +51,7 @@
 - Repliables (fermés par défaut) — bouton "Tout déplier"
 - Par joueur : nom, blessure (ex: "Achilles (Right Leg)"), commentaire ESPN, date de retour, date de mise à jour ESPN
 
-<img width="45%" alt="Écran Blessés : 127 joueurs groupés par équipe aux couleurs NBA" src="img/blesses.png" />
+<img width="300" alt="Écran Blessés : 127 joueurs groupés par équipe aux couleurs NBA" src="img/blesses.png" />
 
 ---
 
