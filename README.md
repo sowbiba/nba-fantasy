@@ -2,7 +2,7 @@
 
 Outil d'aide à la décision pour la **TrashTalk Fantasy League** (TTFL). Chaque soir, l'app recommande les meilleurs picks parmi les joueurs NBA disponibles, avec un argumentaire détaillé. En playoffs, un moteur stratégique protège tes franchise-players pour les tours suivants.
 
-App live : **https://web-sigma-one-74.vercel.app** (PWA installable sur mobile)
+App live : **https://ttfl-advisor.vercel.app/** (PWA installable sur mobile)
 
 <!-- TODO: capture d'écran de l'accueil "CE SOIR" ici (à faire une fois le projet Supabase réactivé, écran vide sinon) -->
 
