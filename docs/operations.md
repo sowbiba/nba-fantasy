@@ -60,7 +60,7 @@ nba-fantasy/
 │   ├── weekly_plan.py                 # Algo hongrois + réservation elites
 │   ├── seed.py                        # Seed initial des game logs (22 teams)
 │   └── main.py                        # Orchestrateur cron
-├── tests/                             # 38 tests unitaires (pytest)
+├── tests/                             # 97 tests unitaires (pytest)
 ├── web/                               # Frontend Next.js 16
 │   ├── src/app/                       # Pages (App Router)
 │   │   ├── page.tsx                   # "Ce soir"

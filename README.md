@@ -1,12 +1,12 @@
 # TTFL Advisor
 
-Outil d'aide à la décision pour la **TrashTalk Fantasy League** (TTFL). Chaque soir, l'app recommande les meilleurs picks parmi les joueurs NBA disponibles, avec un argumentaire détaillé. En playoffs, un moteur stratégique protège tes franchise-players pour les tours suivants.
+Outil d'aide à la décision pour la **TrashTalk Fantasy League** (TTFL) — le jeu où tu pickes chaque soir un joueur NBA dont la performance fait ton score, ce joueur devenant ensuite indisponible 30 jours. L'app recommande chaque soir les meilleurs picks parmi les joueurs disponibles, avec un argumentaire détaillé. En playoffs, un moteur stratégique protège tes franchise-players pour les tours suivants.
 
 App live : **https://ttfl-advisor.vercel.app/** (PWA installable sur mobile)
 
 <p>
-  <img height="500" alt="Écran Ce soir : matchs du jour et alertes capital sur les must-play à risque" src="docs/img/ce-soir.jpg" />
-  <img height="500" alt="Écran Stratégie : plan de la semaine, un pick optimal par jour via l'algo hongrois" src="docs/img/strategie.jpg" />
+  <img width="45%" alt="Écran Ce soir : matchs du jour et alertes capital sur les must-play à risque" src="docs/img/ce-soir.jpg" />
+  <img width="45%" alt="Écran Stratégie : plan de la semaine, un pick optimal par jour via l'algo hongrois" src="docs/img/strategie.jpg" />
 </p>
 
 *À gauche, l'accueil « Ce soir » : les matchs du jour et les alertes sur les joueurs à jouer d'urgence. À droite, le plan de la semaine : un pick optimal par jour, calculé par l'algo hongrois. [Plus de captures dans le guide utilisateur.](docs/guide-utilisateur.md)*
@@ -17,7 +17,7 @@ App live : **https://ttfl-advisor.vercel.app/** (PWA installable sur mobile)
 - **Scoring 6 facteurs** : forme pondérée L5/L10/L20, matchup défensif par poste, split home/away, fatigue (back-to-backs), tendance, régularité floor/ceiling
 - **Burn or save** : en playoffs, compare le score de ce soir au meilleur score estimé sur 7 jours pour décider de brûler ou garder un joueur
 - **Plan hebdomadaire optimal** : affectation joueurs → jours via l'algorithme hongrois, avec pénalité de réservation des elites pour les tours avancés
-- **Blessures en temps réel** : statuts ESPN (Out / Doubtful / Questionable / GTD) intégrés au scoring, détection des usage boosts quand un coéquipier majeur est OUT
+- **Blessures à chaque sync** : statuts ESPN (Out / Doubtful / Questionable / GTD) rafraîchis 4×/jour et intégrés au scoring, détection des usage boosts quand un coéquipier majeur est OUT
 - **Règles TTFL natives** : cooldown 30 jours en saison régulière, unicité des picks en playoffs
 
 ## Architecture
@@ -41,11 +41,22 @@ source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # puis renseigner les clés Supabase
 
-# Sync manuel
+# Base : appliquer supabase/schema.sql puis supabase/migrations/ dans l'ordre
+#   (SQL editor du dashboard Supabase, ou psql)
+
+# Seed initial des game logs — à faire une fois
+python -m sync.seed
+
+# Sync manuel (recos du soir)
 python -m sync.main
 
+# Tests (97)
+python -m pytest tests/ -v
+
 # Frontend
-cd web && npm install && npm run dev
+cd web
+cp .env.local.example .env.local   # NEXT_PUBLIC_SUPABASE_URL + ANON_KEY
+npm install && npm run dev
 ```
 
 ## Documentation
