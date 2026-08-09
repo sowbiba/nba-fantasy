@@ -1,5 +1,7 @@
 # TTFL Advisor
 
+![CI](https://github.com/sowbiba/nba-fantasy/actions/workflows/ci.yml/badge.svg)
+
 Outil d'aide à la décision pour la **TrashTalk Fantasy League** (TTFL) — le jeu où tu pickes chaque soir un joueur NBA dont la performance fait ton score, ce joueur devenant ensuite indisponible 30 jours. L'app recommande chaque soir les meilleurs picks parmi les joueurs disponibles, avec un argumentaire détaillé. En playoffs, un moteur stratégique protège tes franchise-players pour les tours suivants.
 
 App live : **https://ttfl-advisor.vercel.app/** (PWA installable sur mobile)
