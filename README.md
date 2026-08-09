@@ -4,19 +4,12 @@ Outil d'aide à la décision pour la **TrashTalk Fantasy League** (TTFL). Chaque
 
 App live : **https://ttfl-advisor.vercel.app/** (PWA installable sur mobile)
 
-<!-- TODO: capture d'écran de l'accueil "CE SOIR" ici (à faire une fois le projet Supabase réactivé, écran vide sinon) -->
+<p>
+  <img height="500" alt="Écran Ce soir : matchs du jour et alertes capital sur les must-play à risque" src="docs/img/ce-soir.jpg" />
+  <img height="500" alt="Écran Stratégie : plan de la semaine, un pick optimal par jour via l'algo hongrois" src="docs/img/strategie.jpg" />
+</p>
 
-<img height="500" alt="Ce soir" src="https://github.com/user-attachments/assets/1500acce-5296-4bb7-9162-eaecc37fac1b" />
-
-<img height="500" alt="WhatsApp Image 2026-04-23 at 13 18 00" src="https://github.com/user-attachments/assets/09e6be8c-6ce7-4489-8dfd-f9facf0ee17e" />
-
-<img height="500" alt="WhatsApp Image 2026-04-29 at 18 16 24" src="https://github.com/user-attachments/assets/3225993b-a2fe-4403-9e10-bd1c15bce415" />
-
-<img height="500" alt="WhatsApp Image 2026-04-25 at 15 42 04 (2)" src="https://github.com/user-attachments/assets/32152e62-7015-4755-a04b-3802db726f10" />
-
-<img height="500" alt="WhatsApp Image 2026-05-06 at 20 46 11" src="https://github.com/user-attachments/assets/4d049389-2276-4baf-b402-b25c303a320c" />
-
-<img height="500" alt="Capture d’écran du 2026-08-09 19-44-03" src="https://github.com/user-attachments/assets/d9869d40-b0ab-4ea0-b737-eb228cbc0255" />
+*À gauche, l'accueil « Ce soir » : les matchs du jour et les alertes sur les joueurs à jouer d'urgence. À droite, le plan de la semaine : un pick optimal par jour, calculé par l'algo hongrois. [Plus de captures dans le guide utilisateur.](docs/guide-utilisateur.md)*
 
 
 ## Ce que ça fait
@@ -63,4 +56,4 @@ cd web && npm install && npm run dev
 
 ## Licence
 
-Projet personnel — MIT
+MIT

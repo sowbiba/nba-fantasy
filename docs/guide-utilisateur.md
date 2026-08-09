@@ -19,11 +19,24 @@
 - Blocs **POUR** / **CONTRE** / **VERDICT** détaillés
 - Bouton "Picker ce joueur ce soir"
 
+### `/games` — Matchs
+
+- Calendrier et résultats par jour, avec numéro de game de la série
+- Un match terminé se déplie sur les **matchups défensifs** : qui a défendu sur qui, TTFL offensif produit face à chaque défenseur, verdicts (étouffé / tenu / neutre / productif / cuisine)
+
+<p>
+  <img height="420" alt="Écran Matchs : calendrier et résultats par jour" src="img/matchs.jpg" />
+  <img height="420" alt="Détail d'un match : matchups défensifs par joueur avec verdicts" src="img/matchups-defensifs.jpg" />
+</p>
+
 ### `/picks` — Mes picks
 
 - 2 onglets : **Saison régulière** / **Playoffs** avec totaux séparés
 - Stats : moyenne, meilleur, pire pick
 - Historique complet des picks avec badge x2 bonus si applicable
+- **Précision moteur** : écart absolu moyen et biais entre score estimé et score réel
+
+<img height="420" alt="Écran Mes picks : totaux playoffs, moyenne, meilleur et pire pick, précision du moteur" src="img/picks.jpg" />
 
 ### `/strategy` — Stratégie
 
@@ -37,6 +50,8 @@
 - Groupés par équipe (header aux couleurs NBA officielles)
 - Repliables (fermés par défaut) — bouton "Tout déplier"
 - Par joueur : nom, blessure (ex: "Achilles (Right Leg)"), commentaire ESPN, date de retour, date de mise à jour ESPN
+
+<img height="420" alt="Écran Blessés : 127 joueurs groupés par équipe aux couleurs NBA" src="img/blesses.png" />
 
 ---
 
