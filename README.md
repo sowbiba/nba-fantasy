@@ -65,6 +65,6 @@ npm install && npm run dev
 - [Exploitation](docs/operations.md) — sources de données, rythme de synchro (cron), structure du code, commandes
 - [Guide utilisateur](docs/guide-utilisateur.md) — les écrans de l'app, workflow hebdo recommandé
 
-## Licence
+## Licence & données
 
-MIT
+MIT. Projet personnel, non affilié à la NBA, à ESPN ni à TrashTalk. Les données (box scores, blessures, calendrier) proviennent d'endpoints publics, servent uniquement à un usage personnel et ne sont pas redistribuées.
