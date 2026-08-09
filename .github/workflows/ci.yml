@@ -16,3 +16,8 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m pytest tests/ -v
+        env:
+          # sync/config.py reads these at import; the tests never hit Supabase
+          SUPABASE_URL: http://localhost
+          SUPABASE_KEY: test
+          SUPABASE_SERVICE_KEY: test
