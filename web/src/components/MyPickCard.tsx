@@ -3,15 +3,17 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { setX2 } from "@/app/actions";
+import { isClosed } from "@/lib/display";
 
 export default function MyPickCard({
-  date, playerId, playerName, team, isX2, x2Allowed,
+  date, playerId, playerName, team, isX2, x2Allowed, closingAt,
 }: {
-  date: string; playerId: number; playerName: string; team: string; isX2: boolean; x2Allowed: boolean;
+  date: string; playerId: number; playerName: string; team: string; isX2: boolean; x2Allowed: boolean; closingAt: string;
 }) {
   const [x2, setLocalX2] = useState(isX2);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const closed = isClosed(closingAt);
 
   const toggle = () => {
     setError(null);
@@ -29,7 +31,7 @@ export default function MyPickCard({
         <Link href={`/player/${playerId}`} className="font-display text-2xl text-white tracking-wide truncate">
           {playerName} <span className="text-sm text-[color:var(--color-text-mute)]">{team}</span>
         </Link>
-        {x2Allowed && (
+        {x2Allowed && !closed && (
           <button onClick={toggle} disabled={pending}
                   className={`shrink-0 px-3 py-1 rounded-full text-xs font-bold border ${x2
                     ? "bg-[color:var(--color-gold)] text-black border-[color:var(--color-gold)]"
@@ -39,7 +41,7 @@ export default function MyPickCard({
         )}
       </div>
       <p className="text-[11px] text-[color:var(--color-text-mute)] mt-1">
-        Tu peux le remplacer jusqu&apos;à la fermeture : choisis un autre joueur ci-dessous.
+        {closed ? "Soirée fermée." : "Tu peux le remplacer jusqu'à la fermeture : choisis un autre joueur ci-dessous."}
       </p>
       {error && <p role="alert" className="mt-1 text-xs text-[color:var(--color-crimson)]">{error}</p>}
     </div>

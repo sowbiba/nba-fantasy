@@ -35,6 +35,14 @@ export function topDefender(rows: MatchupSeasonRow[]) {
   };
 }
 
+/** R8 : la soirée est fermée dès que `closingAt` (nights.closing_at, minuit
+ *  Paris ou premier tip-off si plus tôt) est atteint ou dépassé. Pas de
+ *  closingAt connu (ex. pas de ligne nights) : on ne bloque pas ici. */
+export function isClosed(closingAt: string | null | undefined, now: Date = new Date()): boolean {
+  if (!closingAt) return false;
+  return now.getTime() >= new Date(closingAt).getTime();
+}
+
 export function homeState(s: { hasNight: boolean; recCount: number; hasPick: boolean }) {
   if (!s.hasNight) return "no_games" as const;
   if (s.hasPick) return "picked" as const;

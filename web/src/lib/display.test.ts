@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeState, pickPoints, recMeta, topDefender } from "./display";
+import { homeState, isClosed, pickPoints, recMeta, topDefender } from "./display";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -32,6 +32,17 @@ describe("topDefender", () => {
   it("rien sous 5 minutes d'échantillon", () => {
     expect(topDefender([{ def_player_name: "Davis", minutes: 4, points: 3, games: 1 }])).toBeNull();
     expect(topDefender([])).toBeNull();
+  });
+});
+
+describe("isClosed", () => {
+  it("pile à l'heure de fermeture : fermée", () =>
+    expect(isClosed("2026-11-24T23:00:00Z", new Date("2026-11-24T23:00:00Z"))).toBe(true));
+  it("une seconde avant : encore ouverte", () =>
+    expect(isClosed("2026-11-24T23:00:00Z", new Date("2026-11-24T22:59:59Z"))).toBe(false));
+  it("pas de closingAt connu : ne bloque pas", () => {
+    expect(isClosed(null, new Date("2026-11-24T23:00:00Z"))).toBe(false);
+    expect(isClosed(undefined, new Date("2026-11-24T23:00:00Z"))).toBe(false);
   });
 });
 

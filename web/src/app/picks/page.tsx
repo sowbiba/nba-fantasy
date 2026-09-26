@@ -17,17 +17,21 @@ export default async function PicksPage() {
   const { data: userData } = await auth.auth.getUser();
   const signedIn = isOwnerEmail(userData.user?.email, process.env.OWNER_EMAIL);
 
-  const [statsRes, picksRes, scRes] = await Promise.all([
+  const [statsRes, picksRes, scRes, nightRes] = await Promise.all([
     supabase.rpc("period_stats", { p_season: season, p_mode: "regular", p_until: today }),
     supabase.from("picks").select("id, date, player_id, actual_score, is_x2, players(name, team)").eq("season", season).order("date", { ascending: false }),
-    supabase.from("second_chances").select("pick_id"),
+    // Filtré par saison courante (jointure sur picks.season) : second_chances n'a pas sa propre colonne season (migration 018).
+    supabase.from("second_chances").select("pick_id, bought_on, expires_on, picks!inner(season)").eq("picks.season", season),
+    supabase.from("nights").select("closing_at").eq("date", today).maybeSingle(),
   ]);
   const stats = ((statsRes.data || [])[0] ?? null) as Stats | null;
-  const withSc = new Set(((scRes.data || []) as { pick_id: number }[]).map((s) => s.pick_id));
+  const scByPick = new Map(((scRes.data || []) as { pick_id: number; bought_on: string; expires_on: string }[])
+    .map((s) => [s.pick_id, { bought_on: s.bought_on, expires_on: s.expires_on }]));
+  const todayClosingAt = (nightRes.data as { closing_at: string } | null)?.closing_at ?? null;
   type Row = { id: number; date: string; player_id: number; actual_score: number | null; is_x2: boolean; players: { name: string; team: string } | null };
   const rows: HistoryRow[] = ((picksRes.data || []) as unknown as Row[]).map((p) => ({
     id: p.id, date: p.date, player_id: p.player_id, player_name: p.players?.name ?? `#${p.player_id}`,
-    team: p.players?.team ?? "", actual_score: p.actual_score, is_x2: p.is_x2, has_second_chance: withSc.has(p.id),
+    team: p.players?.team ?? "", actual_score: p.actual_score, is_x2: p.is_x2, second_chance: scByPick.get(p.id) ?? null,
   }));
 
   return (
@@ -59,7 +63,7 @@ export default async function PicksPage() {
       </p>
 
       <div className="mt-5">
-        <PicksHistory rows={rows} today={today} />
+        <PicksHistory rows={rows} today={today} todayClosingAt={todayClosingAt} />
       </div>
     </div>
   );

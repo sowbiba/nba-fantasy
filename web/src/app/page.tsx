@@ -110,7 +110,7 @@ export default async function TonightPage() {
 
       {pick && pickPlayer ? (
         <MyPickCard key={`${pick.id}-${pick.is_x2}`} date={deck} playerId={pickPlayer.id} playerName={pickPlayer.name} team={pickPlayer.team}
-                    isX2={pick.is_x2} x2Allowed={pick.mode === "regular" && X2_MONTHS.has(month)} />
+                    isX2={pick.is_x2} x2Allowed={pick.mode === "regular" && X2_MONTHS.has(month)} closingAt={night?.closing_at ?? ""} />
       ) : (
         <NoPickBanner hasGamesTonight={state !== "no_games"} />
       )}

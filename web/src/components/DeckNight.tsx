@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { savePick } from "@/app/actions";
 import { frLongDate, parisTime } from "@/lib/date";
-import { HARD_OUT_STATUSES } from "@/lib/display";
+import { HARD_OUT_STATUSES, isClosed } from "@/lib/display";
 
 export type DeckNightProps = {
   date: string; closingAt: string; nGames: number; isPhantom: boolean; isToday: boolean;
@@ -15,6 +15,7 @@ export type DeckNightProps = {
 export default function DeckNight(p: DeckNightProps) {
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const closed = isClosed(p.closingAt);
 
   const reserve = () => {
     if (!p.suggestion) return;
@@ -45,7 +46,7 @@ export default function DeckNight(p: DeckNightProps) {
             {p.pick.name}
           </Link>{" "}
           <span className="text-[11px] text-[color:var(--color-text-mute)]">{p.pick.team}{p.pick.isX2 ? " · x2" : ""}</span>
-          {p.pick.injury && HARD_OUT_STATUSES.has(p.pick.injury) && (
+          {p.pick.injury && HARD_OUT_STATUSES.has(p.pick.injury) && !closed && (
             <p className="text-xs text-[color:var(--color-crimson)]">⚠️ {p.pick.injury} : remplace-le avant la fermeture.</p>
           )}
         </div>
@@ -57,10 +58,14 @@ export default function DeckNight(p: DeckNightProps) {
             </Link>{" "}
             <span className="text-[11px] text-[color:var(--color-text-mute)]">{p.suggestion.explanation}</span>
           </div>
-          <button onClick={reserve} disabled={pending}
-                  className="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-[color:var(--color-flame)] disabled:opacity-50">
-            RÉSERVER
-          </button>
+          {closed ? (
+            <span className="shrink-0 text-[11px] text-[color:var(--color-text-mute)]">Fermé</span>
+          ) : (
+            <button onClick={reserve} disabled={pending}
+                    className="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-[color:var(--color-flame)] disabled:opacity-50">
+              RÉSERVER
+            </button>
+          )}
         </div>
       ) : (
         <p className="mt-1 text-xs text-[color:var(--color-text-mute)]">Pas encore de suggestion.</p>

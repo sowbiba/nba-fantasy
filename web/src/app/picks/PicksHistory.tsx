@@ -4,14 +4,14 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { addSecondChance, cancelPick } from "@/app/actions";
 import { frDayMonth, frLongDate } from "@/lib/date";
-import { pickPoints } from "@/lib/display";
+import { isClosed, pickPoints } from "@/lib/display";
 
 export type HistoryRow = {
   id: number; date: string; player_id: number; player_name: string; team: string;
-  actual_score: number | null; is_x2: boolean; has_second_chance: boolean;
+  actual_score: number | null; is_x2: boolean; second_chance: { bought_on: string; expires_on: string } | null;
 };
 
-export default function PicksHistory({ rows, today }: { rows: HistoryRow[]; today: string }) {
+export default function PicksHistory({ rows, today, todayClosingAt }: { rows: HistoryRow[]; today: string; todayClosingAt: string | null }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
@@ -19,7 +19,7 @@ export default function PicksHistory({ rows, today }: { rows: HistoryRow[]; toda
   const secondChance = (id: number) => {
     setMsg(null);
     startTransition(async () => {
-      const res = await addSecondChance({ pickId: id, boughtOn: today });
+      const res = await addSecondChance({ pickId: id });
       setMsg(res.ok ? "Seconde chance enregistrée : repick possible pendant 7 jours." : res.error);
     });
   };
@@ -42,7 +42,8 @@ export default function PicksHistory({ rows, today }: { rows: HistoryRow[]; toda
       <ol className="flex flex-col gap-1.5">
         {rows.map((r) => {
           const points = pickPoints(r.actual_score, r.is_x2);
-          const cancellable = r.date >= today && r.actual_score === null;
+          const closedToday = r.date === today && isClosed(todayClosingAt);
+          const cancellable = r.date >= today && r.actual_score === null && !closedToday;
           return (
             <li key={r.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/5">
               <div className="min-w-0">
@@ -55,7 +56,7 @@ export default function PicksHistory({ rows, today }: { rows: HistoryRow[]; toda
                 {cancellable && (
                   <button onClick={() => cancel(r)} disabled={pending}
                           className="mt-1 text-[10px] underline text-[color:var(--color-text-soft)]">
-                    {confirmingId === r.id ? "Confirmer l'annulation" : "Annuler"}
+                    {confirmingId === r.id ? "Confirmer (pas encore saisi sur TrashTalk)" : "Annuler"}
                   </button>
                 )}
               </div>
@@ -64,13 +65,17 @@ export default function PicksHistory({ rows, today }: { rows: HistoryRow[]; toda
                   {points === null ? "—" : points}
                   {r.is_x2 && <span className="ml-1 text-xs text-[color:var(--color-gold)]">x2</span>}
                 </div>
-                {r.actual_score === 0 && !r.has_second_chance && (
+                {r.actual_score === 0 && !r.second_chance && (
                   <button onClick={() => secondChance(r.id)} disabled={pending}
                           className="mt-1 text-[10px] underline text-[color:var(--color-text-soft)]">
                     Seconde chance
                   </button>
                 )}
-                {r.has_second_chance && <div className="mt-1 text-[10px] text-[color:var(--color-emerald)]">2de chance · {frDayMonth(r.date)}</div>}
+                {r.second_chance && (
+                  <div className="mt-1 text-[10px] text-[color:var(--color-emerald)]">
+                    2de chance · jusqu&apos;au {frDayMonth(r.second_chance.expires_on)}
+                  </div>
+                )}
               </div>
             </li>
           );
