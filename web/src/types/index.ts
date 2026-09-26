@@ -20,6 +20,8 @@ export interface Player {
 export interface Game {
   id: string;
   date: string;
+  season: string;
+  game_type: string;
   home_team: string;
   away_team: string;
   tip_off: string | null;
@@ -28,6 +30,15 @@ export interface Game {
   status: string;
   home_score: number | null;
   away_score: number | null;
+}
+
+export interface Night {
+  date: string;
+  season: string;
+  mode: "regular" | "playoffs";
+  n_eligible_games: number;
+  closing_at: string;
+  is_phantom: boolean;
 }
 
 export interface Series {
@@ -55,6 +66,12 @@ export interface Recommendation {
   tier: "elite" | "solid" | "filler";
   tags: string[];
   computed_at: string;
+  projection: number | null;
+  p_play: number | null;
+  value: number | null;
+  lock_value: number | null;
+  locked_until: string | null;
+  best_future: string | null;
 }
 
 export interface SeriesForecast {
@@ -95,7 +112,9 @@ export interface Pick {
   player_id: number;
   game_id: string;
   date: string;
+  season: string;
   mode: "regular" | "playoffs";
+  is_x2: boolean;
   estimated_score: number | null;
   actual_score: number | null;
   picked_at: string;
@@ -113,7 +132,6 @@ export interface SyncLog {
 export interface RecommendationWithPlayer extends Recommendation {
   player: Player;
   game: Game;
-  matchup?: MatchupAggregate | null;
 }
 
 /**

@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 interface Props {
-  todayDate: string;
   hasGamesTonight: boolean;
   hasPickToday: boolean;
 }

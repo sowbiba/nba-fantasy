@@ -1,206 +1,79 @@
 import { supabase } from "@/lib/supabase/public";
-import {
-  Game,
-  Series,
-  Recommendation,
-  Player,
-  SyncLog,
-  RecommendationWithPlayer,
-  WatchlistEntry,
-  Pick,
-  MatchupAggregate,
-} from "@/types";
+import { Game, Night, Pick, Player, Recommendation, RecommendationWithPlayer, SyncLog } from "@/types";
 import SyncStatus from "@/components/SyncStatus";
 import NoPickBanner from "@/components/NoPickBanner";
 import GamesCollapsible from "@/components/GamesCollapsible";
-import StrategyBanner from "@/components/StrategyBanner";
 import RecommendationCard from "@/components/RecommendationCard";
 import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
-import InjuryArbitrage from "@/components/InjuryArbitrage";
-import WatchlistAlerts from "@/components/WatchlistAlerts";
-import { todayNBA } from "@/lib/date";
+import MyPickCard from "@/components/MyPickCard";
+import { deckDate, frLongDate, parisTime } from "@/lib/date";
+import { homeState } from "@/lib/display";
 
-// 0 = always fresh on every request. The home page banner depends on
-// whether the user has picked tonight — a 5-min ISR window meant the
-// "pas encore pické" banner stayed visible after the pick was made,
-// until the cache expired. Picking is a low-frequency action so the
-// extra Supabase round-trip is fine in exchange for instant feedback.
 export const revalidate = 0;
 
-// Mirror engine/stats/availability_prob.py HARD_OUT_STATUSES — players who can't suit up and
-// must never surface as a recommendation, even on a stale rec row.
-const HARD_OUT_STATUSES = new Set([
-  "Out",
-  "Doubtful",
-  "Out For Season",
-  "Suspended",
-]);
+// Garde-fou d'affichage (pas une règle) : un joueur passé « Out » après la
+// dernière synchro ne doit pas rester en tête. Miroir de HARD_OUT_STATUSES
+// (engine/stats/availability_prob.py).
+const HARD_OUT_STATUSES = new Set(["Out", "Doubtful", "Out For Season", "Suspended"]);
+const X2_MONTHS = new Set([11, 12, 1, 2, 3, 4]);
 
 async function getData() {
-  const today = todayNBA();
-
-  const [
-    gamesRes,
-    seriesRes,
-    recsRes,
-    playersRes,
-    syncRes,
-    watchlistRes,
-    picksRes,
-  ] = await Promise.all([
-    supabase.from("games").select("*").eq("date", today).order("tip_off"),
-    supabase.from("series").select("*"),
-    supabase.from("recommendations").select("*").eq("date", today).order("rank"),
-    supabase.from("players").select("*"),
-    supabase.from("sync_log").select("*").order("started_at", { ascending: false }).limit(1),
-    supabase.from("player_watchlist").select("*"),
-    supabase.from("picks").select("*").eq("mode", "playoffs"),
+  const deck = deckDate();
+  const [nightRes, gamesRes, recsRes, pickRes, syncRes] = await Promise.all([
+    supabase.from("nights").select("*").eq("date", deck).maybeSingle(),
+    supabase.from("games").select("*").eq("date", deck).order("tip_off"),
+    supabase.from("recommendations").select("*").eq("date", deck).order("rank"),
+    supabase.from("picks").select("*").eq("date", deck).maybeSingle(),
+    supabase.from("sync_log").select("*").eq("job", "daily_sync").order("started_at", { ascending: false }).limit(1),
   ]);
-
-  const allGames = (gamesRes.data || []) as Game[];
-  const allSeries = (seriesRes.data || []) as Series[];
-  const completedSeriesIds = new Set(
-    allSeries.filter((s) => s.status === "completed").map((s) => s.id)
-  );
-  // Phantom games (G6/G7 of a series that ended early) stay in the schedule
-  // and keep getting upserted by load_schedule.py — drop them here so they
-  // don't show up in tonight's matches or feed stale recommendations.
-  // We match BOTH by series_id and by team-pair: seed_playoffs only links
-  // games whose gameLabel still carries the round name, and conditional
-  // games sometimes lose that label after the series clinches.
-  const completedPairs = new Set(
-    allSeries
-      .filter((s) => s.status === "completed")
-      .map((s) => [s.home_team, s.away_team].sort().join("|"))
-  );
-  const games = allGames.filter((g) => {
-    if (g.series_id && completedSeriesIds.has(g.series_id)) return false;
-    const pair = [g.home_team, g.away_team].sort().join("|");
-    if (completedPairs.has(pair)) return false;
-    return true;
-  });
-  const series = allSeries.filter((s) => s.status === "active");
+  const night = (nightRes.data as Night | null) ?? null;
+  const games = ((gamesRes.data || []) as Game[]).filter((g) =>
+    ["regular", "cup_final", "playoffs"].includes(g.game_type));
   const recs = (recsRes.data || []) as Recommendation[];
-  const players = (playersRes.data || []) as Player[];
-  const sync = (syncRes.data?.[0] || null) as SyncLog | null;
-  const watchlist = (watchlistRes.data || []) as WatchlistEntry[];
-  const picks = (picksRes.data || []) as Pick[];
+  const pick = (pickRes.data as Pick | null) ?? null;
 
-  const playersMap = new Map(players.map((p) => [p.id, p]));
+  const ids = [...new Set([...recs.map((r) => r.player_id), ...(pick ? [pick.player_id] : [])])];
+  const playersRes = ids.length ? await supabase.from("players").select("*").in("id", ids) : { data: [] };
+  const players = new Map(((playersRes.data || []) as Player[]).map((p) => [p.id, p]));
 
-  const recsWithoutMatchup: RecommendationWithPlayer[] = recs
+  const recsWithPlayers = recs
     .map((r) => {
-      const player = playersMap.get(r.player_id);
-      const game = games.find(
-        (g) => g.home_team === player?.team || g.away_team === player?.team
-      );
-      if (!player || !game) return null;
-      // Drop a player ruled out AFTER the sync that generated this rec — the
-      // backend filters hard-outs at sync time, but injuries flip between
-      // syncs and `player` here is fetched fresh, so injury_status is current.
-      if (player.injury_status && HARD_OUT_STATUSES.has(player.injury_status))
-        return null;
+      const player = players.get(r.player_id);
+      const game = games.find((g) => g.home_team === player?.team || g.away_team === player?.team);
+      if (!player || !game || (player.injury_status && HARD_OUT_STATUSES.has(player.injury_status))) return null;
       return { ...r, player, game };
     })
     .filter(Boolean) as RecommendationWithPlayer[];
 
-  // Pull in-series matchup aggregates for tonight's recommended players.
-  // One IN(...) query keyed on player_id; we filter to the right
-  // opponent in JS since the (player_id, opponent) tuple isn't
-  // available as a server-side filter via the supabase-js builder.
-  let matchupRows: MatchupAggregate[] = [];
-  if (recsWithoutMatchup.length > 0) {
-    const playerIds = recsWithoutMatchup.map((r) => r.player_id);
-    const { data: matchupsData } = await supabase
-      .from("matchup_aggregates")
-      .select("*")
-      .in("player_id", playerIds);
-    matchupRows = (matchupsData || []) as MatchupAggregate[];
-  }
-  const matchupByKey = new Map<string, MatchupAggregate>();
-  for (const m of matchupRows) {
-    matchupByKey.set(`${m.player_id}:${m.opponent_team}`, m);
-  }
-
-  const recsWithPlayers: RecommendationWithPlayer[] = recsWithoutMatchup.map(
-    (r) => {
-      const opponent =
-        r.game.home_team === r.player.team
-          ? r.game.away_team
-          : r.game.home_team;
-      const matchup = matchupByKey.get(`${r.player_id}:${opponent}`) || null;
-      return { ...r, matchup };
-    }
-  );
-
-  let gameDaysRemaining = 0;
-  for (const s of series) {
-    const minLeft = 4 - Math.max(s.home_wins, s.away_wins);
-    const maxLeft = 7 - s.home_wins - s.away_wins;
-    gameDaysRemaining += Math.round((minLeft + maxLeft) / 2);
-  }
-  gameDaysRemaining = Math.max(1, Math.round(gameDaysRemaining * 0.7));
-
   return {
-    games,
-    series,
-    recsWithPlayers,
-    sync,
-    gameDaysRemaining,
-    watchlist,
-    picks,
+    deck, night, games, recsWithPlayers, pick,
+    pickPlayer: pick ? players.get(pick.player_id) ?? null : null,
+    sync: (syncRes.data?.[0] || null) as SyncLog | null,
   };
 }
 
 export default async function TonightPage() {
-  const {
-    games,
-    series,
-    recsWithPlayers,
-    sync,
-    gameDaysRemaining,
-    watchlist,
-    picks,
-  } = await getData();
+  const { deck, night, games, recsWithPlayers, pick, pickPlayer, sync } = await getData();
+  const state = homeState({ hasNight: !!night && night.n_eligible_games > 0, recCount: recsWithPlayers.length, hasPick: !!pick });
   const top3 = recsWithPlayers.slice(0, 3);
-
-  const dateLabel = new Date().toLocaleDateString("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
+  const month = Number(deck.slice(5, 7));
 
   return (
     <div className="animate-fade-in">
-      {/* -------------------- HERO header -------------------- */}
       <header className="relative overflow-hidden px-4 pt-5 pb-4">
-        {/* decorative arc (half-court line) */}
-        <svg
-          className="absolute -top-10 -right-16 w-64 h-64 opacity-[0.07] pointer-events-none"
-          viewBox="0 0 200 200"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1"
-        >
-          <circle cx="100" cy="100" r="80" className="text-[color:var(--color-flame)]" />
-          <circle cx="100" cy="100" r="40" className="text-[color:var(--color-flame)]" />
-          <path d="M 20 100 H 180" className="text-[color:var(--color-flame)]" />
-        </svg>
-
         <div className="flex items-start justify-between gap-3 relative">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-gold)]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--color-gold)] animate-live-dot" />
-                Playoffs · Night
-              </span>
-            </div>
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-gold)]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--color-gold)] animate-live-dot" />
+              {night?.mode === "playoffs" ? "Playoffs" : "Saison régulière"}
+              {night && <> · fermeture {parisTime(night.closing_at)}</>}
+            </span>
             <h1 className="font-display text-5xl leading-none tracking-wide text-white">
               CE <span className="flame-text">SOIR</span>
             </h1>
             <p className="text-xs text-[color:var(--color-text-mute)] mt-1.5 capitalize tracking-wide">
-              {dateLabel} ·{" "}
+              {frLongDate(deck)} ·{" "}
               <span className="text-[color:var(--color-text-soft)] font-semibold">
                 {games.length} match{games.length > 1 ? "s" : ""}
               </span>
@@ -212,54 +85,37 @@ export default async function TonightPage() {
         </div>
       </header>
 
-      <NoPickBanner
-        todayDate={todayNBA()}
-        hasGamesTonight={games.length > 0}
-        hasPickToday={picks.some((p) => p.date === todayNBA())}
-      />
+      {pick && pickPlayer ? (
+        <MyPickCard date={deck} playerId={pickPlayer.id} playerName={pickPlayer.name} team={pickPlayer.team}
+                    isX2={pick.is_x2} x2Allowed={pick.mode === "regular" && X2_MONTHS.has(month)} />
+      ) : (
+        <NoPickBanner hasGamesTonight={state !== "no_games"} hasPickToday={false} />
+      )}
 
       <SyncStatus sync={sync} />
 
       <div className="mt-3 px-3">
-        <GamesCollapsible games={games} series={series} />
+        <GamesCollapsible games={games} />
       </div>
 
-      <WatchlistAlerts
-        recommendations={recsWithPlayers}
-        watchlist={watchlist}
-        picks={picks}
-      />
-
-      <div className="mt-3 px-3">
-        <StrategyBanner
-          recommendations={recsWithPlayers}
-          gamesDaysRemaining={gameDaysRemaining}
-        />
-      </div>
-
-      <InjuryArbitrage recs={recsWithPlayers} />
-
-      {/* -------------------- TOP 3 section -------------------- */}
       <section id="top-3" className="mt-6 px-3">
         <div className="flex items-end justify-between mb-3 px-1">
           <h2 className="font-display text-3xl tracking-wide text-white leading-none">
             TOP <span className="gold-text">3</span>
           </h2>
           <span className="text-[10px] tracking-[0.2em] uppercase text-[color:var(--color-text-mute)] pb-1">
-            Picks du soir
+            {state === "picked" ? "Alternatives pour remplacer" : "Picks du soir"}
           </span>
         </div>
         <div className="flex flex-col gap-3 stagger">
-          {top3.map((rec) => (
-            <RecommendationCard key={rec.id} rec={rec} />
-          ))}
+          {top3.map((rec) => <RecommendationCard key={rec.id} rec={rec} />)}
           {top3.length === 0 && (
             <div className="surface p-8 text-center">
               <div className="font-display text-2xl text-[color:var(--color-text-mute)] mb-1">
-                Aucune reco
+                {state === "no_games" ? "Pas de soirée TTFL" : "Aucune reco"}
               </div>
               <p className="text-sm text-[color:var(--color-text-mute)]">
-                Prochaine synchro en cours…
+                {state === "no_games" ? "Aucun match éligible ce soir." : "Prochaine synchro en cours…"}
               </p>
             </div>
           )}
