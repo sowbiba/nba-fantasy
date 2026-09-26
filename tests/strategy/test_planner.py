@@ -38,3 +38,24 @@ def test_elagage_garde_les_meilleurs_par_soiree():
 
 def test_plan_vide():
     assert solve([], []) == {}
+
+
+def test_maximise_la_valeur_totale_quitte_a_laisser_une_soiree_vide():
+    # A : 100 ce soir, 1 à J+5. B : 1 ce soir. Maximiser la valeur totale.
+    cells = [_cell(1, 0, 100.0), _cell(1, 5, 1.0), _cell(2, 0, 1.0)]
+    plan = solve(cells, [D0, D0 + timedelta(days=5)])
+    assert plan == {D0: _cell(1, 0, 100.0)}
+
+
+def test_soiree_obligatoire_prise_meme_negative():
+    # A : -5 ce soir. B : -2 ce soir. Soirée obligatoire → pick le moins mauvais.
+    cells = [_cell(1, 0, -5.0), _cell(2, 0, -2.0)]
+    plan = solve(cells, [D0], required={D0})
+    assert plan[D0].player_id == 2
+
+
+def test_soiree_future_negative_laissee_vide():
+    # A : -5 à J+1. Pas d'obligation → aucun pick.
+    cells = [_cell(1, 1, -5.0)]
+    plan = solve(cells, [D0, D0 + timedelta(days=1)])
+    assert plan == {}
