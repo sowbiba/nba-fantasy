@@ -33,16 +33,20 @@ ESPN_NAME_TO_TRICODE = {
 ESPN_ID_TO_TRICODE = {str(v): k for k, v in ESPN_TEAM_IDS.items()}
 
 
-def fetch_all_injuries(teams: list[str] | None = None) -> dict[str, list[dict]]:
-    """Fetch injuries for all teams from ESPN global endpoint.
+def fetch_all_injuries(guard=None, teams: list[str] | None = None) -> dict[str, list[dict]]:
+    """Blessures de toutes les équipes (endpoint ESPN global, 1 appel).
 
-    Returns {team_tricode: [{"name", "status", "detail"}, ...]}
+    Returns {team_tricode: [{"name", "status", "detail", ...}, ...]}, ou {}
+    si ESPN est indisponible (le job continue avec les statuts en base).
     """
-    try:
+    def download():
         resp = httpx.get(GLOBAL_INJURIES_URL, timeout=15)
         resp.raise_for_status()
-        data = resp.json()
-    except (httpx.HTTPError, ValueError):
+        return resp.json()
+
+    try:
+        data = guard.call("espn", download) if guard is not None else download()
+    except Exception:
         return {}
 
     all_injuries: dict[str, list[dict]] = {}
