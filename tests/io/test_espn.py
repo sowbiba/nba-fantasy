@@ -85,3 +85,39 @@ def test_fetch_renvoie_vide_si_espn_tombe(monkeypatch):
     monkeypatch.setattr(espn_module.httpx, "get", boom)
     guard = ApiGuard({"espn": HostPolicy(0.0, 0, 3, 5)})
     assert espn_module.fetch_all_injuries(guard) == {}
+
+
+from datetime import date
+
+from engine.io.espn import espn_tricode, parse_espn_scoreboard
+
+
+def _event(state, name, home="GS", away="NY", hs="100", as_="98", when="2026-10-22T02:00Z"):
+    return {
+        "date": when,
+        "status": {"type": {"state": state, "name": name}},
+        "competitions": [{"competitors": [
+            {"homeAway": "home", "team": {"abbreviation": home}, "score": hs},
+            {"homeAway": "away", "team": {"abbreviation": away}, "score": as_},
+        ]}],
+    }
+
+
+def test_tricodes_espn_normalises():
+    assert [espn_tricode(a) for a in ["GS", "NY", "SA", "NO", "UTAH", "WSH", "BOS"]] == \
+        ["GSW", "NYK", "SAS", "NOP", "UTA", "WAS", "BOS"]
+
+
+def test_scoreboard_statuts_et_scores():
+    payload = {"events": [_event("post", "STATUS_FINAL"), _event("in", "STATUS_IN_PROGRESS", home="SA", away="UTAH"),
+                          _event("pre", "STATUS_SCHEDULED", home="LAL", away="WSH", hs="0", as_="0")]}
+    rows = parse_espn_scoreboard(payload, date(2026, 10, 21))
+    assert rows[0] == {"date": "2026-10-21", "home_team": "GSW", "away_team": "NYK", "tip_off": "2026-10-22T02:00Z",
+                       "status": "final", "home_score": 100, "away_score": 98}
+    assert (rows[1]["home_team"], rows[1]["away_team"], rows[1]["status"]) == ("SAS", "UTA", "live")
+    assert rows[2]["status"] == "scheduled" and rows[2]["home_score"] is None
+
+
+def test_scoreboard_ignore_reportes_et_annules():
+    payload = {"events": [_event("post", "STATUS_POSTPONED"), _event("post", "STATUS_CANCELED")]}
+    assert parse_espn_scoreboard(payload, date(2026, 10, 21)) == []
