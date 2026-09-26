@@ -154,7 +154,7 @@ La seconde option paraît la plus utile. La fenêtre de 21 jours de `minutes_adj
 
 ## 9. Historique saison régulière 2025-26 (table `picks`, analysé le 2026-09-26)
 
-162 picks en `mode='regular'` du 21/10/2025 au 12/04/2026, tous scorés. Moyenne brute **34.0**, médiane 36.
+162 picks en `mode='regular'` du 21/10/2025 au 12/04/2026, tous scorés. Moyenne brute **34.0**, médiane 36. Les 2 écarts de 9 jours entre picks d'un même joueur (Mobley, Giannis) viennent du bonus **Seconde chance** (R15), pas d'erreurs d'import : ces zéros sont réels.
 
 - **Import** : `picked_at` = date du pick (import en masse). Pour les picks avec x2, le **score doublé est stocké dans `estimated_score`** (106 = 2 × 53), et `actual_score` reste le score brut. C'est ce que détecte l'heuristique `PicksTabs.tsx:20-26`. À normaliser en `is_x2`.
 - **Fuite n°1, les zéros** : **17 picks sur 162 (10,5 %) à 0 ou moins** (16 × 0 et un −6), soit environ 590 pts perdus, **~3,6 pts par soirée**. Plusieurs étaient prévisibles :

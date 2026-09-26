@@ -9,7 +9,7 @@ L'application a été retaillée pour les playoffs 2026 (pick-and-drop, séries,
 **Objectif** : un moteur dont les règles du jeu, les stats et la stratégie sont séparées, qui **bascule automatiquement entre SR et PO** selon le type de match, et qui bat la référence de **34.0 de moyenne en SR obtenue sans outil**.
 
 **Documents de référence** (font partie de cette spec) :
-- [regles-ttfl.md](../../regles-ttfl.md) : règles R1 à R14, la spécification du module `rules/` ;
+- [regles-ttfl.md](../../regles-ttfl.md) : règles R1 à R15, la spécification du module `rules/` ;
 - [strategie-ttfl.md](../../strategie-ttfl.md) : décisions S1 à S6 (stratégie) et P1-P2 (produit).
 
 **Non-objectifs** :
@@ -24,7 +24,7 @@ Nouveau package `engine/`, qui remplace `sync/`. Dépendances à sens unique : `
 ```
 engine/
   rules/
-    availability.py      R3 (cooldown J+31, dans les deux sens, réservations comprises), R4, R5, R6
+    availability.py      R3 (cooldown J+30, dans les deux sens, réservations comprises), R15 (Seconde chance), R4, R5, R6
     calendar.py          R8 (fermeture), R11 (soirées éligibles), R12 (play-in), R13 (match fantôme)
     scoring.py           R1 (formule), R10 (x2), R7, R14
     ruleset.py           Ruleset SR / PO ; mode déduit de games.game_type
@@ -86,6 +86,7 @@ Migrations numérotées dans la continuité (017+), toutes **idempotentes**.
 | `players` | + `active boolean` (absent des effectifs actuels → non candidat) |
 | `series` | + `season` ; clé de série = (season, round, paire) |
 | `picks` | + `season`, + `is_x2 boolean default false`. `mode` sans défaut, rempli depuis le match. Statut dérivé : réservé / verrouillé / scoré. `unique(date)` conservé. **Backfill 2025-26** : si `estimated_score = 2 × actual_score`, alors `is_x2 = true` et `estimated_score` est remis à null. |
+| `second_chances` (nouvelle) | pick_id (le 0 débloqué), player_id, bought_on, expires_on (= bought_on + 7). Saisie manuelle. Lue par la règle R15. |
 | `nights` (nouvelle) | date, season, mode, n_eligible_games, `closing_at`, `is_phantom`. Écrite par le moteur, lue par le front et les rappels. |
 | `plan` (remplace `weekly_plan`) | generated_at, night, player_id, is_x2, projection, p_play, value, explanation |
 | `team_elo` (nouvelle) | team, date, season, elo |
@@ -98,7 +99,7 @@ Migrations numérotées dans la continuité (017+), toutes **idempotentes**.
 
 Les versions SQL et Python sont vérifiées par **un fichier de cas partagé** `tests/rules/availability_cases.json`, exécuté contre les deux implémentations.
 
-**Sécurité** : suppression de toutes les policies d'écriture anon (`picks`, `player_watchlist`, `series_forecast`). Les écritures passent par des actions serveur Next.js avec la clé service, derrière **Supabase Auth en lien magique, limité au seul compte de l'utilisateur**. L'anon garde la lecture.
+**Sécurité** : suppression de toutes les policies d'écriture anon (`picks`, `player_watchlist`, `series_forecast`). Les écritures passent par des actions serveur Next.js avec la clé service, derrière **Supabase Auth par code OTP reçu par e-mail et saisi dans la PWA** (un lien magique s'ouvrirait dans Safari, dont le stockage est séparé de la PWA installée sur iOS), limité au seul compte de l'utilisateur (`shouldCreateUser: false`, vérification de l'e-mail dans chaque action serveur). L'anon garde la lecture.
 
 ## 4. Jobs et planification
 
@@ -130,7 +131,7 @@ Origine historique des blocages : **Akamai devant stats.nba.com** (et dans une m
 - **Répartition par source** :
   - stats.nba.com → PC local uniquement ;
   - cdn.nba.com → GitHub, avec délai ;
-  - ESPN → GitHub. Vérifier l'existence d'un endpoint blessures unique pour toute la ligue (30 → 1 appel).
+  - ESPN → GitHub, via l'endpoint blessures global déjà utilisé (1 seul appel pour toute la ligue).
 - **Couche `io/` commune** :
   - limiteur par hôte (délai minimal configurable, 5 s pour stats.nba.com) ;
   - retry avec backoff exponentiel sur 429, timeout ou réponse vide, en respectant `Retry-After` ;
@@ -155,7 +156,7 @@ Toutes les pages se lisent sur `nights`, `plan` et `player_available`. Aucune r�
 
 ## 7. Tests et backtest
 
-- `tests/rules/` : chaque règle R1 à R14 avec ses cas limites. `availability_cases.json` est partagé entre Python et SQL. Borne J+31 verrouillée par un test.
+- `tests/rules/` : chaque règle R1 à R15 avec ses cas limites. `availability_cases.json` est partagé entre Python et SQL. Borne J+30 verrouillée par un test (cas réels 2025-26).
 - `tests/stats/` : tendance (sens corrigé : logs du plus récent au plus ancien), priors, back-to-back, repos réel.
 - `tests/strategy/` : cas construits à la main, par exemple :
   - « match facile à J+20 → on joue Y ce soir » ;
@@ -179,12 +180,12 @@ Toutes les pages se lisent sur `nights`, `plan` et `player_available`. Aucune r�
 | **L2** | x2 dans le plan (S3), rappels (push + fallback Telegram), `evening_refresh`, backtest SR et activation du plan | novembre (début des x2) |
 | **L3** | Elo complet + écart de force dans la projection, simulation du tableau PO (S4), écran PO, backtest PO | avant la mi-avril 2027 |
 
-Chaque lot fait l'objet de son propre plan d'implémentation. Le premier plan couvre **L1 uniquement**.
+Chaque lot fait l'objet de son propre plan d'implémentation. Le lot L1 est découpé en trois plans exécutés dans l'ordre : **L1a** données et règles, **L1b** moteur et jobs, **L1c** front et authentification.
 
 ## 9. Points à vérifier en cours de route
 
 - **Date du 1er match 2026-27** : le calendrier NBA de la saison dernière n'est plus servi. À charger en début de L1.
-- **Endpoint blessures ESPN pour toute la ligue** : à tester.
-- **Borne du cooldown** (J+31) : à confirmer sur le deck trashtalk.co après le premier mois.
+- ~~Endpoint blessures ESPN pour toute la ligue~~ : déjà en place (`GLOBAL_INJURIES_URL`).
+- ~~Borne du cooldown~~ : **J+30**, vérifiée sur l'historique 2025-26 (6 repicks à 30 jours).
 - **Deux zéros 2025-26 contradictoires** (LeBron 06/03, Giannis 08/03, joués selon les logs) : décalage de date ou erreur d'import, à corriger avant le backtest.
 - Mise à jour de la CLI Supabase (2.95 → 2.118).
