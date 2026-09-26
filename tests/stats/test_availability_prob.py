@@ -1,4 +1,4 @@
-from sync.config import dnp_risk_factor
+from engine.stats.availability_prob import dnp_risk_factor
 
 
 def _logs(*minutes):
@@ -52,3 +52,31 @@ def test_handles_none_minutes_as_dnp():
 def test_ignores_logs_beyond_window():
     """Only the 3 most recent logs matter."""
     assert dnp_risk_factor(_logs(28, 30, 32, 0, 0, 0)) == 1.0
+
+
+from engine.stats.availability_prob import future_p_play, p_play, play_probability
+
+
+def test_play_probability_statuts():
+    assert play_probability(None) == 1.0
+    assert play_probability("Questionable") == 0.55
+    assert play_probability("Out") == 0.0
+    assert play_probability("Statut inconnu") == 1.0
+
+
+def test_p_play_combine_statut_dnp_et_back_to_back():
+    logs = [{"minutes": 34}, {"minutes": 33}, {"minutes": 35}]
+    assert p_play(injury_status=None, recent_logs=logs, is_b2b_second=False, exp_minutes=34) == 1.0
+    assert p_play(injury_status="Questionable", recent_logs=logs, is_b2b_second=True, exp_minutes=34) == 0.55 * 0.93
+
+
+def test_p_play_back_to_back_sans_effet_pour_un_remplacant():
+    logs = [{"minutes": 18}] * 3
+    assert p_play(injury_status=None, recent_logs=logs, is_b2b_second=True, exp_minutes=18) == 1.0
+
+
+def test_future_p_play():
+    assert future_p_play(injury_status=None, availability_rate=0.9, is_b2b_second=False, exp_minutes=30) == 0.9
+    assert future_p_play(injury_status="Out For Season", availability_rate=0.9,
+                         is_b2b_second=False, exp_minutes=30) == 0.0
+    assert future_p_play(injury_status=None, availability_rate=1.0, is_b2b_second=True, exp_minutes=36) == 0.93
