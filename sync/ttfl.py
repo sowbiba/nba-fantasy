@@ -3,15 +3,7 @@
 Formula: (PTS + REB + AST + STL + BLK + FGM + 3PM + FTM)
        - (TOV + FG_miss + 3P_miss + FT_miss)
 """
-
-
-def compute_ttfl_score(
-    pts: int, reb: int, ast: int, stl: int, blk: int,
-    fgm: int, fga: int, tpm: int, tpa: int, ftm: int, fta: int, tov: int,
-) -> int:
-    positive = pts + reb + ast + stl + blk + fgm + tpm + ftm
-    negative = tov + (fga - fgm) + (tpa - tpm) + (fta - ftm)
-    return positive - negative
+from engine.rules.scoring import compute_ttfl_score  # R1, source unique
 
 
 def compute_ttfl_from_game_log(log: dict) -> int:
