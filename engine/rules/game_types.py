@@ -29,11 +29,19 @@ def _season_label(start_year: int) -> str:
     return f"{start_year}-{(start_year + 1) % 100:02d}"
 
 
+def season_for_date(d: date) -> str:
+    """Saison NBA d'une date : à partir de septembre, la saison qui commence."""
+    return _season_label(d.year if d.month >= 9 else d.year - 1)
+
+
+def previous_season(season: str) -> str:
+    return _season_label(int(season[:4]) - 1)
+
+
 def season_of(game_id: str, game_date: date) -> str:
     if game_id[:3] in _PREFIX_TYPES and game_id[3:5].isdigit():
         return _season_label(2000 + int(game_id[3:5]))
-    start = game_date.year if game_date.month >= 9 else game_date.year - 1
-    return _season_label(start)
+    return season_for_date(game_date)
 
 
 def is_eligible(game_type: str) -> bool:
