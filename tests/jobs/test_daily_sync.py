@@ -96,3 +96,43 @@ def test_daily_sync_blessures():
     run(repo, FakeNbaSource(schedule=SCHEDULE, box_scores=BOX), lambda: injuries, TODAY, NOW)
     assert repo.players[2]["injury_status"] == "Out"
     assert 2 not in [r["player_id"] for r in repo.recommendations[TODAY]]
+
+
+def test_daily_sync_n_ingere_pas_un_match_en_cours():
+    # Le run 07:00 Paris (01:00 ET) voit encore en direct certains matchs de
+    # la veille finis tard aux USA : pas d'ingestion tant que ce n'est ni
+    # "final" ni assez ancien pour être sûrement terminé.
+    repo = _base_repo()
+    repo.games["0022600011"]["status"] = "live"
+    result = run(repo, FakeNbaSource(schedule=SCHEDULE, box_scores=BOX), lambda: {}, TODAY, NOW)
+    assert (3, "0022600011") not in repo.logs
+    assert repo.picks[0]["actual_score"] is None
+    assert repo.games["0022600011"]["status"] == "live"
+    assert result is not None
+
+
+def test_daily_sync_match_ancien_non_final_traite_et_marque_final():
+    # Un match d'il y a 2 jours ou plus est nécessairement terminé, même si
+    # son statut n'a jamais été rafraîchi à "final" côté NBA.
+    players = [_player(1, "DEN", "C"), _player(2, "LAL"), _player(3, "BOS")]
+    d2 = TODAY - timedelta(days=2)
+    games = [
+        {"id": "0022600012", "date": d2.isoformat(), "home_team": "BOS", "away_team": "DEN",
+         "status": "scheduled", "game_type": "regular", "season": "2026-27"},
+    ]
+    logs = []
+    for pid, team in ((1, "DEN"), (2, "LAL"), (3, "BOS")):
+        logs += [_log(pid, f"prior{pid}{i}", date(2026, 3, 1) + timedelta(days=i), team, season="2025-26")
+                 for i in range(5)]
+    picks = [{"id": 1, "player_id": 3, "game_id": "0022600012", "date": d2.isoformat(),
+              "mode": "regular", "season": "2026-27", "actual_score": None, "is_x2": False}]
+    repo = FakeRepo(players=players, games=games, logs=logs, picks=picks)
+    box = {"0022600012": [
+        {"player_id": 3, "game_id": "0022600012", "date": d2.isoformat(), "team": "BOS",
+         "minutes": 30, "ttfl_score": 40, "is_home": True, "pts": 20, "reb": 5, "ast": 5, "stl": 1, "blk": 0,
+         "fgm": 8, "fga": 15, "tpm": 2, "tpa": 5, "ftm": 2, "fta": 2, "tov": 2, "fouls": 2},
+    ]}
+    run(repo, FakeNbaSource(schedule=[], box_scores=box), lambda: {}, TODAY, NOW)
+    assert (3, "0022600012") in repo.logs
+    assert repo.games["0022600012"]["status"] == "final"
+    assert repo.picks[0]["actual_score"] == 40

@@ -46,9 +46,16 @@ def _step(name: str, fn, result: RunResult):
         return None
 
 
+def _is_settled(game: dict, today: date) -> bool:
+    """Un match est "réglé" si son statut est final, ou si sa date remonte à
+    au moins 2 jours : même si le statut n'a jamais été mis à jour côté NBA,
+    un match d'il y a 2 jours ou plus est nécessairement terminé."""
+    return game.get("status") == "final" or _d(game["date"]) <= today - timedelta(days=2)
+
+
 def _ingest_box_scores(repo, source, today: date, known_players: set[int], result: RunResult) -> None:
     recent = [g for g in repo.load_games_between(today - timedelta(days=BOX_SCORE_DAYS), today - timedelta(days=1))
-              if is_eligible(g.get("game_type", "unknown"))]
+              if is_eligible(g.get("game_type", "unknown")) and _is_settled(g, today)]
     done = repo.game_ids_with_logs(g["id"] for g in recent)
     for g in recent:
         if g["id"] in done:
@@ -60,6 +67,9 @@ def _ingest_box_scores(repo, source, today: date, known_players: set[int], resul
         rows = [r for r in rows if r["player_id"] in known_players]
         if rows:
             repo.upsert_game_logs(rows)
+            if g.get("status") != "final":
+                repo.upsert_games([{"id": g["id"], "date": g["date"], "home_team": g["home_team"],
+                                    "away_team": g["away_team"], "status": "final"}])
 
 
 def _score_picks(repo, season: str, today: date) -> None:
@@ -68,10 +78,13 @@ def _score_picks(repo, season: str, today: date) -> None:
     logs = {(l["player_id"], l["game_id"]): l for l in repo.load_game_logs([season])}
     with_logs = {gid for (_, gid) in logs}
     for p in picks:
+        game = games.get(p["game_id"])
+        if game is None or not _is_settled(game, today):
+            continue
         log = logs.get((p["player_id"], p["game_id"]))
         if log is not None:
             repo.set_pick_score(p["id"], int(log["ttfl_score"]))
-        elif games.get(p["game_id"], {}).get("status") == "final" and p["game_id"] in with_logs:
+        elif p["game_id"] in with_logs:
             repo.set_pick_score(p["id"], 0)   # R7 : ne pas avoir joué = 0
 
 
