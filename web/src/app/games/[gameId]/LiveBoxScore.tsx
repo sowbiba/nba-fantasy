@@ -6,7 +6,7 @@ import Link from "next/link";
 const POLL_INTERVAL_MS = 15_000;
 
 type LivePlayer = {
-  player_id: number;
+  player_id: number | null;
   player_name: string;
   team: string;
   is_home: boolean;
@@ -275,21 +275,32 @@ function TeamStatsTable({
                     : p.ttfl_score >= 0
                       ? "text-[color:var(--color-text-soft)]"
                       : "text-[color:var(--color-crimson)]";
+              const nameContent = (
+                <>
+                  {p.on_court && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--color-flame)] shrink-0 animate-live-dot" />
+                  )}
+                  <span className="truncate">{p.player_name}</span>
+                </>
+              );
               return (
                 <tr
-                  key={p.player_id}
+                  key={p.player_id ?? p.player_name}
                   className="border-t border-white/[0.03] hover:bg-white/[0.02]"
                 >
                   <td className="px-3 py-1.5 sticky left-0 bg-[color:var(--color-surface)]">
-                    <Link
-                      href={`/player/${p.player_id}`}
-                      className="flex items-center gap-1.5 text-[color:var(--color-text)] hover:text-[color:var(--color-flame)] transition-colors truncate max-w-[130px]"
-                    >
-                      {p.on_court && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--color-flame)] shrink-0 animate-live-dot" />
-                      )}
-                      <span className="truncate">{p.player_name}</span>
-                    </Link>
+                    {p.player_id !== null ? (
+                      <Link
+                        href={`/player/${p.player_id}`}
+                        className="flex items-center gap-1.5 text-[color:var(--color-text)] hover:text-[color:var(--color-flame)] transition-colors truncate max-w-[130px]"
+                      >
+                        {nameContent}
+                      </Link>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-[color:var(--color-text)] truncate max-w-[130px]">
+                        {nameContent}
+                      </span>
+                    )}
                   </td>
                   <td
                     className={`text-center px-1.5 py-1.5 font-bold text-[13px] ${ttflColor}`}
