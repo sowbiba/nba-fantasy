@@ -15,15 +15,23 @@ Pour chaque joueur qui joue ce soir, le moteur calcule un **score de performance
 | **Tendance récente** | 10 % | Régression linéaire sur L10. Pente positive = bonus, négative = malus (capé ±10 %) |
 | **Floor / Ceiling (régularité)** | 10 % | CV = stddev/avg. Faible CV = bonus (fiable), fort CV = malus (volatile) |
 
-### Zoom sur la moyenne pondérée
+### Zoom sur la base de projection
+
+Depuis `MINUTES_ADJUSTED_BASE = True` (`sync/config.py`), la base n'est plus la moyenne brute mais **l'efficacité récente (TTFL/min) × les minutes attendues** (pondérées par récence, DNP inclus). Ça corrige deux angles morts : un titulaire redescendu en minutes de banc quand un coéquipier revient, et un joueur qui sort de l'infirmerie (projeté ≈ 0 au lieu de porter sa forme d'avant-blessure). Voir `scoring.minutes_adjusted_base` ; mettre le flag à `False` restaure la moyenne pondérée classique, qui reste le fallback quand les données minutes manquent :
 
 - **L5** = moyenne TTFL des 5 derniers matchs (forme ultra-récente)
 - **L10** = moyenne des 10 derniers
 - **L20** = moyenne des 20 derniers
 
-Poids : `L5 × 3 + L10 × 1 + L20 × 2`, divisé par 6.
+Poids : `L5 × 3 + L10 × 2 + L20 × 1`, divisé par 6 — L5 domine (50 %), L10 renforce (33 %), L20 ancre (17 %).
 
-Exemple Jokic : L5=58, L10=55, L20=52 → `(58×3 + 55×1 + 52×2) / 6 = 55.5`
+Exemple Jokic : L5=58, L10=55, L20=52 → `(58×3 + 55×2 + 52×1) / 6 = 56.0`
+
+### Garde-fous candidats
+
+- `MIN_MINUTES_L10 = 15` : sous 15 min de moyenne sur les 10 derniers matchs, le joueur n'est pas candidat (le signal est dominé par le garbage time)
+- **Cap L5** (`L5_CAP_MINUTES = 20`, `L5_CAP_RATIO = 1.5`) : pour un joueur hors rotation, un L5 > 1.5× sa moyenne saison est presque toujours un artefact de blowouts (pattern Carlson/Sandfort) → capé. Les titulaires ne sont jamais touchés
+- `MIN_SPLIT_GAMES = 4` : en dessous de 4 matchs, le split home/away est du bruit → fallback neutre sur la moyenne saison
 
 ### Formule TTFL officielle (pour référence)
 
@@ -60,12 +68,17 @@ Si un coéquipier "majeur" d'une équipe est OUT, les autres joueurs bénéficie
 
 ### Statut du joueur lui-même
 
+Les statuts durs excluent du pool (`HARD_OUT_STATUSES`) ; les statuts incertains multiplient le score estimé par une **probabilité de jouer** (`INJURY_PLAY_PROBABILITY`, `sync/config.py`) pour raisonner en espérance :
+
 | Statut ESPN | Impact |
 |-------------|--------|
-| `Out` | Exclu du classement |
-| `Doubtful` | Exclu (trop risqué) |
-| `Questionable` | Flag ⚠️ + malus -15 % |
-| `Day-To-Day` (GTD) | Flag 🔶 + malus -10 % |
+| `Out`, `Out For Season`, `Suspended`, `Doubtful` | Exclu du classement |
+| `Questionable` | Flag ⚠️ + score × 0.55 |
+| `Game-Time Decision` | Flag 🔶 + score × 0.55 |
+| `Day-To-Day` | Flag 🔶 + score × 0.65 |
+| `Probable` | score × 0.85 |
+
+S'y ajoute un **facteur de risque DNP** (`dnp_risk_factor`) : ESPN étant en retard sur les mises à l'écart, un joueur à 0 minute sur ses derniers matchs est déprécié (×0.30 si 3 DNP sur 3, ×0.55 si 2, ×0.75–0.90 si 1) — multiplicatif avec la probabilité de jouer.
 
 ---
 
@@ -168,43 +181,40 @@ C'est un **problème d'affectation** classique, résolu de façon optimale en O(
 
 ### Réservation des elites pour les tours avancés
 
-Sans cette couche, l'algo hongrois brûlerait facilement Jokic au Game 2 du Round 1, alors que DEN a 3 tours potentiels devant lui. Pour éviter ça :
+> ⚠️ **Couche désactivée depuis le 2026-05-26** (`MAX_RESERVATION_PENALTY = 0.0`) : les données de la saison 2026 ont montré que la discipline de save faisait chuter la moyenne (21.1 vs 36.5 en best-available). Le moteur suit désormais le score projeté pur ; le mécanisme reste en place et se réactive en remontant le plafond.
+
+Le principe : sans cette couche, l'algo hongrois brûlerait facilement Jokic au Game 2 du Round 1, alors que DEN a 3 tours potentiels devant lui.
 
 **Pénalité de réservation** :
 ```
-reservation = player_elite_factor × team_potential × round_factor × 60 %
+reservation = min(MAX, player_elite_factor × team_potential × round_factor × MAX)
 final_score = perf_score × (1 − reservation)
 ```
 
-Où :
+Où (constantes dans `sync/strategy.py`) :
 
 | Composante | Formule |
 |------------|---------|
-| `player_elite_factor` | `min(1.0, (avg_season − 32) / 23)` — 32 = seuil, 55 = elite max (ex: Jokic) |
+| `player_elite_factor` | `min(1.0, (avg_season − 28) / 12)` — 28 = starter moyen, 40+ = elite max |
 | `team_potential` | 1.0 pour tête de série R1 (home court), 0.5 pour seed 5-8, 0.3 pour play-in |
 | `round_factor` | 1.0 en R1, 0.55 en R2, 0.2 en R3 (Conf Finals), 0.0 en Finales |
-| `MAX_RESERVATION_PENALTY` | 0.60 (plafond à -60 %) |
-
-**Effet** :
-- Jokic DEN R1 : `1.0 × 1.0 × 1.0 × 60 % = 60 %` → score 40 devient 16 → éjecté du plan R1
-- LeBron LAL R1 : `0.43 × 1.0 × 1.0 × 60 % ≈ 26 %` → score 35 devient 26 → peut passer si matchup juteux
-- Jalen Johnson ATL R1 : `0.14 × 0.5 × 1.0 × 60 % ≈ 4 %` → quasi-négligeable → reste éligible
+| `MAX_RESERVATION_PENALTY` | **0.0 actuellement** (était 0.60 → plafond à -60 %) |
 
 **L'élimination critique annule toujours la réservation** — si son équipe peut être out ce soir, le moteur le recommandera quand même.
 
+Une **couche stratégie personnelle** (save tax par équipe/rang, `sync/personal_strategy.py` + `TEAM_SAVE_RANKS`/`TEAM_SAVE_TAX_BASE` dans `config.py`) est également désactivée (`ENABLE_PERSONAL_STRATEGY = False`), pour la même raison.
+
 ### Réglage
 
-Les constantes clés sont dans `sync/weekly_plan.py` :
+Les constantes clés sont dans `sync/strategy.py` :
 
 ```python
-MAX_RESERVATION_PENALTY = 0.60
+MAX_RESERVATION_PENALTY = 0.0   # 0 = best-available ; remonter (ex: 0.45-0.60) pour réactiver la réservation
 ROUND_RESERVATION_FACTOR = {1: 1.0, 2: 0.55, 3: 0.2, 4: 0.0}
 TEAM_POTENTIAL_TOP_SEED = 1.0
 TEAM_POTENTIAL_LOW_SEED = 0.5
 TEAM_POTENTIAL_UNKNOWN = 0.3
 ```
-
-Baisser `MAX_RESERVATION_PENALTY` à 0.45 rendra les elites plus présents en R1. Le monter à 0.75 les exclura presque tous.
 
 ## Tuning des paramètres
 
@@ -233,21 +243,11 @@ BURN_THRESHOLD = 0.10  # 10 % de marge
 
 Plus haut (ex: 0.15) = l'app économise plus les elites. Plus bas (0.05) = elle pousse à les utiliser dès qu'il y a une opportunité correcte.
 
-### Réservation elites R1
+### Réservation elites
 
-`sync/weekly_plan.py` :
-```python
-MAX_RESERVATION_PENALTY = 0.60        # plafond à -60 %
-ROUND_RESERVATION_FACTOR = {1: 1.0, 2: 0.55, 3: 0.2, 4: 0.0}
-TEAM_POTENTIAL_TOP_SEED = 1.0
-TEAM_POTENTIAL_LOW_SEED = 0.5
-```
+Voir [la section Réservation](#réservation-des-elites-pour-les-tours-avancés) : désactivée (`MAX_RESERVATION_PENALTY = 0.0` dans `sync/strategy.py`), remonter le plafond pour la réactiver.
 
-- `MAX = 0.45` → laisse plus d'elites dans le plan R1
-- `MAX = 0.75` → exclut presque tous les elites des têtes de série
-- Modifier `ROUND_RESERVATION_FACTOR[2]` si tu veux être plus/moins conservateur en conf semis
-
-### Seuil "joueur éligible" au plan hebdo
+### Seuils "joueur éligible"
 
 `sync/weekly_plan.py`, dans `build_candidates` :
 ```python
@@ -255,5 +255,5 @@ if season_avg < 10:
     continue
 ```
 
-Ce seuil filtre les joueurs qui n'ont quasiment pas joué pour garder la matrice Hungarian raisonnable. Le baisser à 5 inclut plus de role players obscurs.
+Ce seuil filtre les joueurs qui n'ont quasiment pas joué pour garder la matrice Hungarian raisonnable. Le baisser à 5 inclut plus de role players obscurs. S'y ajoutent le seuil de minutes (`MIN_MINUTES_L10 = 15`) et le cap L5 (`L5_CAP_MINUTES` / `L5_CAP_RATIO`) de `sync/config.py` — voir [Garde-fous candidats](#garde-fous-candidats).
 

@@ -36,6 +36,8 @@ Le sync principal tourne via **GitHub Actions** (`.github/workflows/daily-sync.y
 10. Push les recommandations vers Supabase
 11. Calcule le plan hebdomadaire optimal et le push
 
+Le refresh des **rosters** (nba_api) est à part : gated par un cache de 72 h et exécuté par le run local de 23 h 50 uniquement (stats.nba.com bloque les IPs GitHub).
+
 Logs : `/tmp/ttfl-sync.log`
 
 ---
@@ -54,20 +56,29 @@ nba-fantasy/
 │   ├── compute_team_defense.py        # Agrège TTFL encaissé par équipe × poste
 │   ├── db.py                          # Client Supabase + CRUD helpers
 │   ├── scoring.py                     # Moteur de scoring 6 facteurs
-│   ├── strategy.py                    # Tiers, élimination, burn-or-save
+│   ├── strategy.py                    # Tiers, élimination, burn-or-save, réservation elites
+│   ├── personal_strategy.py           # Save tax par équipe/rang (désactivée, cf docs/moteur.md)
 │   ├── future.py                      # best_future_score (scan 7 jours)
 │   ├── advisor.py                     # Argumentaires POUR/CONTRE/VERDICT
-│   ├── weekly_plan.py                 # Algo hongrois + réservation elites
-│   ├── seed.py                        # Seed initial des game logs (22 teams)
+│   ├── weekly_plan.py                 # Algo hongrois (plan hebdo)
+│   ├── matchups.py                    # Matchups défensifs joueur vs joueur (box scores raw)
+│   ├── matchup_report.py              # Rapport matchups d'un match
+│   ├── backfill_matchups.py           # Backfill historique des matchups
+│   ├── backfill_dnp.py                # Backfill des DNP dans les game logs
+│   ├── seed.py                        # Seed initial des game logs (20 équipes playoffs + play-in)
+│   ├── seed_personal_strategy.py      # Seed des tables team_outlook / player_team_rank
 │   └── main.py                        # Orchestrateur cron
 ├── tests/                             # 97 tests unitaires (pytest)
 ├── web/                               # Frontend Next.js 16
 │   ├── src/app/                       # Pages (App Router)
 │   │   ├── page.tsx                   # "Ce soir"
 │   │   ├── player/[id]/page.tsx       # Fiche joueur
+│   │   ├── games/                     # Matchs (calendrier, résultats, matchups défensifs)
+│   │   ├── series/                    # Détail d'une série playoffs
 │   │   ├── picks/                     # Mes picks (2 onglets)
 │   │   ├── strategy/page.tsx          # Stratégie + plan hebdo
-│   │   └── injuries/                  # Blessés par équipe
+│   │   ├── injuries/                  # Blessés par équipe
+│   │   └── api/                       # Route handlers (server-side)
 │   ├── src/components/                # RecommendationCard, BottomNav, etc.
 │   ├── src/lib/supabase.ts            # Client Supabase
 │   └── src/types/index.ts             # Types TypeScript partagés
