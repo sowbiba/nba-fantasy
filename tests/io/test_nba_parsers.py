@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from engine.io.guard import ApiGuard
+from engine.io.guard import ApiGuard, BreakerOpen, HostPolicy
 from engine.io.nba import (
     NbaSource, parse_league_game_log, parse_live_box_score, parse_matchups,
     parse_roster, parse_schedule, parse_scoreboard,
@@ -120,3 +120,17 @@ def test_stats_nba_interdit_depuis_github():
     src = NbaSource(ApiGuard(), allow_stats=False)
     with pytest.raises(RuntimeError, match="stats.nba.com"):
         src.league_game_log("2026-27", "Regular Season")
+
+
+def test_box_score_propage_breaker_open_sans_appeler_nba_api():
+    guard = ApiGuard({"cdn.nba.com": HostPolicy(0.0, 0, 1, 10)})
+
+    def fail():
+        raise ConnectionError("panne CDN")
+
+    with pytest.raises(ConnectionError):
+        guard.call("cdn.nba.com", fail)
+
+    src = NbaSource(guard)
+    with pytest.raises(BreakerOpen):
+        src.box_score("x", "2026-11-01")

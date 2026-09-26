@@ -13,7 +13,7 @@ from nba_api.live.nba.library import http as _live_http
 from nba_api.stats.endpoints import BoxScoreMatchupsV3, CommonTeamRoster, LeagueGameLog
 from nba_api.stats.library import http as _stats_http
 
-from engine.io.guard import ApiGuard
+from engine.io.guard import ApiGuard, BreakerOpen, BudgetExceeded
 from engine.rules.scoring import compute_ttfl_score
 
 SCHEDULE_URL = "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json"
@@ -236,9 +236,13 @@ class NbaSource:
 
     def box_score(self, game_id: str, game_date: str) -> list[dict]:
         """[] si le CDN a purgé le box score : le cron local le rattrapera via
-        LeagueGameLog."""
+        LeagueGameLog. Ne masque pas BreakerOpen/BudgetExceeded (signaux de
+        contrôle du guard) : une panne CDN systémique doit se propager, pas
+        ressembler à une simple purge de ce match."""
         try:
             game = self.guard.call("cdn.nba.com", lambda: BoxScore(game_id=game_id).get_dict()["game"])
+        except (BreakerOpen, BudgetExceeded):
+            raise
         except Exception:
             return []
         return parse_live_box_score(game, game_date)
