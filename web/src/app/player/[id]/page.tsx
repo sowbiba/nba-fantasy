@@ -32,7 +32,8 @@ const tierLabels: Record<
 
 async function getData(playerId: number) {
   const today = deckDate();
-  const [playerRes, recRes, calRes, watchlistRes] = await Promise.all([
+  const until = addDays(today, 29);
+  const [playerRes, recRes, calRes, watchlistRes, picksRes] = await Promise.all([
     supabase.from("players").select("*").eq("id", playerId).single(),
     supabase
       .from("recommendations")
@@ -43,20 +44,32 @@ async function getData(playerId: number) {
     supabase.rpc("player_calendar", {
       p_player_id: playerId,
       p_from: today,
-      p_to: addDays(today, 29),
+      p_to: until,
     }),
     supabase
       .from("player_watchlist")
       .select("*")
       .eq("player_id", playerId)
       .maybeSingle(),
+    // Le pick déjà posé (par ce joueur ou un autre) sur chaque soirée du calendrier (M2).
+    supabase
+      .from("picks")
+      .select("date, player_id, players(name)")
+      .gte("date", today)
+      .lte("date", until),
   ]);
+  type PickWithPlayer = { date: string; player_id: number; players: { name: string } | null };
+  const picksByDate: Record<string, { playerId: number; name: string }> = {};
+  for (const p of (picksRes.data || []) as unknown as PickWithPlayer[]) {
+    picksByDate[p.date] = { playerId: p.player_id, name: p.players?.name ?? `#${p.player_id}` };
+  }
   return {
     today,
     player: playerRes.data as Player | null,
     rec: (recRes.data as Recommendation | null) ?? null,
     nights: (calRes.data || []) as CalendarNight[],
     watchlist: (watchlistRes.data as WatchlistEntry | null) ?? null,
+    picksByDate,
   };
 }
 
@@ -67,7 +80,7 @@ export default async function PlayerPage({
 }) {
   const { id } = await params;
   const playerId = parseInt(id, 10);
-  const { today, player, rec, nights, watchlist } = await getData(playerId);
+  const { today, player, rec, nights, watchlist, picksByDate } = await getData(playerId);
 
   if (!player) {
     return (
@@ -220,6 +233,7 @@ export default async function PlayerPage({
           nights={nights}
           today={today}
           lastBookable={addDays(today, 14)}
+          picksByDate={picksByDate}
         />
       </section>
     </div>
