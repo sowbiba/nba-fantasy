@@ -10,7 +10,7 @@ from datetime import date, datetime
 import httpx
 from nba_api.live.nba.endpoints import BoxScore, ScoreBoard
 from nba_api.live.nba.library import http as _live_http
-from nba_api.stats.endpoints import BoxScoreMatchupsV3, CommonTeamRoster, LeagueGameLog
+from nba_api.stats.endpoints import BoxScoreMatchupsV3, CommonTeamRoster, LeagueGameLog, ScheduleLeagueV2
 from nba_api.stats.library import http as _stats_http
 
 from engine.io.guard import ApiGuard, BreakerOpen, BudgetExceeded
@@ -275,3 +275,13 @@ class NbaSource:
             is_empty=lambda r: not r,
         )
         return parse_matchups(records, game_id)
+
+    def schedule_stats(self, season: str, start: date, end: date) -> list[dict]:
+        """Calendrier via stats.nba.com (même JSON que le CDN), pour le cron
+        local : cdn.nba.com renvoie 403 depuis l'IP locale (2026-09-26)."""
+        self._require_stats()
+        payload = self.guard.call(
+            "stats.nba.com",
+            lambda: ScheduleLeagueV2(league_id="00", season=season, timeout=60).get_dict(),
+        )
+        return parse_schedule(payload, start, end)
