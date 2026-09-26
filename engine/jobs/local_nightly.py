@@ -29,30 +29,35 @@ def to_raw_matchups(rows: list[dict], game: dict) -> list[dict]:
     return raw
 
 
-def _refresh_rosters(repo, nba, teams, warnings) -> None:
+def _refresh_rosters(repo, nba, teams, season, warnings) -> None:
     before = {p["id"]: p for p in repo.load_players()}
     seen: set[int] = set()
     ok = 0
     for t in teams:
         try:
-            rows = nba.roster(t["id"], t["abbreviation"])
+            rows = nba.roster(t["id"], t["abbreviation"], season)
         except Exception as exc:
             warnings.append(f"effectif {t['abbreviation']} : {type(exc).__name__}")
             continue
+        if not rows:
+            warnings.append(f"effectif {t['abbreviation']} : effectif vide")
+            continue
         ok += 1
-        if rows:
-            repo.upsert_players(rows)
-            seen |= {r["id"] for r in rows}
+        repo.upsert_players(rows)
+        seen |= {r["id"] for r in rows}
     if teams and ok == len(teams):
         repo.set_inactive(pid for pid, p in before.items() if p.get("active", True) and pid not in seen)
 
 
-def _load_logs(repo, nba, season, season_type, date_from, warnings) -> None:
+def _load_logs(repo, nba, season, season_type, date_from, warnings, drop_from: date | None = None) -> None:
     try:
         games, logs, players = nba.league_game_log(season, season_type, date_from)
     except Exception as exc:
         warnings.append(f"LeagueGameLog {season} {season_type} : {type(exc).__name__}")
         return
+    if drop_from is not None:
+        games = {gid: g for gid, g in games.items() if g["date"] < drop_from.isoformat()}
+        logs = [l for l in logs if l["date"] < drop_from.isoformat() and l["game_id"] in games]
     if not logs:
         return
     known = {p["id"] for p in repo.load_players()}
@@ -82,16 +87,19 @@ def _load_matchups(repo, nba, today, warnings) -> None:
 
 def run(repo, nba, today: date, teams: list[dict], backfill_season: str | None = None) -> list[str]:
     warnings: list[str] = []
-    _refresh_rosters(repo, nba, teams, warnings)
+    _refresh_rosters(repo, nba, teams, season_for_date(today), warnings)
     if backfill_season:
         for season_type in ("Regular Season", "Playoffs"):
             _load_logs(repo, nba, backfill_season, season_type, None, warnings)
     else:
         season = season_for_date(today)
         start = today - timedelta(days=LOG_OVERLAP_DAYS)
-        _load_logs(repo, nba, season, "Regular Season", start, warnings)
+        # Un match du jour peut encore être en direct : on ne l'ingère pas
+        # comme "final" ici, le chevauchement de 3 jours le rattrapera la
+        # nuit suivante une fois vraiment terminé.
+        _load_logs(repo, nba, season, "Regular Season", start, warnings, drop_from=today)
         if today.month in PLAYOFF_MONTHS:
-            _load_logs(repo, nba, season, "Playoffs", start, warnings)
+            _load_logs(repo, nba, season, "Playoffs", start, warnings, drop_from=today)
     _load_matchups(repo, nba, today, warnings)
     return warnings
 

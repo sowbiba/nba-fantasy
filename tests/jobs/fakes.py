@@ -188,8 +188,10 @@ class FakeStatsSource:
         self._matchups = matchups or {}
         self.fail_teams = set(fail_teams)
         self.log_calls = []
+        self.roster_calls = []
 
-    def roster(self, team_id, tricode):
+    def roster(self, team_id, tricode, season):
+        self.roster_calls.append((team_id, tricode, season))
         if tricode in self.fail_teams:
             raise ConnectionError("roster KO")
         return list(self._rosters.get(tricode, []))

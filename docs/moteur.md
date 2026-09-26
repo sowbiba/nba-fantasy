@@ -1,259 +1,105 @@
 # Le moteur TTFL en détail
 
-> Doc interne du moteur de recommandation. Vue d'ensemble : voir le [README](../README.md).
+> Doc interne du moteur de recommandation. Vue d'ensemble : voir le [README](../README.md). Conception d'ensemble : [spec moteur SR/PO](superpowers/specs/2026-09-26-moteur-sr-po-design.md).
 
-## Le moteur de scoring (6 facteurs)
-
-Pour chaque joueur qui joue ce soir, le moteur calcule un **score de performance estimé** à partir de 6 facteurs pondérés.
-
-| Facteur | Poids | Formule / Logique |
-|---------|-------|-------------------|
-| **Moyenne TTFL pondérée** | 35 % | `(L5 × 3 + L10 × 1 + L20 × 2) / 6` — privilégie la forme récente |
-| **Matchup défensif** | 25 % | `opponent_ttfl_at_position / league_avg` — facteur multiplicatif |
-| **Home / Away split** | 10 % | Delta entre son avg home (ou away) et son avg saison |
-| **Fatigue / Back-to-back** | 10 % | B2B = -8 %, 3 matchs en 4 jours = -12 %, 3+ jours de repos = +3 % |
-| **Tendance récente** | 10 % | Régression linéaire sur L10. Pente positive = bonus, négative = malus (capé ±10 %) |
-| **Floor / Ceiling (régularité)** | 10 % | CV = stddev/avg. Faible CV = bonus (fiable), fort CV = malus (volatile) |
-
-### Zoom sur la base de projection
-
-Depuis `MINUTES_ADJUSTED_BASE = True` (`sync/config.py`), la base n'est plus la moyenne brute mais **l'efficacité récente (TTFL/min) × les minutes attendues** (pondérées par récence, DNP inclus). Ça corrige deux angles morts : un titulaire redescendu en minutes de banc quand un coéquipier revient, et un joueur qui sort de l'infirmerie (projeté ≈ 0 au lieu de porter sa forme d'avant-blessure). Voir `scoring.minutes_adjusted_base` ; mettre le flag à `False` restaure la moyenne pondérée classique, qui reste le fallback quand les données minutes manquent :
-
-- **L5** = moyenne TTFL des 5 derniers matchs (forme ultra-récente)
-- **L10** = moyenne des 10 derniers
-- **L20** = moyenne des 20 derniers
-
-Poids : `L5 × 3 + L10 × 2 + L20 × 1`, divisé par 6 — L5 domine (50 %), L10 renforce (33 %), L20 ancre (17 %).
-
-Exemple Jokic : L5=58, L10=55, L20=52 → `(58×3 + 55×2 + 52×1) / 6 = 56.0`
-
-### Garde-fous candidats
-
-- `MIN_MINUTES_L10 = 15` : sous 15 min de moyenne sur les 10 derniers matchs, le joueur n'est pas candidat (le signal est dominé par le garbage time)
-- **Cap L5** (`L5_CAP_MINUTES = 20`, `L5_CAP_RATIO = 1.5`) : pour un joueur hors rotation, un L5 > 1.5× sa moyenne saison est presque toujours un artefact de blowouts (pattern Carlson/Sandfort) → capé. Les titulaires ne sont jamais touchés
-- `MIN_SPLIT_GAMES = 4` : en dessous de 4 matchs, le split home/away est du bruit → fallback neutre sur la moyenne saison
-
-### Formule TTFL officielle (pour référence)
+## Formule TTFL officielle (pour référence)
 
 ```
 TTFL = (PTS + REB + AST + STL + BLK + FGM + 3PM + FTM)
      - (TOV + FG_miss + 3P_miss + FT_miss)
 ```
 
-### Assemblage final
+Implémentée par `compute_ttfl_score` dans `engine/rules/scoring.py` (R1). Le même module porte le bonus x2 (`night_points`, R10) et la moyenne sur les soirées éligibles, où une soirée sans pick compte 0 (`period_average`, R14).
 
-Le score est calculé comme un produit pondéré :
+## Projection d'un match (`engine/stats/`)
 
-```
-base        = weighted_average(L5, L10, L20)
-multiplier  = matchup ^ 0.385
-            × home_away ^ 0.154
-            × fatigue ^ 0.154
-            × trend ^ 0.154
-            × consistency ^ 0.154
-final_score = base × multiplier
-```
-
-(Les exposants sont les poids normalisés à somme 1.)
-
----
-
-## Ajustements contextuels
-
-### Impact des blessures coéquipiers (usage boost)
-
-Si un coéquipier "majeur" d'une équipe est OUT, les autres joueurs bénéficient d'un boost d'usage implicite.
-
-**Détection** : un coéquipier est considéré comme majeur s'il est dans le **top 3 de son équipe en `avg_ttfl_season`**. Surfacé dans l'UI par un badge violet "⚡ Usage boost" et une section dédiée "Opportunités blessures" sur la page d'accueil.
-
-### Statut du joueur lui-même
-
-Les statuts durs excluent du pool (`HARD_OUT_STATUSES`) ; les statuts incertains multiplient le score estimé par une **probabilité de jouer** (`INJURY_PLAY_PROBABILITY`, `sync/config.py`) pour raisonner en espérance :
-
-| Statut ESPN | Impact |
-|-------------|--------|
-| `Out`, `Out For Season`, `Suspended`, `Doubtful` | Exclu du classement |
-| `Questionable` | Flag ⚠️ + score × 0.55 |
-| `Game-Time Decision` | Flag 🔶 + score × 0.55 |
-| `Day-To-Day` | Flag 🔶 + score × 0.65 |
-| `Probable` | score × 0.85 |
-
-S'y ajoute un **facteur de risque DNP** (`dnp_risk_factor`) : ESPN étant en retard sur les mises à l'écart, un joueur à 0 minute sur ses derniers matchs est déprécié (×0.30 si 3 DNP sur 3, ×0.55 si 2, ×0.75–0.90 si 1) — multiplicatif avec la probabilité de jouer.
-
----
-
-## Couche stratégie playoffs
-
-Cette couche s'active **uniquement en mode playoffs**.
-
-### Classification des tiers
-
-À chaque génération, les joueurs disponibles sont triés par score de performance et classés :
-
-| Rang ce soir | Tier | Stars |
-|--------------|------|-------|
-| 1 à 10 | **Elite** | ★★★ (or) |
-| 11 à 25 | **Solide** | ★★ (bleu) |
-| 26 à 50 | **Filler** | ★ (gris) |
-
-Les tiers sont **relatifs au soir**, pas absolus. Une nuit avec peu de matchs : un joueur moyen peut être Elite. Une nuit dense : un très bon joueur peut tomber en Solide.
-
-### Estimation du calendrier restant
-
-Pour chaque série active, le moteur estime le nombre de jours de match restants :
+La projection d'un joueur pour un match est **efficacité récente × minutes de rôle attendues × facteurs de contexte** (`engine/stats/projection.py::project`) :
 
 ```
-pour chaque série active :
-    max_wins = max(home_wins, away_wins)
-    min_games_left = 4 - max_wins
-    max_games_left = 7 - (home_wins + away_wins)
-    est_remaining = (min_games_left + max_games_left) / 2
-
-pour les tours futurs (non démarrés) :
-    +6 games estimés par tour restant
-
-total_game_days ≈ total_games × 0.7  (~60-70% des jours calendaires ont des matchs)
+projection = profile.base × opp_factor × terrain × fatigue
+profile.base = ttfl_per_min × exp_minutes
+terrain = 1.02 (domicile) / 0.98 (extérieur)      # HOME_FACTOR / AWAY_FACTOR
+fatigue = 0.96 si 2e soir d'un back-to-back sinon 1.0   # B2B_FACTOR
 ```
 
-### Détection du risque d'élimination
+### Le profil joueur (`engine/stats/profile.py`)
 
-Une équipe est classée selon son risque d'être éliminée ce soir :
+`build_profile` calcule, sur les matchs **joués** uniquement (l'absence est portée par P(joue), jamais par la projection, pour éviter le double compte) :
 
-| Série (points de vue du joueur) | Risque | Effet |
-|---------------------------------|--------|-------|
-| Son équipe a déjà 3 défaites | **Critical** | +15 % sur le score + verdict `"JOUE-LE CE SOIR"` forcé |
-| Son équipe a 2 défaites et n'est pas en avance | **High** | +5 % sur le score |
-| Autre | None | aucun ajustement |
+- **`ttfl_per_min`** : efficacité pondérée par récence (poids `0.9^i`, `RECENCY`) sur les 15 derniers matchs joués (`EFFICIENCY_GAMES`) ;
+- **`exp_minutes`** : minutes de rôle, même pondération, sur les 8 derniers matchs joués (`ROLE_GAMES`) ;
+- un **prior saison précédente fondu** (S6) : à `PRIOR_K = 10` matchs joués cette saison, le prior et la saison en cours pèsent autant (`n / (n + PRIOR_K)`). Sans historique du tout (rookie), fallback `ROOKIE_TTFL_PER_MIN = 0.55` et `ROOKIE_MINUTES = 12.0` ;
+- le prior de minutes est mis à l'échelle de l'effectif actuel par `role_scales` (une équipe qui a perdu sa star redistribue les minutes, un effectif encombré les partage), borné à `[0.85, 1.15]` (`ROLE_SCALE_BOUNDS`) ;
+- **`stddev`** (régularité) sur les 20 derniers scores TTFL disponibles ;
+- **`availability_rate`** : taux de présence sur les 15 derniers logs (tous, DNP inclus), borné à `[0.5, 1.0]` (`PRESENCE_BOUNDS`), défaut `0.9` sans historique.
 
-Le verdict d'un joueur en `critical` **force le burn** même si l'algo aurait préféré le garder. Raison : *"Si tu ne l'utilises pas maintenant, tu le perds pour tout le reste des playoffs."*
+### Facteur défensif adverse (`engine/stats/team_defense.py`)
 
-### Bonus / malus stratégiques
+`defense_factors` calcule, par équipe et par poste (`G`/`F`/`C`), le TTFL/minute concédé rapporté à la moyenne de la ligue, à partir de `game_logs.team` (équipe au moment du match, pas l'équipe actuelle — corrige l'attribution après transferts). La saison en cours est fondue avec la saison précédente régressée de moitié vers 1.0 (`PRIOR_REGRESSION = 0.5`, `PRIOR_GAMES = 15`), borné à `[0.85, 1.15]` (`FACTOR_BOUNDS`).
 
-Appliqués directement sur le score de performance :
+### P(joue) (`engine/stats/availability_prob.py`)
 
-| Condition | Modificateur |
-|-----------|--------------|
-| Match à domicile | +3 % |
-| Domicile + série serrée (écart ≤ 1) | +2 % supplémentaires |
-| Match d'élimination (3-X, tier != filler) | +8 % |
-| Elite dont le ratio elites/jours est < 0.2 | -5 % (discourage le burn tardif) |
-| Filler quand ratio < 0.25 | +3 % (encourage à jouer filler les soirs pauvres) |
-| Match à l'extérieur | -3 % |
+- **Statut ESPN** (`play_probability`) :
 
-### Burn or save ?
+  | Statut ESPN | P(joue) |
+  |-------------|---------|
+  | `Out`, `Out For Season`, `Suspended` | 0.00 (exclu du pool, `HARD_OUT_STATUSES`) |
+  | `Doubtful` | 0.20 (exclu du pool) |
+  | `Questionable`, `Game-Time Decision` | 0.55 |
+  | `Day-To-Day` | 0.65 |
+  | `Probable` | 0.85 |
+  | autre / absent | 1.00 |
 
-Pour chaque joueur, le moteur calcule :
+- **Facteur de risque DNP** (`dnp_risk_factor`) : ESPN étant en retard sur les mises à l'écart, un joueur à 0 minute sur ses derniers matchs est déprécié (×0.30 si 3 DNP sur les 3 derniers, ×0.55 si 2, ×0.75–0.90 si 1) — multiplicatif avec le statut.
+- **Repos de back-to-back** (`B2B_REST_FACTOR = 0.93`) : appliqué aux gros minutages (`exp_minutes ≥ 30`, `B2B_REST_MIN_MINUTES`) au 2e soir d'un back-to-back.
+- Pour une soirée future (`future_p_play`), le statut du jour ne dit presque rien d'un match dans plusieurs jours (sauf saison terminée) : on retient le **taux de présence récent** (`availability_rate` du profil) plutôt que le statut ESPN.
 
-- `tonight_score` = score estimé ce soir (après tous les facteurs)
-- `best_future_score` = meilleur score estimé sur les **7 prochains jours** (via scan de son calendrier)
+## Espérance complète et décote du futur (`engine/strategy/value.py`, S1/S2)
 
-Décision :
+Picker un joueur le bloque 30 jours (R3), qu'il joue ou non (R7). L'espérance d'un pick tient compte de ce risque :
 
 ```
-if elimination == "critical":
-    JOUE_LE  # force absolue
-elif best_future_score > tonight_score × 1.10:  # BURN_THRESHOLD
-    GARDE_LE
-elif elites_remaining ≤ 2 and game_days_remaining > 10:
-    JOUE_LE seulement si tonight_score ≥ best_future_score
-else:
-    JOUE_LE
+tonight_value = P(joue) × projection − (1 − P(joue)) × lock_value
+lock_value    = meilleure espérance future du joueur dans la fenêtre de cooldown,
+                décotée de FUTURE_DECAY = 0.985 par jour d'avance
+future_value  = décote(k) × P(joue) × projection   # pour une soirée à k jours
 ```
 
----
+`FUTURE_DECAY` est un paramètre à calibrer par backtest (L2, non encore fait).
 
-## Plan hebdomadaire optimal
+## Plan 30 jours (`engine/strategy/planner.py`, `engine/strategy/regular.py`, S2)
 
-L'app calcule automatiquement une **affectation optimale** de joueurs aux jours de la semaine via l'**algorithme hongrois** (`scipy.optimize.linear_sum_assignment`).
+Le plan sur l'horizon glissant de **30 jours** (`HORIZON_DAYS`, une fenêtre de cooldown R3) est un problème d'affectation résolu par l'**algorithme hongrois** (`scipy.optimize.linear_sum_assignment`, dans `planner.solve`) : une soirée reçoit au plus un pick, chaque joueur au plus une fois sur la fenêtre, réservations (picks déjà posés) fixées, la soirée du jour forcée si un candidat existe.
 
-### Problème
+`regular.decide` assemble tout : profils, projections, P(joue), disponibilité (R3/R4/R5/R6/R15), filtre `MIN_EXP_MINUTES = 15.0` (sous ce seuil de minutes de rôle attendues, pas candidat), et produit :
+- la **reco du soir** (`recommendations`, top `TOP_RECOMMENDATIONS = 50`) triée par `tonight_value`, avec pour chaque candidat sa `lock_value`, la date de déblocage et son meilleur match futur connu ;
+- le **plan indicatif** (`plan`) sur toute la fenêtre.
 
-Tu as :
-- N jours de matchs dans la semaine à venir
-- M joueurs éligibles (non pickés, non blessés, leur équipe joue)
-- Pour chaque couple (jour, joueur), un score estimé
+> ⚠️ **La reco du soir en L1 est le best-available (S1), pas le plan anticipé.** Le plan reste affiché à titre indicatif tant qu'il n'a pas battu le best-available au backtest (règle d'activation, spec §7, lot L2).
 
-**Contrainte** : 1 pick par jour, chaque joueur au max 1 fois sur toute la fenêtre.
+## Ce qui a été supprimé dans le refacto L1b
 
-**Objectif** : maximiser le score total.
+Ces mécanismes de l'ancien moteur (`sync/`) n'existent plus. Le détail de la suppression (raison, données) est dans la [spec moteur SR/PO §2.3](superpowers/specs/2026-09-26-moteur-sr-po-design.md#23-code-supprimé).
 
-C'est un **problème d'affectation** classique, résolu de façon optimale en O(n³) par l'algo hongrois.
-
-### Réservation des elites pour les tours avancés
-
-> ⚠️ **Couche désactivée depuis le 2026-05-26** (`MAX_RESERVATION_PENALTY = 0.0`) : les données de la saison 2026 ont montré que la discipline de save faisait chuter la moyenne (21.1 vs 36.5 en best-available). Le moteur suit désormais le score projeté pur ; le mécanisme reste en place et se réactive en remontant le plafond.
-
-Le principe : sans cette couche, l'algo hongrois brûlerait facilement Jokic au Game 2 du Round 1, alors que DEN a 3 tours potentiels devant lui.
-
-**Pénalité de réservation** :
-```
-reservation = min(MAX, player_elite_factor × team_potential × round_factor × MAX)
-final_score = perf_score × (1 − reservation)
-```
-
-Où (constantes dans `sync/strategy.py`) :
-
-| Composante | Formule |
-|------------|---------|
-| `player_elite_factor` | `min(1.0, (avg_season − 28) / 12)` — 28 = starter moyen, 40+ = elite max |
-| `team_potential` | 1.0 pour tête de série R1 (home court), 0.5 pour seed 5-8, 0.3 pour play-in |
-| `round_factor` | 1.0 en R1, 0.55 en R2, 0.2 en R3 (Conf Finals), 0.0 en Finales |
-| `MAX_RESERVATION_PENALTY` | **0.0 actuellement** (était 0.60 → plafond à -60 %) |
-
-**L'élimination critique annule toujours la réservation** — si son équipe peut être out ce soir, le moteur le recommandera quand même.
-
-Une **couche stratégie personnelle** (save tax par équipe/rang, `sync/personal_strategy.py` + `TEAM_SAVE_RANKS`/`TEAM_SAVE_TAX_BASE` dans `config.py`) est également désactivée (`ENABLE_PERSONAL_STRATEGY = False`), pour la même raison.
-
-### Réglage
-
-Les constantes clés sont dans `sync/strategy.py` :
-
-```python
-MAX_RESERVATION_PENALTY = 0.0   # 0 = best-available ; remonter (ex: 0.45-0.60) pour réactiver la réservation
-ROUND_RESERVATION_FACTOR = {1: 1.0, 2: 0.55, 3: 0.2, 4: 0.0}
-TEAM_POTENTIAL_TOP_SEED = 1.0
-TEAM_POTENTIAL_LOW_SEED = 0.5
-TEAM_POTENTIAL_UNKNOWN = 0.3
-```
+- **Couche stratégie playoffs** (tiers Elite/Solide/Filler par rang relatif au soir, usage boost coéquipier blessé, détection du risque d'élimination, bonus/malus domicile-extérieur et match d'élimination, décision burn-or-save à 7 jours) : retirée. La disponibilité en playoffs (pick-and-drop, éliminations) passe désormais par les mêmes règles `engine.rules.availability`/`regular.decide` que la saison régulière ; une stratégie PO dédiée (simulation du tableau, S4) est prévue pour le lot L3.
+- **Réservation des elites pour les tours avancés** (pénalité de réservation par tour/seed) et **couche stratégie personnelle** (save tax par équipe/rang) : les données de la saison 2026 ont montré que la discipline de save faisait chuter la moyenne (21.1 vs 36.5 en best-available). Le moteur suit désormais l'espérance projetée pure (S1/S2 ci-dessus).
+- **Facteur de tendance récente** (régression linéaire sur L10) : le sens était inversé (audit) et redondant avec la pondération de récence du profil (`RECENCY` dans `engine/stats/profile.py`) ; retiré, pas remplacé.
+- **Split domicile/extérieur individuel** : remplacé par un effet terrain fixe (`HOME_FACTOR`/`AWAY_FACTOR` dans `engine/stats/projection.py`) — le split individuel était trop bruité et comptait déjà dans l'effet terrain global.
+- **Plan hebdomadaire par algorithme hongrois sur 7 jours avec x2 mensuel** (`sync/weekly_plan.py`) : remplacé par le plan 30 jours ci-dessus (`engine/strategy/planner.py`). Le x2 mensuel dans le plan (S3) est prévu pour le lot L2 ; en attendant, `is_x2` est saisi manuellement.
+- **Cap L5** (`L5_CAP_MINUTES`/`L5_CAP_RATIO`) : la pondération L5/L10/L20 elle-même a disparu avec le passage à l'efficacité pondérée par récence (`profile.py`) — plus de fenêtre L5 isolée à capper.
 
 ## Tuning des paramètres
 
-### Poids du scoring
+Les constantes ci-dessus vivent directement dans le code, pas dans un fichier de config central :
 
-`sync/config.py` :
-```python
-WEIGHTS = {
-    "weighted_avg": 0.35,
-    "matchup": 0.25,
-    "home_away": 0.10,
-    "fatigue": 0.10,
-    "trend": 0.10,
-    "consistency": 0.10,
-}
-```
+| Paramètre | Où | Rôle |
+|---|---|---|
+| `RECENCY`, `EFFICIENCY_GAMES`, `ROLE_GAMES`, `PRIOR_K`, `ROLE_SCALE_BOUNDS`, `PRESENCE_BOUNDS` | `engine/stats/profile.py` | Pondération de récence et fonte du prior saison précédente |
+| `HOME_FACTOR`, `AWAY_FACTOR`, `B2B_FACTOR` | `engine/stats/projection.py` | Effet terrain et fatigue |
+| `FACTOR_BOUNDS`, `PRIOR_REGRESSION`, `PRIOR_GAMES` | `engine/stats/team_defense.py` | Bornes et fonte du facteur défensif adverse |
+| `INJURY_PLAY_PROBABILITY`, `HARD_OUT_STATUSES`, `B2B_REST_FACTOR`, `B2B_REST_MIN_MINUTES` | `engine/stats/availability_prob.py` | P(joue) |
+| `FUTURE_DECAY` | `engine/strategy/value.py` | Décote du futur (S2) |
+| `HORIZON_DAYS`, `MIN_EXP_MINUTES`, `TOP_RECOMMENDATIONS` | `engine/strategy/regular.py` | Fenêtre du plan, seuil de minutes candidat, taille de la reco du soir |
+| `TOP_PER_NIGHT` | `engine/strategy/planner.py` | Candidats gardés par soirée dans la matrice hongroise |
 
-Ajuster ces poids change directement la philosophie du moteur. Ex: augmenter `matchup` à 0.35 et baisser `weighted_avg` à 0.25 si tu veux privilégier les bons matchups sur la forme pure.
-
-### Seuil burn-or-save
-
-`sync/config.py` :
-```python
-BURN_THRESHOLD = 0.10  # 10 % de marge
-```
-
-Plus haut (ex: 0.15) = l'app économise plus les elites. Plus bas (0.05) = elle pousse à les utiliser dès qu'il y a une opportunité correcte.
-
-### Réservation elites
-
-Voir [la section Réservation](#réservation-des-elites-pour-les-tours-avancés) : désactivée (`MAX_RESERVATION_PENALTY = 0.0` dans `sync/strategy.py`), remonter le plafond pour la réactiver.
-
-### Seuils "joueur éligible"
-
-`sync/weekly_plan.py`, dans `build_candidates` :
-```python
-if season_avg < 10:
-    continue
-```
-
-Ce seuil filtre les joueurs qui n'ont quasiment pas joué pour garder la matrice Hungarian raisonnable. Le baisser à 5 inclut plus de role players obscurs. S'y ajoutent le seuil de minutes (`MIN_MINUTES_L10 = 15`) et le cap L5 (`L5_CAP_MINUTES` / `L5_CAP_RATIO`) de `sync/config.py` — voir [Garde-fous candidats](#garde-fous-candidats).
-
+Aucun de ces paramètres n'a encore été calibré par backtest (lot L2) : ce sont des valeurs de départ, à date d'écriture de ce document.

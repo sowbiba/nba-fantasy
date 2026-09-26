@@ -257,11 +257,12 @@ class NbaSource:
             "stats.nba.com", lambda: LeagueGameLog(**kwargs).get_normalized_dict()["LeagueGameLog"])
         return parse_league_game_log(rows)
 
-    def roster(self, team_id: int, tricode: str) -> list[dict]:
+    def roster(self, team_id: int, tricode: str, season: str) -> list[dict]:
         self._require_stats()
         rows = self.guard.call(
             "stats.nba.com",
-            lambda: CommonTeamRoster(team_id=str(team_id), timeout=12).get_normalized_dict()["CommonTeamRoster"],
+            lambda: CommonTeamRoster(team_id=str(team_id), season=season, timeout=12)
+            .get_normalized_dict()["CommonTeamRoster"],
             is_empty=lambda r: not r,
         )
         return parse_roster(rows, tricode)

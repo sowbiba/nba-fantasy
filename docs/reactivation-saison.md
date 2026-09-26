@@ -4,6 +4,8 @@
 
 ## Une fois, dès que L1b est mergé
 
+0. **(prod)** Appliquer la migration 020 : `supabase db push --linked` (dry-run d'abord).
+   Vérifier : `select job, api_calls from sync_log order by id desc limit 1` fonctionne, et `recommendations` a les colonnes `projection, p_play, value, lock_value, locked_until, best_future`. Sans 020, les deux jobs échouent à leur première écriture.
 1. **(prod)** Historique complet 2025-26 (priors S6 + backtest L2), depuis le PC :
    `./venv/bin/python -m engine.jobs.local_nightly --backfill-season 2025-26`
    Vérifier : `select season, count(*) from game_logs group by 1` (≈ 26 000 lignes pour 2025-26).
@@ -20,5 +22,5 @@
 ## Quelques jours avant le premier match (après L1c)
 
 4. Activer le workflow : `gh workflow enable daily-sync.yml`.
-5. Décommenter la ligne de crontab `engine.jobs.local_nightly` (commande dans `docs/operations.md`).
+5. Remplacer la ligne de crontab commentée (`sync.main`, qui n'existe plus) par la ligne `engine.jobs.local_nightly` de `docs/operations.md`.
 6. Après le passage à l'heure d'hiver (25/10), vérifier les heures du cron GitHub (commentaire dans `daily-sync.yml`).

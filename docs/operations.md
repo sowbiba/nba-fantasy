@@ -36,7 +36,7 @@ Le sync principal tourne via **GitHub Actions** (`.github/workflows/daily-sync.y
 10. Push les recommandations vers Supabase
 11. Calcule le plan hebdomadaire optimal et le push
 
-Le refresh des **rosters** (nba_api) est à part : gated par un cache de 72 h et exécuté par le run local de 23 h 50 uniquement (stats.nba.com bloque les IPs GitHub).
+Le refresh des **rosters** (nba_api) est à part : rafraîchi chaque nuit par le run local de 23 h 50 uniquement (stats.nba.com bloque les IPs GitHub).
 
 Logs : `/tmp/ttfl-local.log`
 
@@ -106,7 +106,6 @@ cd web && npm install
 `.env` à la racine :
 ```
 SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_KEY=sb_publishable_xxx
 SUPABASE_SERVICE_KEY=sb_secret_xxx
 ```
 

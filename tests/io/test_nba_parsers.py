@@ -122,6 +122,25 @@ def test_stats_nba_interdit_depuis_github():
         src.league_game_log("2026-27", "Regular Season")
 
 
+def test_roster_charge_la_saison_du_moteur_pas_le_defaut_nba_api(monkeypatch):
+    """CommonTeamRoster calcule sa saison par défaut à l'import (souvent la
+    saison précédente en septembre) : on doit toujours passer `season`
+    explicitement, jamais s'appuyer sur ce défaut."""
+    captured = {}
+
+    class FakeCommonTeamRoster:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def get_normalized_dict(self):
+            return {"CommonTeamRoster": []}
+
+    monkeypatch.setattr("engine.io.nba.CommonTeamRoster", FakeCommonTeamRoster)
+    src = NbaSource(ApiGuard(sleep=lambda s: None), allow_stats=True)
+    src.roster(1610612743, "DEN", "2026-27")
+    assert captured["season"] == "2026-27"
+
+
 def test_box_score_propage_breaker_open_sans_appeler_nba_api():
     guard = ApiGuard({"cdn.nba.com": HostPolicy(0.0, 0, 1, 10)})
 

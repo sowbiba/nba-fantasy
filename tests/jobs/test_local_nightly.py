@@ -27,6 +27,30 @@ def test_pas_de_desactivation_si_un_effectif_manque():
     assert any("LAL" in w for w in warnings)
 
 
+def test_effectifs_charges_avec_la_saison_du_jour():
+    today = date(2026, 9, 26)
+    repo = FakeRepo()
+    nba = FakeStatsSource(rosters={"DEN": [_roster(1, "DEN")], "LAL": [_roster(2, "LAL")]})
+    run(repo, nba, today, TEAMS)
+    assert [season for (_, _, season) in nba.roster_calls] == ["2026-27", "2026-27"]
+
+
+def test_effectifs_utilisent_toujours_la_saison_courante_meme_en_backfill():
+    today = date(2026, 9, 26)
+    repo = FakeRepo()
+    nba = FakeStatsSource(rosters={"DEN": [_roster(1, "DEN")], "LAL": [_roster(2, "LAL")]})
+    run(repo, nba, today, TEAMS, backfill_season="2025-26")
+    assert [season for (_, _, season) in nba.roster_calls] == ["2026-27", "2026-27"]
+
+
+def test_effectif_vide_ne_compte_pas_comme_reponse():
+    repo = FakeRepo(players=[{"id": 9, "name": "Coupé", "team": "DEN", "position": "F", "active": True}])
+    nba = FakeStatsSource(rosters={"DEN": [], "LAL": [_roster(2, "LAL")]})
+    warnings = run(repo, nba, TODAY, TEAMS)
+    assert repo.players[9]["active"] is True
+    assert any("DEN" in w and "effectif vide" in w for w in warnings)
+
+
 def test_historique_saison_courante_depuis_j_moins_3():
     game = {"0022600010": {"id": "0022600010", "date": "2026-10-31", "home_team": "DEN",
                            "away_team": "LAL", "status": "final"}}
@@ -40,6 +64,30 @@ def test_historique_saison_courante_depuis_j_moins_3():
     assert nba.log_calls == [("2026-27", "Regular Season", TODAY - timedelta(days=3))]
     assert repo.players[5]["active"] is False and repo.players[5]["position"] == "F"
     assert (5, "0022600010") in repo.logs
+
+
+def test_match_du_jour_ignore_en_nightly_mais_charge_en_backfill():
+    game_today = {"0022600011": {"id": "0022600011", "date": TODAY.isoformat(), "home_team": "DEN",
+                                 "away_team": "LAL", "status": "final"}}
+    logs_today = [{"player_id": 5, "game_id": "0022600011", "date": TODAY.isoformat(), "team": "DEN",
+                   "minutes": 30, "ttfl_score": 40, "is_home": True, "pts": 20, "reb": 5, "ast": 5,
+                   "stl": 1, "blk": 1, "fgm": 8, "fga": 15, "tpm": 2, "tpa": 5, "ftm": 2, "fta": 2,
+                   "tov": 1, "fouls": 2}]
+    players = {5: {"id": 5, "name": "Nouveau", "team": "DEN"}}
+
+    nba_nightly = FakeStatsSource(
+        game_logs={("2026-27", "Regular Season"): (game_today, logs_today, players)})
+    repo_nightly = FakeRepo()
+    run(repo_nightly, nba_nightly, TODAY, [])
+    assert "0022600011" not in repo_nightly.games
+    assert (5, "0022600011") not in repo_nightly.logs
+
+    nba_backfill = FakeStatsSource(
+        game_logs={("2025-26", "Regular Season"): (game_today, logs_today, players)})
+    repo_backfill = FakeRepo()
+    run(repo_backfill, nba_backfill, TODAY, [], backfill_season="2025-26")
+    assert "0022600011" in repo_backfill.games
+    assert (5, "0022600011") in repo_backfill.logs
 
 
 def test_backfill_saison_complete_regular_et_playoffs():

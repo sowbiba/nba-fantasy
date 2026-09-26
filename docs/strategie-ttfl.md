@@ -25,7 +25,7 @@ Le moteur classe les joueurs sur leur **espérance complète**, pas sur le seul 
 
 ## S3 — Bonus x2 intégré au plan (SR) — validé 2026-09-26
 
-Pour chaque mois de novembre à avril, l'optimiseur du plan 31 jours choisit aussi **la soirée où poser le x2**. Il maximise la valeur doublée, pénalisée par le risque, parce que R10 double aussi un score négatif et fait perdre le x2 si le joueur ne joue pas. Le profil visé a un plancher élevé et une P(joue) élevée.
+Pour chaque mois de novembre à avril, l'optimiseur du plan 30 jours choisit aussi **la soirée où poser le x2**. Il maximise la valeur doublée, pénalisée par le risque, parce que R10 double aussi un score négatif et fait perdre le x2 si le joueur ne joue pas. Le profil visé a un plancher élevé et une P(joue) élevée.
 
 - Le choix du x2 peut influer sur l'affectation (garder une star régulière pour la soirée du x2).
 - **Fin de mois** : si le x2 n'est pas encore posé, le moteur le force sur la meilleure option restante du mois, pour ne jamais le perdre.
@@ -50,7 +50,7 @@ Cela dépend du potentiel de l'équipe (force, état de la série, blessures) et
 
 **Pas de save tax manuelle** : les réservations forcées en config (`TEAM_SAVE_RANKS`, reservation tax) sont supprimées. La couverture de risque vient du calcul, pas de réglages à la main.
 
-**Commun avec la SR** : moteur de stats, optimiseur d'affectation, espérance complète (S1). **Ce qui diffère** : règles de disponibilité (R3 contre R4/R5) et horizon (31 j avec calendrier connu en SR, reste des PO avec calendrier simulé en PO).
+**Commun avec la SR** : moteur de stats, optimiseur d'affectation, espérance complète (S1). **Ce qui diffère** : règles de disponibilité (R3 contre R4/R5) et horizon (30 j avec calendrier connu en SR, reste des PO avec calendrier simulé en PO).
 
 ## S5 — Force des équipes : Elo maison — validé 2026-09-26
 
