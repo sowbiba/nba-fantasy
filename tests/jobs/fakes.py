@@ -46,6 +46,7 @@ MATCHUPS_ALLOWED = {
     "matchup_assists", "matchup_turnovers", "matchup_blocks", "matchup_fgm", "matchup_fga",
     "matchup_tpm", "matchup_tpa", "matchup_ftm", "matchup_fta",
 }
+MATCHUPS_NOT_NULL = {"game_id", "off_player_id", "def_player_id"}
 
 
 def _d(v):
@@ -126,7 +127,7 @@ class FakeRepo:
             self.logs[(r["player_id"], r["game_id"])] = {**r, "season": g["season"]}
 
     def upsert_matchups_raw(self, rows):
-        _validate(rows, MATCHUPS_ALLOWED, set(), "box_score_matchups_raw")
+        _validate(rows, MATCHUPS_ALLOWED, MATCHUPS_NOT_NULL, "box_score_matchups_raw")
         self.matchups.extend(rows)
 
     def set_inactive(self, ids):

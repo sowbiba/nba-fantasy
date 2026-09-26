@@ -1,5 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
+
 from engine.jobs.daily_sync import run
 from tests.jobs.fakes import FakeNbaSource, FakeRepo
 
@@ -136,3 +138,10 @@ def test_daily_sync_match_ancien_non_final_traite_et_marque_final():
     assert (3, "0022600012") in repo.logs
     assert repo.games["0022600012"]["status"] == "final"
     assert repo.picks[0]["actual_score"] == 40
+
+
+def test_fake_repo_matchups_raw_exige_def_player_id():
+    # box_score_matchups_raw : game_id, off_player_id, def_player_id NOT NULL
+    # (migration 013) — une ligne sans def_player_id doit être rejetée.
+    with pytest.raises(AssertionError):
+        FakeRepo().upsert_matchups_raw([{"game_id": "g", "off_player_id": 1}])
