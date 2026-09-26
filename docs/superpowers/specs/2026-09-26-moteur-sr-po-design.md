@@ -36,7 +36,7 @@ engine/
     elo.py               Elo maison + correction blessures + intersaison (S5, S6)
   strategy/
     planner.py           optimiseur d'affectation joueurs × soirées (commun SR/PO), x2 inclus
-    regular.py           horizon glissant 31 j, décote du futur, x2 mensuel (S2, S3)
+    regular.py           horizon glissant 30 j, décote du futur, x2 mensuel (S2, S3)
     playoffs.py          simulation du tableau (centaines de scénarios) + décision robuste (S4)
   explain/               argumentaires et libellés par mode (remplace advisor.py)
   io/                    Supabase, cdn.nba.com, stats.nba.com, ESPN : fetch/push, pagination,
@@ -61,7 +61,7 @@ engine/
   - les réservations sont fixées ;
   - au plus un x2 par mois.
 
-  Solveur : programmation linéaire en nombres entiers (scipy `milp`), car les fenêtres glissantes et le x2 dépassent le simple algorithme hongrois.
+  Solveur : L1 : `linear_sum_assignment` (horizon = une fenêtre de cooldown). `milp` en L2 pour le x2 mensuel.
 - `regular.decide(today) -> Plan` et `playoffs.decide(today) -> Decision` produisent tous deux le pick du soir et le brouillon de deck.
 
 ### 2.2 Valeur d'un (joueur, soirée)

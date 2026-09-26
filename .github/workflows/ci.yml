@@ -29,8 +29,4 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest tests/ -v
         env:
-          # sync/config.py reads these at import; the tests never hit Supabase
-          SUPABASE_URL: http://localhost
-          SUPABASE_KEY: test
-          SUPABASE_SERVICE_KEY: test
           TEST_DATABASE_URL: postgresql://postgres:pg@localhost:5432/postgres

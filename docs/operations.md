@@ -38,7 +38,7 @@ Le sync principal tourne via **GitHub Actions** (`.github/workflows/daily-sync.y
 
 Le refresh des **rosters** (nba_api) est à part : gated par un cache de 72 h et exécuté par le run local de 23 h 50 uniquement (stats.nba.com bloque les IPs GitHub).
 
-Logs : `/tmp/ttfl-sync.log`
+Logs : `/tmp/ttfl-local.log`
 
 ---
 
@@ -46,29 +46,17 @@ Logs : `/tmp/ttfl-sync.log`
 
 ```
 nba-fantasy/
-├── sync/                              # Backend Python
-│   ├── config.py                      # Env vars, constantes (WEIGHTS, FATIGUE, etc.)
-│   ├── ttfl.py                        # Calcul du score TTFL (pure function)
-│   ├── fetcher.py                     # Fetchers cdn.nba.com + nba_api
-│   ├── injuries.py                    # Fetcher ESPN blessures (endpoint global)
-│   ├── load_schedule.py               # Charge le schedule NBA 30 jours
-│   ├── seed_playoffs.py               # Parse seriesText → table series
-│   ├── compute_team_defense.py        # Agrège TTFL encaissé par équipe × poste
-│   ├── db.py                          # Client Supabase + CRUD helpers
-│   ├── scoring.py                     # Moteur de scoring 6 facteurs
-│   ├── strategy.py                    # Tiers, élimination, burn-or-save, réservation elites
-│   ├── personal_strategy.py           # Save tax par équipe/rang (désactivée, cf docs/moteur.md)
-│   ├── future.py                      # best_future_score (scan 7 jours)
-│   ├── advisor.py                     # Argumentaires POUR/CONTRE/VERDICT
-│   ├── weekly_plan.py                 # Algo hongrois (plan hebdo)
-│   ├── matchups.py                    # Matchups défensifs joueur vs joueur (box scores raw)
-│   ├── matchup_report.py              # Rapport matchups d'un match
-│   ├── backfill_matchups.py           # Backfill historique des matchups
-│   ├── backfill_dnp.py                # Backfill des DNP dans les game logs
-│   ├── seed.py                        # Seed initial des game logs (20 équipes playoffs + play-in)
-│   ├── seed_personal_strategy.py      # Seed des tables team_outlook / player_team_rank
-│   └── main.py                        # Orchestrateur cron
-├── tests/                             # 97 tests unitaires (pytest)
+├── engine/                             # Backend Python
+│   ├── config.py                      # Env vars, constantes
+│   ├── rules/                         # Règles TTFL pures (cooldown, scoring, calendrier)
+│   ├── stats/                         # Projection, P(joue), agrégats, team_defense
+│   ├── strategy/                      # Optimiseur d'affectation (planner), horizon SR
+│   ├── explain/                       # Argumentaires et libellés
+│   ├── io/                            # Supabase, cdn.nba.com, stats.nba.com, ESPN (fetch/push)
+│   └── jobs/
+│       ├── daily_sync.py              # Passage complet (GitHub Actions)
+│       └── local_nightly.py           # Effectifs + LeagueGameLog + matchups (PC local)
+├── tests/                             # tests unitaires (pytest)
 ├── web/                               # Frontend Next.js 16
 │   ├── src/app/                       # Pages (App Router)
 │   │   ├── page.tsx                   # "Ce soir"
@@ -131,20 +119,17 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_xxx
 ### Exécution
 
 ```bash
-# Sync manuel
-source venv/bin/activate && python -m sync.main
+# Sync manuel (tel que GitHub Actions)
+source venv/bin/activate && python -m engine.jobs.daily_sync
+
+# Job local (effectifs, box scores stats.nba.com, tel que le cron local)
+python -m engine.jobs.local_nightly
+
+# Chargement d'une saison complète (une fois) :
+./venv/bin/python -m engine.jobs.local_nightly --backfill-season 2025-26
 
 # Tests
 python -m pytest tests/ -v
-
-# Seed initial des game logs (fait 1 fois au départ)
-python -m sync.seed
-
-# Refresh manuel de team_defense
-python -m sync.compute_team_defense
-
-# Refresh manuel du plan hebdo
-python -m sync.weekly_plan
 
 # Frontend dev
 cd web && npm run dev
@@ -158,7 +143,7 @@ cd web && npx vercel --prod
 Un seul run local par jour, dédié au refresh des rosters (stats.nba.com bloque les IPs GitHub) :
 
 ```
-50 23 * * * cd /path/to/nba-fantasy && venv/bin/python -m sync.main >> /tmp/ttfl-sync.log 2>&1
+50 23 * * * cd /home/isow/workspace/perso/nba-fantasy && ./venv/bin/python -m engine.jobs.local_nightly >> /tmp/ttfl-local.log 2>&1 || { echo "$(date '+\%F \%T') TTFL local KO" >> /home/isow/ttfl-sync-failures.log; DISPLAY=:0 notify-send -u critical "TTFL local KO" 2>/dev/null; }
 ```
 
 ## Tests SQL

@@ -20,7 +20,7 @@ App live : **https://ttfl-advisor.vercel.app/** (PWA installable sur mobile)
 - **Burn or save** : en playoffs, compare le score de ce soir au meilleur score estimé sur 7 jours pour décider de brûler ou garder un joueur
 - **Plan hebdomadaire optimal** : affectation joueurs → jours via l'algorithme hongrois, avec pénalité de réservation des elites pour les tours avancés
 - **Blessures à chaque sync** : statuts ESPN (Out / Doubtful / Questionable / GTD) rafraîchis 4×/jour et intégrés au scoring, détection des usage boosts quand un coéquipier majeur est OUT
-- **Règles TTFL natives** : cooldown 30 jours en saison régulière, unicité des picks en playoffs
+- **Règles TTFL natives** : cooldown de 30 jours (J+30) appliqué par le moteur et vérifié en base (trigger `picks_validate`), unicité des picks en playoffs
 
 ## Architecture
 
@@ -46,13 +46,16 @@ cp .env.example .env        # puis renseigner les clés Supabase
 # Base : appliquer supabase/schema.sql puis supabase/migrations/ dans l'ordre
 #   (SQL editor du dashboard Supabase, ou psql)
 
-# Seed initial des game logs — à faire une fois
-python -m sync.seed
+# Seed initial des game logs (une saison complète) — à faire une fois
+python -m engine.jobs.local_nightly --backfill-season 2025-26
 
-# Sync manuel (recos du soir)
-python -m sync.main
+# Sync manuel (recos du soir, tel que GitHub Actions)
+python -m engine.jobs.daily_sync
 
-# Tests (97)
+# Job local (effectifs, box scores stats.nba.com), tel que le cron local
+python -m engine.jobs.local_nightly
+
+# Tests (228)
 python -m pytest tests/ -v
 
 # Frontend

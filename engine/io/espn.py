@@ -1,4 +1,3 @@
-# sync/injuries.py
 """Fetch player injury statuses from ESPN unofficial API."""
 import httpx
 

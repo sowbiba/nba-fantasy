@@ -28,7 +28,7 @@ import { todayNBA } from "@/lib/date";
 // extra Supabase round-trip is fine in exchange for instant feedback.
 export const revalidate = 0;
 
-// Mirror sync/config.py HARD_OUT_STATUSES — players who can't suit up and
+// Mirror engine/stats/availability_prob.py HARD_OUT_STATUSES — players who can't suit up and
 // must never surface as a recommendation, even on a stale rec row.
 const HARD_OUT_STATUSES = new Set([
   "Out",
