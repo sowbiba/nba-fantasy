@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 
-from engine.rules.availability import PickRow
+from engine.rules.availability import PickRow, SeriesRow
 from engine.rules.calendar import PARIS, Night
 from engine.stats.profile import PlayerProfile
 from engine.strategy.regular import DecisionInputs, decide
@@ -95,3 +95,97 @@ def test_decide_ignore_matchs_ineligibles():
     games = [_game("p1", TODAY, "DEN", "LAL", "preseason")]
     d = decide(_inputs(games=games, nights=[_night(TODAY)]))
     assert d.recommendations == []
+
+
+def test_decide_ignore_match_fantome_en_po():
+    # PO : NYK-BOS (round 2, réel) et ATL-MIA (round 1 déjà terminé 4-1
+    # pour ATL, donc match fantôme) programmés la même soirée.
+    d = date(2027, 5, 10)
+    night = Night(d, "2025-26", "playoffs", 1, datetime(d.year, d.month, d.day, 23, tzinfo=PARIS), False)
+    games = [
+        {**_game("real", d, "NYK", "BOS", "playoffs"), "status": "scheduled", "season": "2025-26"},
+        {**_game("phantom", d, "ATL", "MIA", "playoffs"), "status": "scheduled", "season": "2025-26"},
+    ]
+    players = {
+        10: {"id": 10, "name": "Atl Player", "team": "ATL", "position": "F", "injury_status": None, "active": True},
+        11: {"id": 11, "name": "Mia Player", "team": "MIA", "position": "F", "injury_status": None, "active": True},
+        12: {"id": 12, "name": "Nyk Player", "team": "NYK", "position": "F", "injury_status": None, "active": True},
+        13: {"id": 13, "name": "Bos Player", "team": "BOS", "position": "F", "injury_status": None, "active": True},
+    }
+    profiles = {pid: _prof(pid) for pid in players}
+    recent_logs = {pid: [{"minutes": 34}] * 3 for pid in players}
+    series = [
+        SeriesRow("2025-26", 1, "ATL", "MIA", 4, 1, "completed"),  # rend ATL-MIA fantôme
+        SeriesRow("2025-26", 1, "NYK", "ORL", 4, 2, "completed"),  # qualifie NYK au 1er tour
+        SeriesRow("2025-26", 1, "BOS", "CLE", 4, 1, "completed"),  # qualifie BOS au 1er tour
+    ]
+    d_inputs = DecisionInputs(
+        today=d, nights=[night], games=games, players=players, profiles=profiles,
+        recent_logs=recent_logs, defense={}, picks=[], second_chances=[], series=series,
+    )
+    dec = decide(d_inputs)
+    ids = {r.cell.player_id for r in dec.recommendations}
+    assert ids == {12, 13}
+
+
+def test_plan_ne_compte_pas_deux_fois_le_blocage():
+    """Le planificateur ne doit pas décompter le blocage de 30 j deux fois :
+    une fois via l'affectation elle-même (un joueur au plus une fois sur
+    l'horizon), une fois via tonight_value. Valeurs calculées à la main
+    (profils/ctx ci-dessous, opp_factor = 1.0 partout, defense={}) :
+
+    - A (pid 201, DEN, domicile ce soir vs LAL puis domicile J+20 vs WAS) :
+      base = 2.0 * 30 = 60 ; projection ce soir = 60 * 1.02 = 61.2.
+      p ce soir = 1.0 (injury_status None) * 0.55 (dnp_risk_factor, 2 DNP
+      sur les 3 derniers logs) * 1.0 (pas de b2b) = 0.55.
+      → valeur planificateur ce soir (fix) = p*projection = 33.66.
+      Projection J+20 (même config domicile) = 61.2 ; p_future =
+      availability_rate (0.9) * 1.0 (pas de b2b) = 0.9.
+      → future_value(20, 0.9, 61.2) = 0.985**20 * 0.9 * 61.2 ≈ 40.7.
+      → lock = 40.7 (via lock_value) ; tonight_value(A) = 33.66 - 0.45*40.7
+        ≈ 15.3 (valeur "recommandation", avec blocage compté une fois).
+
+    - B (pid 202, SAC, extérieur ce soir vs GSW, aucun match futur dans la
+      fenêtre) : base = 1.0 * 30 = 30 ; projection = 30 * 0.98 = 29.4 ;
+      p = 1.0 (aucun DNP récent). valeur ce soir = tonight_value = 29.4
+      (lock nul, pas de futur) — identique en tant que cellule planificateur.
+
+    - C (pid 203, BOS, domicile J+20 vs MIA uniquement) : base = 2.0 * 30
+      = 60 ; projection = 60 * 1.02 = 61.2 ; p_future = 1.0 (availability
+      1.0, pas de b2b). → future_value(20, 1.0, 61.2) ≈ 45.2.
+
+    Total si le plan joue A ce soir et C à J+20 (avec le correctif) :
+    33.66 + 45.24 ≈ 78.9, contre B ce soir + A à J+20 (sans le correctif,
+    car tonight_value(A)=15.3 < B=29.4 fait perdre A la case du soir) :
+    29.4 + 40.7 ≈ 70.1. Le correctif fait donc gagner A ce soir + C à J+20.
+    """
+    d20 = TODAY + timedelta(days=20)
+    nights = [_night(TODAY), _night(d20)]
+    games = [
+        _game("g_a_tonight", TODAY, "DEN", "LAL"),
+        _game("g_a_j20", d20, "DEN", "WAS"),
+        _game("g_b_tonight", TODAY, "GSW", "SAC"),
+        _game("g_c_j20", d20, "BOS", "MIA"),
+    ]
+    players = {
+        201: {"id": 201, "name": "A", "team": "DEN", "position": "F", "injury_status": None, "active": True},
+        202: {"id": 202, "name": "B", "team": "SAC", "position": "F", "injury_status": None, "active": True},
+        203: {"id": 203, "name": "C", "team": "BOS", "position": "F", "injury_status": None, "active": True},
+    }
+    profiles = {
+        201: PlayerProfile(201, 2.0, 30.0, 10, 5.0, 0.9),
+        202: PlayerProfile(202, 1.0, 30.0, 10, 5.0, 1.0),
+        203: PlayerProfile(203, 2.0, 30.0, 10, 5.0, 1.0),
+    }
+    recent_logs = {
+        201: [{"minutes": 0}, {"minutes": 0}, {"minutes": 30}],  # 2 DNP -> dnp_risk_factor 0.55
+        202: [{"minutes": 30}] * 3,
+        203: [{"minutes": 30}] * 3,
+    }
+    d_inputs = DecisionInputs(
+        today=TODAY, nights=nights, games=games, players=players, profiles=profiles,
+        recent_logs=recent_logs, defense={}, picks=[], second_chances=[], series=[],
+    )
+    dec = decide(d_inputs)
+    assert dec.plan[TODAY].player_id == 201
+    assert dec.plan[d20].player_id == 203

@@ -7,7 +7,7 @@ calcul applique automatiquement le pick-and-drop et les éliminations (la
 stratégie PO dédiée arrive en L3).
 """
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
 from engine.rules.availability import COOLDOWN_DAYS, PickRow, SecondChance, SeriesRow, is_available
@@ -59,14 +59,32 @@ def _game_date(g: dict) -> date:
     return d if isinstance(d, date) else date.fromisoformat(str(d)[:10])
 
 
+def _is_phantom(game: dict, completed_pairs: set[tuple[str, frozenset[str]]]) -> bool:
+    """R13 (jobs) : un match de PO programmé dont la série est déjà terminée
+    la même saison n'a jamais lieu. Sans clé "status" (matchs historiques /
+    régulière), ou sans "season", jamais considéré fantôme."""
+    if game.get("game_type") != "playoffs" or game.get("status") != "scheduled":
+        return False
+    season = game.get("season")
+    if season is None:
+        return False
+    pair = frozenset({game["home_team"], game["away_team"]})
+    return (season, pair) in completed_pairs
+
+
 def decide(inputs: DecisionInputs) -> Decision:
     today = inputs.today
     nights = {n.date: n for n in inputs.nights
               if not n.is_phantom and n.n_eligible_games > 0 and 0 <= (n.date - today).days < HORIZON_DAYS}
 
+    completed_pairs = {(s.season, frozenset({s.home_team, s.away_team}))
+                        for s in inputs.series if s.status == "completed"}
+
     team_dates: dict[str, list[date]] = defaultdict(list)
     games_by_night: dict[date, list[dict]] = defaultdict(list)
     for g in inputs.games:
+        if _is_phantom(g, completed_pairs):
+            continue
         d = _game_date(g)
         team_dates[g["home_team"]].append(d)
         team_dates[g["away_team"]].append(d)
@@ -111,22 +129,42 @@ def decide(inputs: DecisionInputs) -> Decision:
                                           is_b2b_second=b2b, exp_minutes=profile.exp_minutes)
                     raw.append((k, pid, d, projection, p, ctx))
 
+    # Dédoublonnage par (joueur, soirée) : une ligne de match dupliquée ne
+    # doit produire qu'une seule cellule, celle de plus forte espérance
+    # (p × projection, proportionnelle à la valeur qui en découlera).
+    deduped: dict[tuple[int, date], tuple[int, int, date, float, float, GameContext]] = {}
+    for entry in raw:
+        _k, pid, d, projection, p, _ctx = entry
+        key = (pid, d)
+        existing = deduped.get(key)
+        if existing is None or p * projection > existing[4] * existing[3]:
+            deduped[key] = entry
+    raw = list(deduped.values())
+
     future_ev: dict[int, list[tuple[int, float]]] = defaultdict(list)
     for k, pid, _d, projection, p, _ctx in raw:
         if k > 0:
             future_ev[pid].append((k, p * projection))
 
+    # Les cellules "recommandations" portent le coût du blocage de 30 j
+    # (tonight_value) ; celles données au planificateur ne doivent pas le
+    # compter une seconde fois, car l'affectation elle-même immobilise déjà
+    # le joueur (une soirée = un joueur au plus une fois, R3).
     cells: list[Cell] = []
+    planner_cells: list[Cell] = []
     for k, pid, d, projection, p, ctx in raw:
         if k == 0:
-            value = tonight_value(p, projection, lock_value(future_ev[pid]))
+            reco_value = tonight_value(p, projection, lock_value(future_ev[pid]))
+            plan_value = future_value(0, p, projection)
         else:
-            value = future_value(k, p, projection)
-        cells.append(Cell(pid, d, projection, p, value, ctx))
+            reco_value = plan_value = future_value(k, p, projection)
+        cell = Cell(pid, d, projection, p, reco_value, ctx)
+        cells.append(cell)
+        planner_cells.append(cell if k != 0 else replace(cell, value=plan_value))
 
     fixed = {p.date for p in inputs.picks}
     plan_nights = sorted(d for d in nights if d not in fixed)
-    plan = solve([c for c in cells if c.night in set(plan_nights)], plan_nights,
+    plan = solve([c for c in planner_cells if c.night in set(plan_nights)], plan_nights,
                  required={today} if today in plan_nights else frozenset())
 
     tonight = today if today in nights else None
