@@ -22,6 +22,12 @@ export function addDays(iso: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Lundi de la semaine d'une date (semaines lundi → dimanche). */
+export function weekStart(iso: string): string {
+  const day = new Date(`${iso}T12:00:00Z`).getUTCDay(); // 0 = dimanche
+  return addDays(iso, -((day + 6) % 7));
+}
+
 /** Saison NBA d'une date (à partir de septembre, la saison qui commence). */
 export function seasonForDate(iso: string): string {
   const [y, m] = iso.split("-").map(Number);

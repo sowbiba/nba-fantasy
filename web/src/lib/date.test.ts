@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, deckDate, frDayMonth, frLongDate, parisTime, seasonForDate } from "./date";
+import { addDays, deckDate, weekStart, frDayMonth, frLongDate, parisTime, seasonForDate } from "./date";
 
 describe("deckDate", () => {
   it("prend la date de Paris, pas celle de l'heure de l'Est", () => {
@@ -28,5 +28,16 @@ describe("helpers", () => {
     expect(frDayMonth("2026-11-24")).toBe("24/11");
     expect(frLongDate("2026-11-24")).toBe("mardi 24 novembre");
     expect(parisTime("2026-11-24T23:00:00Z")).toBe("00:00");
+  });
+});
+
+describe("weekStart", () => {
+  it("ramène au lundi", () => {
+    expect(weekStart("2026-10-21")).toBe("2026-10-19"); // mercredi
+    expect(weekStart("2026-10-19")).toBe("2026-10-19"); // lundi
+    expect(weekStart("2026-10-25")).toBe("2026-10-19"); // dimanche
+  });
+  it("traverse un changement de mois", () => {
+    expect(weekStart("2026-11-01")).toBe("2026-10-26");
   });
 });
