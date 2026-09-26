@@ -150,3 +150,14 @@ Un seul run local par jour, dédié au refresh des rosters (stats.nba.com bloque
 50 23 * * * cd /path/to/nba-fantasy && venv/bin/python -m sync.main >> /tmp/ttfl-sync.log 2>&1
 ```
 
+## Tests SQL
+
+Les fonctions et triggers SQL (migrations 017+) sont testés sur un Postgres jetable, reconstruit à chaque session de tests depuis `schema.sql` et toutes les migrations.
+
+```bash
+docker run -d --rm --name ttfl-pg -e POSTGRES_PASSWORD=pg -p 55432:5432 postgres:17
+TEST_DATABASE_URL=postgresql://postgres:pg@localhost:55432/postgres ./venv/bin/python -m pytest tests/sql -v
+docker stop ttfl-pg
+```
+
+Sans `TEST_DATABASE_URL`, ces tests sont ignorés. En CI, un service Postgres les fait tourner à chaque push.

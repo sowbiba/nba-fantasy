@@ -6,6 +6,6 @@
 
 alter table matchup_aggregates enable row level security;
 
-create policy "anon read matchup_aggregates"
-  on matchup_aggregates
+drop policy if exists "anon read matchup_aggregates" on matchup_aggregates;
+create policy "anon read matchup_aggregates" on matchup_aggregates
   for select using (true);

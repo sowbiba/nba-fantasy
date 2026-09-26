@@ -36,12 +36,20 @@ create index if not exists player_team_rank_team_idx on player_team_rank(team);
 alter table team_outlook enable row level security;
 alter table player_team_rank enable row level security;
 
+drop policy if exists "anon read team_outlook" on team_outlook;
 create policy "anon read team_outlook" on team_outlook for select using (true);
+drop policy if exists "anon insert team_outlook" on team_outlook;
 create policy "anon insert team_outlook" on team_outlook for insert with check (true);
+drop policy if exists "anon update team_outlook" on team_outlook;
 create policy "anon update team_outlook" on team_outlook for update using (true);
+drop policy if exists "anon delete team_outlook" on team_outlook;
 create policy "anon delete team_outlook" on team_outlook for delete using (true);
 
+drop policy if exists "anon read player_team_rank" on player_team_rank;
 create policy "anon read player_team_rank" on player_team_rank for select using (true);
+drop policy if exists "anon insert player_team_rank" on player_team_rank;
 create policy "anon insert player_team_rank" on player_team_rank for insert with check (true);
+drop policy if exists "anon update player_team_rank" on player_team_rank;
 create policy "anon update player_team_rank" on player_team_rank for update using (true);
+drop policy if exists "anon delete player_team_rank" on player_team_rank;
 create policy "anon delete player_team_rank" on player_team_rank for delete using (true);
