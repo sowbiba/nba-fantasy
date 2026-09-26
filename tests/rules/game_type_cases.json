@@ -1,0 +1,13 @@
+[
+  {"id": "0022500001", "date": "2025-10-21", "game_type": "regular", "season": "2025-26"},
+  {"id": "0022600001", "date": "2026-10-20", "game_type": "regular", "season": "2026-27"},
+  {"id": "0012600001", "date": "2026-10-05", "game_type": "preseason", "season": "2026-27"},
+  {"id": "0032500001", "date": "2026-02-15", "game_type": "allstar", "season": "2025-26"},
+  {"id": "0042500101", "date": "2026-04-18", "game_type": "playoffs", "season": "2025-26"},
+  {"id": "0052500101", "date": "2026-04-14", "game_type": "playin", "season": "2025-26"},
+  {"id": "0062500001", "date": "2025-12-16", "game_type": "cup_final", "season": "2025-26"},
+  {"id": "hist_2025-10-25", "date": "2025-10-25", "game_type": "regular", "season": "2025-26"},
+  {"id": "hist_2026-04-06", "date": "2026-04-06", "game_type": "regular", "season": "2025-26"},
+  {"id": "unknown_1628983_2026-01-01", "date": "2026-01-01", "game_type": "unknown", "season": "2025-26"},
+  {"id": "0072600001", "date": "2026-11-01", "game_type": "unknown", "season": "2026-27"}
+]
