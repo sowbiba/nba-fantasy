@@ -39,3 +39,13 @@ def test_game_ids_with_logs_sans_ids_ne_requete_pas():
 
 def test_start_log_renvoie_l_id():
     assert SupabaseRepo(FakeClient()).start_log("daily_sync") == 42
+
+
+def test_game_ids_with_logs_retourne_les_ids_presents():
+    game_logs = [
+        {"id": 1, "game_id": "g1"},
+        {"id": 2, "game_id": "g1"},
+        {"id": 3, "game_id": "g2"},
+    ]
+    repo = SupabaseRepo(FakeClient({"game_logs": game_logs}))
+    assert repo.game_ids_with_logs({"g1", "g2", "g3"}) == {"g1", "g2"}

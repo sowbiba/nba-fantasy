@@ -43,7 +43,7 @@ class SupabaseRepo:
         found: set[str] = set()
         for i in range(0, len(ids), 100):
             part = ids[i:i + 100]
-            rows = self._all(lambda: self.c.table(table).select("game_id").in_("game_id", part).order("game_id"))
+            rows = self._all(lambda: self.c.table(table).select("id,game_id").in_("game_id", part).order("id"))
             found |= {r["game_id"] for r in rows}
         return found
 
