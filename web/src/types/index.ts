@@ -25,7 +25,6 @@ export interface Game {
   home_team: string;
   away_team: string;
   tip_off: string | null;
-  series_id: number | null;
   game_number: number | null;
   status: string;
   home_score: number | null;
@@ -39,16 +38,6 @@ export interface Night {
   n_eligible_games: number;
   closing_at: string;
   is_phantom: boolean;
-}
-
-export interface Series {
-  id: number;
-  round: number;
-  home_team: string;
-  away_team: string;
-  home_wins: number;
-  away_wins: number;
-  status: string;
 }
 
 export interface Recommendation {
@@ -74,37 +63,10 @@ export interface Recommendation {
   best_future: string | null;
 }
 
-export interface SeriesForecast {
-  series_id: number;
-  winner_team: string;
-  expected_games: 4 | 5 | 6 | 7;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface WatchlistEntry {
   player_id: number;
   priority: 1 | 2 | 3;
   created_at: string;
-}
-
-export interface WeeklyPlanEntry {
-  id: number;
-  date: string;
-  player_id: number;
-  game_id: string;
-  estimated_score: number;
-  tier: string | null;
-  is_home: boolean;
-  opponent: string;
-  game_number: number | null;
-  elimination: string;
-  reasoning: string;
-  pros: string[];
-  cons: string[];
-  verdict: string;
-  pick_probability: number;
-  generated_at: string;
 }
 
 export interface Pick {
@@ -134,23 +96,3 @@ export interface RecommendationWithPlayer extends Recommendation {
   game: Game;
 }
 
-/**
- * Per-pair, in-series defensive aggregate, populated by the sync from
- * BoxScoreMatchupsV3. Used by the UI to surface "defended by X (62%)"
- * context next to a recommendation.
- */
-export interface MatchupAggregate {
-  player_id: number;
-  opponent_team: string;
-  series_id: number | null;
-  primary_def_id: number | null;
-  primary_def_name: string | null;
-  primary_def_share: number;
-  secondary_def_id: number | null;
-  secondary_def_name: string | null;
-  secondary_def_share: number;
-  allowed_off_ttfl_per36: number;
-  primary_def_minutes: number;
-  matchup_minutes_total: number;
-  samples_count: number;
-}

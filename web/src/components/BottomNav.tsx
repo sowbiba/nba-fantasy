@@ -94,9 +94,9 @@ const IconScore = (
 
 const tabs: Tab[] = [
   { href: "/", label: "Ce soir", icon: IconBall },
+  { href: "/deck", label: "Deck", icon: IconChart },
   { href: "/games", label: "Matchs", icon: IconScore },
   { href: "/picks", label: "Picks", icon: IconList },
-  { href: "/strategy", label: "Stratégie", icon: IconChart },
   { href: "/injuries", label: "Blessés", icon: IconMed },
 ];
 

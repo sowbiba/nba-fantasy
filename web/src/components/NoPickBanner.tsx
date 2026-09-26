@@ -2,15 +2,10 @@ import Link from "next/link";
 
 interface Props {
   hasGamesTonight: boolean;
-  hasPickToday: boolean;
 }
 
-export default function NoPickBanner({
-  hasGamesTonight,
-  hasPickToday,
-}: Props) {
+export default function NoPickBanner({ hasGamesTonight }: Props) {
   if (!hasGamesTonight) return null;
-  if (hasPickToday) return null;
 
   return (
     <Link
