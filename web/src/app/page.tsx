@@ -16,6 +16,8 @@ export const revalidate = 0;
 // dernière synchro ne doit pas rester en tête. Miroir de HARD_OUT_STATUSES
 // (engine/stats/availability_prob.py).
 const HARD_OUT_STATUSES = new Set(["Out", "Doubtful", "Out For Season", "Suspended"]);
+// Affichage seulement (R10) : la base refuse un x2 hors fenêtre (check
+// picks_x2_window, migration 021), ce set ne fait que masquer le bouton.
 const X2_MONTHS = new Set([11, 12, 1, 2, 3, 4]);
 
 async function getData() {
@@ -29,6 +31,7 @@ async function getData() {
   ]);
   const night = (nightRes.data as Night | null) ?? null;
   const games = ((gamesRes.data || []) as Game[]).filter((g) =>
+    // Miroir de ELIGIBLE_TYPES (engine/rules/game_types.py, R4).
     ["regular", "cup_final", "playoffs"].includes(g.game_type));
   const recs = (recsRes.data || []) as Recommendation[];
   const pick = (pickRes.data as Pick | null) ?? null;
@@ -86,7 +89,7 @@ export default async function TonightPage() {
       </header>
 
       {pick && pickPlayer ? (
-        <MyPickCard date={deck} playerId={pickPlayer.id} playerName={pickPlayer.name} team={pickPlayer.team}
+        <MyPickCard key={`${pick.id}-${pick.is_x2}`} date={deck} playerId={pickPlayer.id} playerName={pickPlayer.name} team={pickPlayer.team}
                     isX2={pick.is_x2} x2Allowed={pick.mode === "regular" && X2_MONTHS.has(month)} />
       ) : (
         <NoPickBanner hasGamesTonight={state !== "no_games"} hasPickToday={false} />
