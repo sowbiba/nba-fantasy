@@ -20,12 +20,6 @@ on:
   # Manual trigger so we can re-run after a series result lands or
   # debug from the Actions tab without waiting for tomorrow.
   workflow_dispatch:
-    inputs:
-      force_rosters:
-        description: "Bypass the 168h cache and refetch all 30 team rosters"
-        required: false
-        default: "false"
-        type: boolean
 
 concurrency:
   group: daily-sync
@@ -48,7 +42,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: pip
 
       - name: Install dependencies
@@ -59,17 +53,9 @@ jobs:
       - name: Run sync
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          USE_PAIR_MATCHUP: ${{ vars.USE_PAIR_MATCHUP || '1' }}
-          # Set by the workflow_dispatch toggle when re-running manually
-          # right after a trade or buyout. No-op for cron runs.
-          FORCE_ROSTERS: ${{ inputs.force_rosters || 'false' }}
-          # Without this CI never sees a print statement until the script
-          # exits — debugging hangs becomes guesswork.
           PYTHONUNBUFFERED: "1"
-        # `python -u` is belt-and-braces with PYTHONUNBUFFERED.
-        run: python -u -m sync.main
+        run: python -u -m engine.jobs.daily_sync
 
       # Active alerting: open (or comment on) a GitHub issue so a failed sync
       # surfaces by email instead of dying silently like the local cron did.

@@ -18,14 +18,14 @@ Le moteur classe les joueurs sur leur **espérance complète**, pas sur le seul 
 **Problème** : jouer ce soir le meilleur joueur « sur le papier » peut coûter un meilleur match du même joueur dans les 30 jours (un match facile à J+20). En SR, personne n'est éliminé : le coût d'un pick est précis, il bloque tous les matchs du joueur sur la fenêtre de cooldown. C'est pour ça que l'anticipation a du sens en SR, contrairement aux saves des PO (qui pariaient sur P(qualif) < 1).
 
 **Conception** :
-1. **Optimisation globale sur un horizon glissant de 31 jours** (une fenêtre de cooldown) : un joueur par soirée, total maximisé. Contraintes : R3 (un même joueur au plus une fois par fenêtre de 31 j, picks passés et réservations compris) et R9 (les réservations sont fixées).
+1. **Optimisation globale sur un horizon glissant de 30 jours (J à J+29 : une fenêtre de cooldown J+30)** : un joueur par soirée, total maximisé. Contraintes : R3 (un même joueur au plus une fois par fenêtre de 30 j, picks passés et réservations compris) et R9 (les réservations sont fixées).
 2. **Seule la soirée du jour est engagée.** Le plan est recalculé à chaque sync. Les 14 premiers jours forment le brouillon de deck, les jours 15 à 31 ne servent qu'à la décision.
 3. **Décote du futur selon son incertitude** : valeur à J+k = projection connue à l'avance (calendrier, domicile/extérieur, défense adverse, back-to-back, base de saison) × P(joueur toujours disponible et dans son rôle à J+k). Sans cette décote, l'optimiseur garde tout pour plus tard, c'est le piège des PO.
 4. **Garde-fou** : backtest sur la SR 2025-26 (calendrier et scores réels), plan anticipé contre best-available. Le plan n'est activé que s'il bat le best-available.
 
 ## S3 — Bonus x2 intégré au plan (SR) — validé 2026-09-26
 
-Pour chaque mois de novembre à avril, l'optimiseur du plan 31 jours choisit aussi **la soirée où poser le x2**. Il maximise la valeur doublée, pénalisée par le risque, parce que R10 double aussi un score négatif et fait perdre le x2 si le joueur ne joue pas. Le profil visé a un plancher élevé et une P(joue) élevée.
+Pour chaque mois de novembre à avril, l'optimiseur du plan 30 jours choisit aussi **la soirée où poser le x2**. Il maximise la valeur doublée, pénalisée par le risque, parce que R10 double aussi un score négatif et fait perdre le x2 si le joueur ne joue pas. Le profil visé a un plancher élevé et une P(joue) élevée.
 
 - Le choix du x2 peut influer sur l'affectation (garder une star régulière pour la soirée du x2).
 - **Fin de mois** : si le x2 n'est pas encore posé, le moteur le force sur la meilleure option restante du mois, pour ne jamais le perdre.
@@ -50,7 +50,7 @@ Cela dépend du potentiel de l'équipe (force, état de la série, blessures) et
 
 **Pas de save tax manuelle** : les réservations forcées en config (`TEAM_SAVE_RANKS`, reservation tax) sont supprimées. La couverture de risque vient du calcul, pas de réglages à la main.
 
-**Commun avec la SR** : moteur de stats, optimiseur d'affectation, espérance complète (S1). **Ce qui diffère** : règles de disponibilité (R3 contre R4/R5) et horizon (31 j avec calendrier connu en SR, reste des PO avec calendrier simulé en PO).
+**Commun avec la SR** : moteur de stats, optimiseur d'affectation, espérance complète (S1). **Ce qui diffère** : règles de disponibilité (R3 contre R4/R5) et horizon (30 j avec calendrier connu en SR, reste des PO avec calendrier simulé en PO).
 
 ## S5 — Force des équipes : Elo maison — validé 2026-09-26
 
