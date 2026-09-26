@@ -104,10 +104,11 @@ def test_backfill_x2_et_seconde_chance(pg):
         _seed(pg)
         pg.execute("set local session_replication_role = replica")
         pg.execute(
-            "insert into picks (player_id, game_id, date, mode, estimated_score, actual_score) values "
-            "(1, '0022500100', '2025-11-02', 'regular', 106, 53), "   # x2 réel
-            "(2, '0022500200', '2025-11-12', 'regular', 0, 0), "      # zéro : jamais x2
-            "(3, '0022500300', '2025-11-13', 'regular', 40, 38)"      # pick normal
+            "insert into picks (player_id, game_id, date, mode, season, estimated_score, actual_score) values "
+            "(1, '0022500100', '2025-11-02', 'regular', '2025-26', 106, 53), "   # x2 réel
+            "(2, '0022500200', '2025-11-12', 'regular', '2025-26', 0, 0), "      # zéro : jamais x2
+            "(3, '0022500300', '2025-11-13', 'regular', '2025-26', 40, 38), "    # pick normal
+            "(1, '0022500100', '2025-11-15', 'playoffs', '2025-26', 80, 40)"     # PO : coïncidence 2×, jamais touché
         )
         pg.execute("set local session_replication_role = origin")
         pg.execute(MIGRATION_018.read_text())  # rejouer la migration applique les backfills
@@ -120,6 +121,7 @@ def test_backfill_x2_et_seconde_chance(pg):
         assert rows["2025-11-02"] == (True, None)
         assert rows["2025-11-12"] == (False, 0)
         assert rows["2025-11-13"] == (False, 40)
+        assert rows["2025-11-15"] == (False, 80)
         assert pg.execute(
             "select bought_on::text, expires_on::text from second_chances"
         ).fetchall() == [("2025-11-17", "2025-11-24")]

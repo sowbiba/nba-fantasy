@@ -15,9 +15,12 @@ update picks p set season = season_of(p.game_id, p.date) where p.season is null;
 
 -- Backfill x2 2025-26 : l'import stockait le score doublé dans estimated_score.
 -- actual_score <> 0 : sinon les zéros (0 = 2 × 0) passeraient pour des x2.
+-- Restreint à l'import SR 2025-26 : un pick PO dont l'estimation (float du
+-- moteur) vaut par coïncidence 2 × le score réel ne doit pas être touché.
 update picks set is_x2 = true, estimated_score = null
 where not is_x2 and actual_score is not null and actual_score <> 0
-  and estimated_score = 2 * actual_score;
+  and estimated_score = 2 * actual_score
+  and mode = 'regular' and season = '2025-26';
 
 -- R15 — bonus Seconde chance, saisi à la main à l'achat.
 create table if not exists second_chances (
