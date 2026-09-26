@@ -1,3 +1,7 @@
+import psycopg
+import pytest
+
+
 def test_player_availability_par_soiree(pg):
     with pg.transaction(force_rollback=True):
         pg.execute(
@@ -39,3 +43,21 @@ def test_plan_insertion(pg):
             "values ('2026-11-10', 1, false, 52.0, 0.95, 49.4, 'match facile à domicile')"
         )
         assert pg.execute("select count(*) from plan").fetchone() == (1,)
+
+
+def test_plan_un_seul_joueur_par_soiree(pg):
+    with pg.transaction(force_rollback=True):
+        pg.execute(
+            "insert into players (id, name, team, position) values "
+            "(1, 'Jokic', 'DEN', 'C'), (2, 'Murray', 'DEN', 'G')"
+        )
+        pg.execute(
+            "insert into plan (generated_at, night, player_id, is_x2, projection, p_play, value, explanation) "
+            "values ('2026-11-09T12:00:00Z', '2026-11-10', 1, false, 52.0, 0.95, 49.4, 'match facile à domicile')"
+        )
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            with pg.transaction():
+                pg.execute(
+                    "insert into plan (generated_at, night, player_id, is_x2, projection, p_play, value, explanation) "
+                    "values ('2026-11-09T12:00:00Z', '2026-11-10', 2, false, 45.0, 0.9, 40.5, 'alternative')"
+                )

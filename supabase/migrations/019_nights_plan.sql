@@ -24,6 +24,8 @@ create table if not exists plan (
   p_play numeric not null,
   value numeric not null,
   explanation text not null default '',
+  -- un plan assigne au plus un joueur par soirée (spec §2.1) ; les
+  -- alternatives vivent dans recommendations
   unique (generated_at, night)
 );
 create index if not exists idx_plan_generated_night on plan(generated_at desc, night);
