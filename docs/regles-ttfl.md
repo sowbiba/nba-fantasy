@@ -24,6 +24,8 @@ Légende : **SR** = saison régulière, **PO** = playoffs.
 | R14 | **Soirée éligible sans pick** = **0 réel** : compte dans le total et dans la moyenne, mais ne bloque aucun joueur. | ✓ | ✓ | Décision |
 | R15 | **Bonus Seconde chance** (boutique, 600 TT$, acheté pour 1 semaine) : débloque avant la fin du cooldown un joueur qui a fait **0 pour absence**. Il doit être repické **dans les 7 jours**. Utilisé 2 fois en 2025-26 (Mobley 12/11→21/11, Giannis 08/03→17/03). | ✓ | – | Boutique TTFL |
 
+**Note sur R2 (annulation app-first) :** TrashTalk ne permet pas de vider une soirée déjà réservée là-bas — seulement de la remplacer. L'app autorise malgré tout un bouton « Annuler » (`cancelPick`), mais uniquement pour corriger une réservation **pas encore saisie sur TrashTalk** : c'est un correctif du workflow app-first (l'app réserve avant que ça soit reporté à la main sur trashtalk.co), pas une exception à R2. Un pick déjà saisi côté TrashTalk ne doit être modifié qu'en le remplaçant, jamais en l'annulant dans l'app.
+
 ## Définitions dérivées
 
 - **Moyenne** = total des points / nombre de soirées éligibles écoulées depuis le début de la période (SR ou PO). Les soirées sans pick (R14) y comptent pour 0.
