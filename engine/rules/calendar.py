@@ -50,7 +50,11 @@ class Night:
 
 
 def _as_date(v) -> date:
-    return v if isinstance(v, date) else date.fromisoformat(str(v)[:10])
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    return date.fromisoformat(str(v)[:10])
 
 
 def _as_dt(v) -> datetime | None:

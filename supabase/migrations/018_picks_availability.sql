@@ -13,6 +13,15 @@ create index if not exists idx_picks_player_season on picks(player_id, season, m
 
 update picks p set season = season_of(p.game_id, p.date) where p.season is null;
 
+-- Réconciliation historique de picks.mode : l'ancien front codait en dur
+-- mode='playoffs' et l'ancienne colonne avait ce défaut, donc des picks SR
+-- historiques peuvent porter mode='playoffs'. Le backfill x2 et les règles
+-- de disponibilité en dépendent. Ne déclenche pas picks_validate (qui ne se
+-- déclenche que sur player_id/date/game_id).
+update picks p set mode = case when g.game_type = 'playoffs' then 'playoffs' else 'regular' end
+from games g where g.id = p.game_id
+  and p.mode is distinct from (case when g.game_type = 'playoffs' then 'playoffs' else 'regular' end);
+
 -- Backfill x2 2025-26 : l'import stockait le score doublé dans estimated_score.
 -- actual_score <> 0 : sinon les zéros (0 = 2 × 0) passeraient pour des x2.
 -- Restreint à l'import SR 2025-26 : un pick PO dont l'estimation (float du
@@ -133,8 +142,8 @@ begin
   if not found then
     raise exception 'game_not_found' using errcode = 'P0001';
   end if;
-  if g.game_type not in ('regular', 'cup_final', 'playoffs') then
-    raise exception 'night_not_eligible:%', g.game_type using errcode = 'P0001';
+  if coalesce(g.game_type, 'unknown') not in ('regular', 'cup_final', 'playoffs') then
+    raise exception 'night_not_eligible:%', coalesce(g.game_type, 'unknown') using errcode = 'P0001';
   end if;
   if g.date <> new.date then
     raise exception 'date_mismatch' using errcode = 'P0001';

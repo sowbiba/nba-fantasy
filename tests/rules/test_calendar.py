@@ -97,3 +97,12 @@ def test_build_nights_finale_nba_cup_est_une_soiree_sr():
     games = [_game("0062600001", "2026-12-15", "OKC", "MIL", "cup_final", season="2026-27")]
     [n] = build_nights(games, [])
     assert (n.mode, n.n_eligible_games) == ("regular", 1)
+
+
+def test_build_nights_date_en_datetime_reste_une_date_simple():
+    # Le sync peut fournir "date" comme un datetime (pas une simple date) :
+    # _as_date doit renvoyer une date pure, pas le datetime tel quel.
+    games = [_game("0022500999", datetime(2025, 11, 1, 19, 30), "DEN", "LAL", "regular")]
+    [n] = build_nights(games, [])
+    assert n.date == date(2025, 11, 1)
+    assert type(n.date) is date

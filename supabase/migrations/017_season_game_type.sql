@@ -98,3 +98,18 @@ from (select series_id, min(season) as season from games
 where sub.series_id = s.id and s.season is null;
 -- Séries non rattachées à un match : les seules existantes sont les PO 2026.
 update series set season = '2025-26' where season is null;
+
+-- Le sync ne renseigne jamais season pour une nouvelle série : à défaut,
+-- déduite de la date du jour (season_of avec p_id vide = fallback date).
+create or replace function series_fill_season() returns trigger
+language plpgsql as $$
+begin
+  if new.season is null then
+    new.season := season_of('', current_date);
+  end if;
+  return new;
+end
+$$;
+drop trigger if exists series_fill_season on series;
+create trigger series_fill_season before insert on series
+  for each row execute function series_fill_season();

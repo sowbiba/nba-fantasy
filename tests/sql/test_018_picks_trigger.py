@@ -19,6 +19,7 @@ def _seed(pg):
         "('0022500200', '2025-11-10', 'DEN', 'BOS'), "
         "('0022500300', '2025-11-24', 'DEN', 'PHX'), "
         "('0012600001', '2026-10-05', 'DEN', 'LAL'), "
+        "('0042500101', '2026-04-20', 'DEN', 'LAL'), "
         "('unknown_1_2025-11-12', '2025-11-12', 'DEN', 'UNK')"
     )
 
@@ -108,7 +109,7 @@ def test_backfill_x2_et_seconde_chance(pg):
             "(1, '0022500100', '2025-11-02', 'regular', '2025-26', 106, 53), "   # x2 réel
             "(2, '0022500200', '2025-11-12', 'regular', '2025-26', 0, 0), "      # zéro : jamais x2
             "(3, '0022500300', '2025-11-13', 'regular', '2025-26', 40, 38), "    # pick normal
-            "(1, '0022500100', '2025-11-15', 'playoffs', '2025-26', 80, 40)"     # PO : coïncidence 2×, jamais touché
+            "(1, '0042500101', '2026-04-20', 'playoffs', '2025-26', 80, 40)"     # PO réel : coïncidence 2×, jamais touché
         )
         pg.execute("set local session_replication_role = origin")
         pg.execute(MIGRATION_018.read_text())  # rejouer la migration applique les backfills
@@ -121,7 +122,26 @@ def test_backfill_x2_et_seconde_chance(pg):
         assert rows["2025-11-02"] == (True, None)
         assert rows["2025-11-12"] == (False, 0)
         assert rows["2025-11-13"] == (False, 40)
-        assert rows["2025-11-15"] == (False, 80)
+        assert rows["2026-04-20"] == (False, 80)
         assert pg.execute(
             "select bought_on::text, expires_on::text from second_chances"
         ).fetchall() == [("2025-11-17", "2025-11-24")]
+
+
+def test_reconciliation_mode_avant_backfill_x2(pg):
+    # Historique importé avec mode='playoffs' (défaut de l'ancien front) sur
+    # un match SR : la réconciliation doit le remettre en 'regular' avant le
+    # backfill x2, sinon le pick reste ignoré.
+    with pg.transaction(force_rollback=True):
+        _seed(pg)
+        pg.execute("set local session_replication_role = replica")
+        pg.execute(
+            "insert into picks (player_id, game_id, date, mode, season, estimated_score, actual_score) "
+            "values (1, '0022500100', '2025-10-25', 'playoffs', null, 106, 53)"
+        )
+        pg.execute("set local session_replication_role = origin")
+        pg.execute(MIGRATION_018.read_text())  # rejouer la migration applique la réconciliation
+        row = pg.execute(
+            "select mode, season, is_x2, estimated_score from picks where date = '2025-10-25'"
+        ).fetchone()
+        assert row == ("regular", "2025-26", True, None)

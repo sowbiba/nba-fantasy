@@ -48,6 +48,20 @@ def test_trigger_game_logs_equipe_au_moment_du_match(pg):
         assert row == ("LAL", "2025-26")
 
 
+def test_trigger_series_remplit_saison_par_defaut(pg):
+    # Le sync ne renseigne jamais series.season pour une nouvelle série :
+    # le trigger doit la déduire de la date du jour (fallback season_of).
+    with pg.transaction(force_rollback=True):
+        pg.execute(
+            "insert into series (round, home_team, away_team) values (1, 'DEN', 'LAL')"
+        )
+        expected = pg.execute("select season_of('', current_date)").fetchone()[0]
+        row = pg.execute(
+            "select season from series where home_team = 'DEN' and away_team = 'LAL'"
+        ).fetchone()
+        assert row == (expected,)
+
+
 def test_colonnes_prod_declarees(pg):
     cols = {
         (t, c)
