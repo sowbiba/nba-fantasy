@@ -38,7 +38,13 @@ async function handle(req: NextRequest): Promise<Response> {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const db = adminClient();
+  let db: ReturnType<typeof adminClient>;
+  try {
+    db = adminClient();
+  } catch (e) {
+    console.error("adminClient() indisponible :", e instanceof Error ? e.message : e);
+    return Response.json({ error: "Erreur serveur" }, { status: 500 });
+  }
   const date = deckDate();
 
   const { data: night } = await db
