@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { computeTtflScore } from "@/lib/ttfl";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/public";
 
 export const runtime = "nodejs";
 

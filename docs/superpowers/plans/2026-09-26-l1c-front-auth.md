@@ -2127,11 +2127,11 @@ git commit -m "feat(web): défenseur principal de la saison sur les cartes de re
 
 - [ ] **Step 1: Mettre à jour la checklist**
 
-Dans `docs/reactivation-saison.md`, section « Quelques jours avant le premier match (après L1c) », ajouter en tête cet ordre :
+Dans `docs/reactivation-saison.md`, ajouter une section « Mise en prod L1c (front + auth) » avec cet ordre — corrigé suite à la revue finale (Ruling I1) : `supabase db push` applique **toutes** les migrations locales non encore poussées, donc pousser 021 seule exige de sortir temporairement 022 du dossier `supabase/migrations/`, sinon les deux passent ensemble et coupent les écritures anon avant que le nouveau front soit déployé et testé :
 1. prérequis manuels d'authentification (voir le plan L1c) ;
-2. `supabase db push` de la **021** (ajouts) ;
-3. déploiement du front (`cd web && npx vercel --prod`), puis connexion par code sur le téléphone ;
-4. `supabase db push` de la **022** (fin des écritures anon), seulement après avoir vérifié qu'un pick passe par le nouveau front.
+2. déplacer `supabase/migrations/022_lock_anon_writes.sql` hors du dossier, `supabase db push --linked --dry-run` (doit lister **uniquement 021**), puis `supabase db push --linked` ;
+3. déploiement du front (`cd web && npx vercel --prod`), puis connexion par code sur le téléphone et **test d'un pick** ;
+4. remettre `022_lock_anon_writes.sql` en place, `supabase db push --linked --dry-run` (doit lister **uniquement 022**), puis `supabase db push --linked`, seulement après avoir vérifié qu'un pick passe par le nouveau front.
 
 Commiter : `git commit -am "docs: ordre de mise en prod L1c"`.
 
@@ -2146,7 +2146,7 @@ Expected: aucune ligne. Sinon, l'index `picks_x2_month` échouerait : rapporter 
 - [ ] **Step 3: Feu vert et exécution (utilisateur)**
 
 Présenter à l'utilisateur les prérequis manuels (bloc en tête du plan), puis attendre son « oui » explicite pour chacune de ces étapes :
-- `db push` 021 ;
+- `db push` 021 seule (022 mise de côté, dry-run vérifié) ;
 - déploiement Vercel ;
 - test de connexion et d'un pick sur le téléphone ;
-- `db push` 022.
+- `db push` 022 (remise en place, dry-run vérifié).

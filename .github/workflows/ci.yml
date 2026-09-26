@@ -30,3 +30,24 @@ jobs:
       - run: python -m pytest tests/ -v
         env:
           TEST_DATABASE_URL: postgresql://postgres:pg@localhost:5432/postgres
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://localhost
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build

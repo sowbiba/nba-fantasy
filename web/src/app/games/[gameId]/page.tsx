@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/public";
 import { Game } from "@/types";
 import LiveBoxScore from "./LiveBoxScore";
 import BackButton from "../../player/[id]/BackButton";

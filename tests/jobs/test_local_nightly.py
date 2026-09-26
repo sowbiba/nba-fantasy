@@ -108,3 +108,22 @@ def test_matchups_bruts_des_matchs_eligibles_termines():
     repo = FakeRepo(games=games)
     run(repo, FakeStatsSource(matchups={"0022600010": [row], "0012600001": [row]}), TODAY, [])
     assert [(m["game_id"], m["def_team"]) for m in repo.matchups] == [("0022600010", "LAL")]
+
+
+def test_calendrier_charge_via_stats_nba():
+    sched = [{"id": "0022600001", "date": "2026-10-20", "home_team": "BOS", "away_team": "NYK", "tip_off": None},
+             {"id": "0062600001", "date": "2026-12-11", "home_team": "TBD", "away_team": "TBD", "tip_off": None}]
+    repo = FakeRepo()
+    nba = FakeStatsSource(schedule=sched)
+    run(repo, nba, date(2026, 9, 26), [])
+    assert nba.schedule_calls == [("2026-27", date(2026, 9, 21), date(2026, 10, 31))]
+    assert repo.games["0022600001"]["game_type"] == "regular"
+    assert "0062600001" not in repo.games           # hors fenêtre de 35 jours
+
+
+def test_calendrier_indisponible_n_arrete_pas_le_job():
+    class Boom(FakeStatsSource):
+        def schedule_stats(self, season, start, end):
+            raise ConnectionError("stats KO")
+    warnings = run(FakeRepo(), Boom(), date(2026, 9, 26), [])
+    assert any("calendrier" in w for w in warnings)

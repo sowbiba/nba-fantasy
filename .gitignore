@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 venv/
 .env
+.env.back
 
 # Node
 web/node_modules/

@@ -1,22 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Game, Series } from "@/types";
+import { Game } from "@/types";
 
 interface Props {
   games: Game[];
-  series: Series[];
 }
 
-export default function GamesCollapsible({ games, series }: Props) {
+export default function GamesCollapsible({ games }: Props) {
   const [open, setOpen] = useState(false);
-
-  const getSeriesForGame = (game: Game) =>
-    series.find(
-      (s) =>
-        (s.home_team === game.home_team && s.away_team === game.away_team) ||
-        (s.home_team === game.away_team && s.away_team === game.home_team)
-    );
 
   const formatTipOff = (tipOff: string | null) => {
     if (!tipOff) return "";
@@ -24,6 +16,7 @@ export default function GamesCollapsible({ games, series }: Props) {
     return d.toLocaleTimeString("fr-FR", {
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Europe/Paris",
     });
   };
 
@@ -81,12 +74,8 @@ export default function GamesCollapsible({ games, series }: Props) {
       {open && (
         <div className="border-t border-white/5 px-4 py-2 flex flex-col divide-y divide-white/5 animate-fade-up">
           {games.map((game) => {
-            const s = getSeriesForGame(game);
             return (
-              <div
-                key={game.id}
-                className="flex justify-between items-center py-2"
-              >
+              <div key={game.id} className="flex justify-between items-center py-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="flex items-center gap-1.5 font-mono-num text-[13px] font-semibold tracking-wide">
                     <span className={`${game.status === "final" && game.home_score !== null && game.away_score !== null && game.home_score > game.away_score ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text)]"}`}>
@@ -109,18 +98,6 @@ export default function GamesCollapsible({ games, series }: Props) {
                       {game.away_team}
                     </span>
                   </div>
-                  {game.game_number && (
-                    <span className="text-[9px] font-bold tracking-[0.1em] px-1.5 py-0.5 rounded bg-[color:var(--color-gold)]/15 text-[color:var(--color-gold)] border border-[color:var(--color-gold)]/30">
-                      G{game.game_number}
-                    </span>
-                  )}
-                  {s && (
-                    <span className="text-[10px] font-mono-num text-[color:var(--color-text-mute)]">
-                      {game.home_team === s.home_team
-                        ? `${s.home_wins}-${s.away_wins}`
-                        : `${s.away_wins}-${s.home_wins}`}
-                    </span>
-                  )}
                 </div>
                 <span className="font-mono-num text-[12px] text-[color:var(--color-text-soft)] tabular-nums shrink-0">
                   {game.status === "final" ? (

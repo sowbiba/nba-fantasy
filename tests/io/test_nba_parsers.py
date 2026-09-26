@@ -122,6 +122,12 @@ def test_stats_nba_interdit_depuis_github():
         src.league_game_log("2026-27", "Regular Season")
 
 
+def test_schedule_stats_interdit_depuis_github():
+    src = NbaSource(ApiGuard(), allow_stats=False)
+    with pytest.raises(RuntimeError, match="stats.nba.com"):
+        src.schedule_stats("2026-27", date(2026, 10, 1), date(2026, 11, 1))
+
+
 def test_roster_charge_la_saison_du_moteur_pas_le_defaut_nba_api(monkeypatch):
     """CommonTeamRoster calcule sa saison par défaut à l'import (souvent la
     saison précédente en septembre) : on doit toujours passer `season`

@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/public";
 import InjuriesList, { InjuredPlayer } from "./InjuriesList";
 
 export const revalidate = 300;

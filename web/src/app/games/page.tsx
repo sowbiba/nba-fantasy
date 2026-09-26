@@ -1,45 +1,18 @@
-import { supabase } from "@/lib/supabase";
-import { Game, Series } from "@/types";
+import { supabase } from "@/lib/supabase/public";
+import { Game } from "@/types";
+import { addDays, todayNBA } from "@/lib/date";
 import GamesList from "./GamesList";
 
 export const revalidate = 300;
 
-const PLAYOFFS_START = "2026-04-14";
-
 async function getData() {
-  const [gamesRes, seriesRes] = await Promise.all([
-    supabase
-      .from("games")
-      .select("*")
-      .gte("date", PLAYOFFS_START)
-      .order("date", { ascending: false }),
-    supabase.from("series").select("*"),
-  ]);
-
-  const allGames = (gamesRes.data || []) as Game[];
-  const allSeries = (seriesRes.data || []) as Series[];
-
-  // Drop unplayed phantom games of completed series (G6/G7 of a series
-  // that ended early — NBA's static schedule keeps the placeholder slots
-  // and load_schedule.py keeps re-upserting them). Keep `final` games so
-  // box scores remain visible.
-  const completedSeriesIds = new Set(
-    allSeries.filter((s) => s.status === "completed").map((s) => s.id)
-  );
-  const completedPairs = new Set(
-    allSeries
-      .filter((s) => s.status === "completed")
-      .map((s) => [s.home_team, s.away_team].sort().join("|"))
-  );
-  const games = allGames.filter((g) => {
-    if (g.status === "final") return true;
-    if (g.series_id && completedSeriesIds.has(g.series_id)) return false;
-    const pair = [g.home_team, g.away_team].sort().join("|");
-    if (completedPairs.has(pair)) return false;
-    return true;
-  });
-
-  return { games };
+  const today = todayNBA();
+  const { data } = await supabase.from("games").select("*")
+    .gte("date", addDays(today, -7)).lte("date", addDays(today, 7))
+    // Miroir de ELIGIBLE_TYPES (engine/rules/game_types.py, R4).
+    .in("game_type", ["regular", "cup_final", "playoffs"])
+    .order("date", { ascending: false }).limit(300);
+  return { games: (data || []) as Game[] };
 }
 
 export default async function GamesPage() {

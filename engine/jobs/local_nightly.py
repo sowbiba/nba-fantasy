@@ -3,6 +3,7 @@ IP GitHub sont bloquées.
 
 - effectifs des 30 équipes (+ désactivation des joueurs coupés, seulement si
   les 30 effectifs ont répondu) ;
+- calendrier des 35 prochains jours (stats.nba.com) ;
 - historique de la saison via LeagueGameLog (1 appel pour toute la ligue),
   qui rattrape les box scores purgés du CDN ;
 - matchups bruts défenseur/joueur des matchs éligibles terminés.
@@ -18,6 +19,8 @@ from engine.rules.game_types import is_eligible, season_for_date
 LOG_OVERLAP_DAYS = 3
 MATCHUP_DAYS = 3
 PLAYOFF_MONTHS = (4, 5, 6)
+SCHEDULE_PAST_DAYS = 5
+SCHEDULE_AHEAD_DAYS = 35
 
 
 def to_raw_matchups(rows: list[dict], game: dict) -> list[dict]:
@@ -69,6 +72,17 @@ def _load_logs(repo, nba, season, season_type, date_from, warnings, drop_from: d
     repo.upsert_game_logs(logs)
 
 
+def _load_schedule(repo, nba, season, today, warnings) -> None:
+    try:
+        rows = nba.schedule_stats(season, today - timedelta(days=SCHEDULE_PAST_DAYS),
+                                  today + timedelta(days=SCHEDULE_AHEAD_DAYS))
+    except Exception as exc:
+        warnings.append(f"calendrier {season} : {type(exc).__name__}")
+        return
+    if rows:
+        repo.upsert_games(rows)
+
+
 def _load_matchups(repo, nba, today, warnings) -> None:
     finals = [g for g in repo.load_games_between(today - timedelta(days=MATCHUP_DAYS), today - timedelta(days=1))
               if is_eligible(g.get("game_type", "unknown")) and g.get("status") == "final"]
@@ -87,12 +101,13 @@ def _load_matchups(repo, nba, today, warnings) -> None:
 
 def run(repo, nba, today: date, teams: list[dict], backfill_season: str | None = None) -> list[str]:
     warnings: list[str] = []
-    _refresh_rosters(repo, nba, teams, season_for_date(today), warnings)
+    season = season_for_date(today)
+    _refresh_rosters(repo, nba, teams, season, warnings)
+    _load_schedule(repo, nba, season, today, warnings)
     if backfill_season:
         for season_type in ("Regular Season", "Playoffs"):
             _load_logs(repo, nba, backfill_season, season_type, None, warnings)
     else:
-        season = season_for_date(today)
         start = today - timedelta(days=LOG_OVERLAP_DAYS)
         # Un match du jour peut encore être en direct : on ne l'ingère pas
         # comme "final" ici, le chevauchement de 3 jours le rattrapera la

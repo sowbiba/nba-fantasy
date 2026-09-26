@@ -182,13 +182,15 @@ class FakeNbaSource:
 
 
 class FakeStatsSource:
-    def __init__(self, rosters=None, game_logs=None, matchups=None, fail_teams=()):
+    def __init__(self, rosters=None, game_logs=None, matchups=None, fail_teams=(), schedule=None):
         self._rosters = rosters or {}
         self._logs = game_logs or {}
         self._matchups = matchups or {}
+        self._schedule = list(schedule or [])
         self.fail_teams = set(fail_teams)
         self.log_calls = []
         self.roster_calls = []
+        self.schedule_calls = []
 
     def roster(self, team_id, tricode, season):
         self.roster_calls.append((team_id, tricode, season))
@@ -202,3 +204,7 @@ class FakeStatsSource:
 
     def matchups(self, game_id):
         return list(self._matchups.get(game_id, []))
+
+    def schedule_stats(self, season, start, end):
+        self.schedule_calls.append((season, start, end))
+        return [g for g in self._schedule if start.isoformat() <= g["date"] <= end.isoformat()]

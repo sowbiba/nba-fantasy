@@ -1,60 +1,6 @@
 import Link from "next/link";
-import { MatchupAggregate, RecommendationWithPlayer } from "@/types";
-
-/**
- * One-liner showing the primary defender on this matchup and the TTFL
- * (offensive only) the player has produced under him in the active
- * series. Renders nothing until we have at least 5 minutes of pair
- * sample — below that, the team-positional fallback dominates the
- * scoring layer anyway and the line would be misleading.
- */
-function MatchupLine({
-  matchup,
-  playerName,
-}: {
-  matchup: MatchupAggregate | null | undefined;
-  playerName: string;
-}) {
-  if (!matchup || matchup.primary_def_minutes < 5 || !matchup.primary_def_name) {
-    return null;
-  }
-
-  const sharePct = Math.round(matchup.primary_def_share * 100);
-  const allowed = matchup.allowed_off_ttfl_per36;
-  // Color the allow rate qualitatively. We're *not* trying to grade
-  // absolute TTFL — the numbers below are heuristic for "favourable"
-  // vs "tough" matchups based on observed playoff distribution.
-  let toneClass = "text-[color:var(--color-text-soft)]";
-  if (allowed >= 35) toneClass = "text-[color:var(--color-emerald)]";
-  else if (allowed <= 22) toneClass = "text-[color:var(--color-flame-soft)]";
-
-  const firstName = playerName.split(" ")[0];
-
-  return (
-    <div className="mt-2 text-[11px] tracking-wide text-[color:var(--color-text-mute)]">
-      <span className="text-[10px] uppercase tracking-[0.18em] mr-1.5 text-[color:var(--color-text-soft)]/70">
-        Matchup
-      </span>
-      <span>
-        défendu par{" "}
-        <span className="font-semibold text-[color:var(--color-text)]">
-          {matchup.primary_def_name}
-        </span>{" "}
-        <span className="text-[color:var(--color-text-mute)]">
-          ({sharePct}%)
-        </span>
-        {" — "}
-        <span className={toneClass}>
-          {firstName} produit {allowed.toFixed(1)} TTFL/36
-        </span>{" "}
-        sur la série
-        {matchup.samples_count > 1
-          ? ` (${matchup.samples_count} matchs)`
-          : ""}
-      </span>
-    </div>
-  );
-}
+import { RecommendationWithPlayer } from "@/types";
+import { recMeta } from "@/lib/display";
 
 /**
  * Hero card for a Top-3 recommendation.
@@ -154,7 +100,6 @@ export default function RecommendationCard({
   const opponent = isHome ? game.away_team : game.home_team;
   const style = rankStyles[rank] || rankStyles[3];
   const tier = tierBadges[rec.tier] || tierBadges.filler;
-  const isElimCritical = rec.tags.includes("elimination_critical");
 
   return (
     <Link
@@ -235,11 +180,6 @@ export default function RecommendationCard({
                     {isHome ? "vs" : "@"}
                   </span>
                   <span className="font-semibold">{opponent}</span>
-                  {game.game_number && (
-                    <span className="ml-1.5 text-[color:var(--color-gold)]">
-                      · G{game.game_number}
-                    </span>
-                  )}
                 </p>
                 <p className="text-[10px] text-[color:var(--color-text-mute)] mt-0.5 uppercase tracking-[0.2em]">
                   {isHome ? "Domicile" : "Extérieur"} · {player.position}
@@ -257,7 +197,7 @@ export default function RecommendationCard({
                 </span>
               </div>
               <div className="text-[9px] uppercase tracking-[0.2em] text-[color:var(--color-text-mute)] mt-0.5">
-                Score estimé
+                Espérance
               </div>
             </div>
           </div>
@@ -274,7 +214,25 @@ export default function RecommendationCard({
             ) : null}
           </p>
 
-          <MatchupLine matchup={rec.matchup} playerName={player.name} />
+          {(() => {
+            const m = recMeta(rec);
+            if (!m.pPlay && !m.lockedUntil) return null;
+            return (
+              <p className="mt-2 text-[11px] tracking-wide text-[color:var(--color-text-mute)]">
+                {m.pPlay && <>Joue à <span className="text-[color:var(--color-text-soft)] font-semibold">{m.pPlay}</span></>}
+                {m.value && <> · valeur <span className="text-[color:var(--color-text-soft)] font-semibold">{m.value}</span></>}
+                {m.lockedUntil && <> · bloqué jusqu&apos;au {m.lockedUntil}</>}
+                {m.bestFuture && <><br />Meilleur soir à venir : {m.bestFuture}</>}
+              </p>
+            );
+          })()}
+
+          {rec.defender && (
+            <p className="mt-1 text-[11px] text-[color:var(--color-text-mute)]">
+              Défendu par <span className="font-semibold text-[color:var(--color-text)]">{rec.defender.name}</span> ({rec.defender.share} %)
+              {rec.defender.per36 !== null && <> · {rec.defender.per36} pts/36 contre lui</>} cette saison
+            </p>
+          )}
 
           {/* badges */}
           <div className="flex flex-wrap gap-1.5 mt-3">
@@ -285,24 +243,6 @@ export default function RecommendationCard({
               <span>{tier.label}</span>
             </span>
 
-            {isElimCritical && (
-              <TagChip
-                tone="bg-[color:var(--color-crimson)] text-white"
-                pulse
-              >
-                ELIMINATION
-              </TagChip>
-            )}
-            {rec.tags.includes("elimination_high") && (
-              <TagChip tone="bg-amber-500/20 text-amber-300 border border-amber-400/40">
-                SERIE CRITIQUE
-              </TagChip>
-            )}
-            {rec.tags.includes("teammate_out") && (
-              <TagChip tone="bg-[color:var(--color-violet)]/15 text-[color:var(--color-violet)] border border-[color:var(--color-violet)]/35">
-                USAGE+
-              </TagChip>
-            )}
             {rec.tags.includes("hot") && (
               <TagChip tone="bg-[color:var(--color-emerald)]/15 text-[color:var(--color-emerald)] border border-[color:var(--color-emerald)]/30">
                 EN FORME
@@ -313,9 +253,17 @@ export default function RecommendationCard({
                 HOME
               </TagChip>
             )}
-            {rec.tags.includes("volatile") && (
-              <TagChip tone="bg-[color:var(--color-crimson)]/10 text-[color:var(--color-crimson)]/90 border border-[color:var(--color-crimson)]/25">
-                VOLATILE
+            {rec.tags.includes("b2b") && (
+              <TagChip tone="bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                B2B
+              </TagChip>
+            )}
+            {rec.tags.includes("dnp_risk") && (
+              <TagChip
+                tone="bg-[color:var(--color-crimson)] text-white"
+                pulse
+              >
+                RISQUE
               </TagChip>
             )}
           </div>
