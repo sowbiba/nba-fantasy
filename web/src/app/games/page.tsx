@@ -9,6 +9,7 @@ async function getData() {
   const today = todayNBA();
   const { data } = await supabase.from("games").select("*")
     .gte("date", addDays(today, -7)).lte("date", addDays(today, 7))
+    // Miroir de ELIGIBLE_TYPES (engine/rules/game_types.py, R4).
     .in("game_type", ["regular", "cup_final", "playoffs"])
     .order("date", { ascending: false }).limit(300);
   return { games: (data || []) as Game[] };

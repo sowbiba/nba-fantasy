@@ -6,6 +6,10 @@ import { createAuthClient } from "@/lib/supabase/server";
 /** Envoie un code à 6 chiffres (modèle d'e-mail Supabase avec {{ .Token }}).
  *  Réponse identique pour un e-mail non autorisé : on ne révèle rien. */
 export async function sendCode(email: string): Promise<{ ok: boolean; error?: string }> {
+  if (!process.env.OWNER_EMAIL) {
+    console.error("OWNER_EMAIL non défini");
+    return { ok: false, error: "Connexion indisponible pour le moment." };
+  }
   const clean = email.trim().toLowerCase();
   if (!isOwnerEmail(clean, process.env.OWNER_EMAIL)) return { ok: true };
   const supabase = await createAuthClient();
@@ -14,6 +18,10 @@ export async function sendCode(email: string): Promise<{ ok: boolean; error?: st
 }
 
 export async function verifyCode(email: string, code: string): Promise<{ ok: boolean; error?: string }> {
+  if (!process.env.OWNER_EMAIL) {
+    console.error("OWNER_EMAIL non défini");
+    return { ok: false, error: "Connexion indisponible pour le moment." };
+  }
   const clean = email.trim().toLowerCase();
   if (!isOwnerEmail(clean, process.env.OWNER_EMAIL)) return { ok: false, error: "Code invalide ou expiré." };
   const supabase = await createAuthClient();
