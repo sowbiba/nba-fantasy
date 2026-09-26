@@ -5,7 +5,7 @@ import BackButton from "./BackButton";
 import WatchlistStar from "./WatchlistStar";
 import PickControls, { CalendarNight } from "./PickControls";
 import { deckDate, addDays } from "@/lib/date";
-import { recMeta } from "@/lib/display";
+import { HARD_OUT_STATUSES, recMeta } from "@/lib/display";
 
 export const revalidate = 0;
 
@@ -223,6 +223,18 @@ export default async function PlayerPage({
         </div>
       )}
 
+      {player.injury_status && (
+        <p role="status" className={`mt-4 px-3 py-2 rounded-[var(--radius-card-sm)] border text-sm ${
+          HARD_OUT_STATUSES.has(player.injury_status)
+            ? "border-[color:var(--color-crimson)]/40 text-[color:var(--color-crimson)]"
+            : "border-[color:var(--color-gold)]/40 text-[color:var(--color-gold)]"
+        }`}>
+          Blessé : {player.injury_status}{player.injury_detail ? ` · ${player.injury_detail}` : ""}
+          {player.injury_return_date && !isNaN(new Date(player.injury_return_date).getTime()) &&
+            ` · retour estimé ${new Date(player.injury_return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Europe/Paris" })}`}
+        </p>
+      )}
+
       {/* ----------------- soirées à venir ----------------- */}
       <section className="mt-6">
         <h2 className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--color-text-mute)] mb-2">
@@ -234,6 +246,7 @@ export default async function PlayerPage({
           today={today}
           lastBookable={addDays(today, 14)}
           picksByDate={picksByDate}
+          injuryStatus={player.injury_status}
         />
       </section>
     </div>

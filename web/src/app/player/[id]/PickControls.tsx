@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { savePick } from "@/app/actions";
 import { frDayMonth, frLongDate } from "@/lib/date";
-import { isClosed } from "@/lib/display";
+import { HARD_OUT_STATUSES, isClosed } from "@/lib/display";
 
 export type CalendarNight = {
   night: string; game_id: string; opponent: string; is_home: boolean;
@@ -18,9 +18,10 @@ const REASON: Record<string, string> = {
 };
 
 export default function PickControls({
-  playerId, nights, today, lastBookable, picksByDate,
+  playerId, nights, today, lastBookable, picksByDate, injuryStatus,
 }: {
   playerId: number; nights: CalendarNight[]; today: string; lastBookable: string;
+  injuryStatus: string | null;
   picksByDate: Record<string, { playerId: number; name: string }>;
 }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -61,10 +62,13 @@ export default function PickControls({
         // sien), n.ok peut être false à cause du cooldown que ce pick crée
         // lui-même : dans ce cas c'est « Ton pick », pas indisponible.
         const bookable = !isOwnPick && !existing && !closed && n.ok && n.night <= lastBookable;
+        // « disponible » = autorisé par les règles (cooldown, R3/R4/R5) ; la
+        // blessure est un autre sujet, affichée à part pour ne pas tromper.
+        const injured = !!injuryStatus && HARD_OUT_STATUSES.has(injuryStatus);
         const status = isOwnPick
           ? "ton pick"
           : n.ok
-            ? "disponible"
+            ? injured ? `pickable, mais blessé (${injuryStatus})` : "disponible"
             : n.reason === "cooldown" && n.available_from
               ? `dispo le ${frDayMonth(n.available_from)}`
               : REASON[n.reason ?? ""] ?? "indisponible";
@@ -74,7 +78,7 @@ export default function PickControls({
               <div className="text-sm text-[color:var(--color-text)] capitalize">
                 {n.night === today ? "Ce soir" : frLongDate(n.night)} · {n.is_home ? "vs" : "@"} {n.opponent}
               </div>
-              <div className={`text-[11px] ${isOwnPick || n.ok ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text-mute)]"}`}>{status}</div>
+              <div className={`text-[11px] ${n.ok && !isOwnPick && injured ? "text-[color:var(--color-crimson)]" : isOwnPick || n.ok ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text-mute)]"}`}>{status}</div>
             </div>
             {(bookable || canReplace) && (
               <button onClick={() => onBookableClick(n, canReplace ? existing : undefined)} disabled={pending}
