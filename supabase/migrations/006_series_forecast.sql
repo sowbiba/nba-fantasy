@@ -11,11 +11,15 @@ create table if not exists series_forecast (
 
 alter table series_forecast enable row level security;
 
+drop policy if exists "anon read forecast" on series_forecast;
 create policy "anon read forecast" on series_forecast
   for select using (true);
+drop policy if exists "anon insert forecast" on series_forecast;
 create policy "anon insert forecast" on series_forecast
   for insert with check (true);
+drop policy if exists "anon update forecast" on series_forecast;
 create policy "anon update forecast" on series_forecast
   for update using (true);
+drop policy if exists "anon delete forecast" on series_forecast;
 create policy "anon delete forecast" on series_forecast
   for delete using (true);

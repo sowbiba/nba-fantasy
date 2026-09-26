@@ -17,4 +17,5 @@ create table if not exists weekly_plan (
 create index if not exists idx_weekly_plan_date on weekly_plan(date);
 
 alter table weekly_plan enable row level security;
+drop policy if exists "anon read weekly_plan" on weekly_plan;
 create policy "anon read weekly_plan" on weekly_plan for select using (true);

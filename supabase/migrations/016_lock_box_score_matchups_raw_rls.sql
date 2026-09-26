@@ -6,8 +6,7 @@
 -- backend (service role, bypasses RLS) and only read by the frontend —
 -- no UI path writes it. Keep anon read.
 --
--- ⚠️ Not yet applied in prod: the Supabase project is paused (offseason,
--- syncs off since 2026-07-07). Apply at reactivation.
+-- Applied in prod on 2026-09-26 (supabase db push).
 
 drop policy if exists "anon insert box_score_matchups_raw" on box_score_matchups_raw;
 drop policy if exists "anon update box_score_matchups_raw" on box_score_matchups_raw;

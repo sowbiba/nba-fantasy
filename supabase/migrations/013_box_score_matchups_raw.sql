@@ -43,11 +43,11 @@ create index if not exists box_score_matchups_raw_off_player_idx
 
 alter table box_score_matchups_raw enable row level security;
 
-create policy "anon read box_score_matchups_raw"
-  on box_score_matchups_raw for select using (true);
-create policy "anon insert box_score_matchups_raw"
-  on box_score_matchups_raw for insert with check (true);
-create policy "anon update box_score_matchups_raw"
-  on box_score_matchups_raw for update using (true);
-create policy "anon delete box_score_matchups_raw"
-  on box_score_matchups_raw for delete using (true);
+drop policy if exists "anon read box_score_matchups_raw" on box_score_matchups_raw;
+create policy "anon read box_score_matchups_raw" on box_score_matchups_raw for select using (true);
+drop policy if exists "anon insert box_score_matchups_raw" on box_score_matchups_raw;
+create policy "anon insert box_score_matchups_raw" on box_score_matchups_raw for insert with check (true);
+drop policy if exists "anon update box_score_matchups_raw" on box_score_matchups_raw;
+create policy "anon update box_score_matchups_raw" on box_score_matchups_raw for update using (true);
+drop policy if exists "anon delete box_score_matchups_raw" on box_score_matchups_raw;
+create policy "anon delete box_score_matchups_raw" on box_score_matchups_raw for delete using (true);

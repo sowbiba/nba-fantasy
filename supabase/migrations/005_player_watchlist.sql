@@ -8,11 +8,15 @@ create table if not exists player_watchlist (
 
 alter table player_watchlist enable row level security;
 
+drop policy if exists "anon read watchlist" on player_watchlist;
 create policy "anon read watchlist" on player_watchlist
   for select using (true);
+drop policy if exists "anon insert watchlist" on player_watchlist;
 create policy "anon insert watchlist" on player_watchlist
   for insert with check (true);
+drop policy if exists "anon update watchlist" on player_watchlist;
 create policy "anon update watchlist" on player_watchlist
   for update using (true);
+drop policy if exists "anon delete watchlist" on player_watchlist;
 create policy "anon delete watchlist" on player_watchlist
   for delete using (true);
