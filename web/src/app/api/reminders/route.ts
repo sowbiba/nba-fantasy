@@ -59,10 +59,11 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const pick = pickRow
     ? (() => {
-        const player = playerJoin((pickRow as unknown as PickRow).players);
-        return player
-          ? { playerId: (pickRow as unknown as PickRow).player_id, name: player.name, injuryStatus: player.injury_status }
-          : null;
+        const row = pickRow as unknown as PickRow;
+        const player = playerJoin(row.players);
+        // Un pick existe même si la jointure players échoue (données
+        // incohérentes) : ne pas déclencher un faux rappel « pas de pick ».
+        return { playerId: row.player_id, name: player?.name ?? "?", injuryStatus: player?.injury_status ?? null };
       })()
     : null;
 
@@ -79,10 +80,16 @@ async function handle(req: NextRequest): Promise<Response> {
       console.error("Échec de la réservation du rappel :", error.message ?? error);
       continue;
     }
-    const result = await notifyAll({ title: r.title, body: r.body, url: "/" });
-    if (result.push === 0 && !result.telegram) {
-      // Rien n'a été délivré : on libère la réservation pour retenter au
-      // prochain run (dans les 15 min).
+    let delivered = false;
+    try {
+      const result = await notifyAll({ title: r.title, body: r.body, url: "/" });
+      delivered = result.push > 0 || result.telegram;
+    } catch (e) {
+      console.error("Échec de notifyAll :", e instanceof Error ? e.message : e);
+    }
+    if (!delivered) {
+      // Rien n'a été délivré (ou notifyAll a levé) : on libère la réservation
+      // pour retenter au prochain run (dans les 15 min).
       await db.from("reminders_sent").delete().eq("night", date).eq("kind", r.kind).eq("key", r.key);
       continue;
     }
