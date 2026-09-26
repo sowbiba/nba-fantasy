@@ -1,9 +1,12 @@
-"""Job quotidien (GitHub Actions, 4×/jour) : calendrier, scores, box scores,
-blessures, soirées, recommandations du soir et plan 30 jours.
+"""Job quotidien (GitHub Actions, plusieurs fois/jour) : statuts et scores
+ESPN, scoring des picks, blessures, soirées, recommandations du soir et
+plan 30 jours.
 
-Jamais d'appel à stats.nba.com (IP GitHub bloquées). Chaque étape réseau
-peut échouer sans faire tomber le job : la décision tourne alors sur les
-données en base, et l'échec est noté dans `warnings`.
+Jamais d'appel à stats.nba.com (IP GitHub bloquées) ni au CDN NBA (403
+partout). Calendrier et box scores viennent de `local_nightly` (stats.nba.com,
+depuis le PC local). Chaque étape réseau peut échouer sans faire tomber le
+job : la décision tourne alors sur les données en base, et l'échec est noté
+dans `warnings`.
 """
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -13,7 +16,7 @@ from engine.explain.texts import plan_explanation, reco_texts, tier
 from engine.io.espn import match_injury_to_player
 from engine.rules.availability import PickRow, SecondChance, SeriesRow
 from engine.rules.calendar import PARIS, build_nights
-from engine.rules.game_types import is_eligible, previous_season, season_for_date
+from engine.rules.game_types import previous_season, season_for_date
 from engine.stats.aggregates import player_aggregates
 from engine.stats.profile import GameLog, build_profile, prior_minutes, role_scales
 from engine.stats.team_defense import defense_factors
@@ -21,7 +24,6 @@ from engine.strategy.regular import HORIZON_DAYS, DecisionInputs, decide
 
 SCHEDULE_PAST_DAYS = 5
 SCHEDULE_AHEAD_DAYS = 35
-BOX_SCORE_DAYS = 3
 PLAN_RETENTION = timedelta(days=7)
 IDENTITY = ("id", "name", "team", "position")
 
@@ -53,26 +55,23 @@ def _is_settled(game: dict, today: date) -> bool:
     return game.get("status") == "final" or _d(game["date"]) <= today - timedelta(days=2)
 
 
-def _ingest_box_scores(repo, source, today: date, known_players: set[int], result: RunResult) -> None:
-    recent = [g for g in repo.load_games_between(today - timedelta(days=BOX_SCORE_DAYS), today - timedelta(days=1))
-              if is_eligible(g.get("game_type", "unknown")) and _is_settled(g, today)]
-    done = repo.game_ids_with_logs(g["id"] for g in recent)
-    for g in recent:
-        if g["id"] in done:
+def apply_scoreboard(repo, rows: list[dict], window_games: list[dict]) -> int:
+    """Statuts/scores ESPN → table games, appariés par (date, domicile, extérieur)."""
+    by_key = {(str(g["date"])[:10], g["home_team"], g["away_team"]): g for g in window_games}
+    updates = []
+    for r in rows:
+        g = by_key.get((r["date"], r["home_team"], r["away_team"]))
+        if g is None:
             continue
-        rows = _step(f"box score {g['id']}", lambda g=g: source.box_score(g["id"], str(g["date"])[:10]), result) or []
-        unknown = [r for r in rows if r["player_id"] not in known_players]
-        if unknown:
-            result.warnings.append(f"box score {g['id']} : {len(unknown)} joueur(s) inconnu(s) ignoré(s)")
-        rows = [r for r in rows if r["player_id"] in known_players]
-        if rows:
-            repo.upsert_game_logs(rows)
-            if g.get("status") != "final":
-                repo.upsert_games([{"id": g["id"], "date": g["date"], "home_team": g["home_team"],
-                                    "away_team": g["away_team"], "status": "final"}])
+        updates.append({"id": g["id"], "date": g["date"], "home_team": g["home_team"], "away_team": g["away_team"],
+                        "status": r["status"], "home_score": r["home_score"], "away_score": r["away_score"],
+                        **({"tip_off": r["tip_off"]} if r.get("tip_off") else {})})
+    if updates:
+        repo.upsert_games(updates)
+    return len(updates)
 
 
-def _score_picks(repo, season: str, today: date) -> None:
+def score_picks(repo, season: str, today: date) -> None:
     games = {g["id"]: g for g in repo.load_games_between(today - timedelta(days=40), today)}
     picks = [p for p in repo.load_picks(season) if p.get("actual_score") is None and _d(p["date"]) < today]
     logs = {(l["player_id"], l["game_id"]): l for l in repo.load_game_logs([season])}
@@ -113,22 +112,17 @@ def _apply_injuries(repo, injuries: dict[str, list[dict]]) -> None:
         repo.upsert_players(rows)
 
 
-def run(repo, source, fetch_injuries, today: date, now: datetime) -> RunResult:
+def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime) -> RunResult:
     result = RunResult()
     season = season_for_date(today)
     prior = previous_season(season)
 
-    schedule = _step("calendrier", lambda: source.schedule(
-        today - timedelta(days=SCHEDULE_PAST_DAYS), today + timedelta(days=SCHEDULE_AHEAD_DAYS)), result)
-    if schedule:
-        repo.upsert_games(schedule)
-    board = _step("scoreboard", lambda: source.scoreboard(today), result)
-    if board:
-        repo.upsert_games(board)          # après le calendrier : le statut live/final gagne
-
-    known = {p["id"] for p in repo.load_players()}
-    _ingest_box_scores(repo, source, today, known, result)
-    _score_picks(repo, season, today)
+    window_games = repo.load_games_between(today - timedelta(days=1), today)
+    for d in (today - timedelta(days=1), today):
+        board = _step(f"scoreboard {d}", lambda d=d: fetch_scoreboard(d), result)
+        if board:
+            apply_scoreboard(repo, board, window_games)
+    score_picks(repo, season, today)
 
     injuries = _step("blessures", fetch_injuries, result)
     if injuries:
@@ -205,19 +199,17 @@ def run(repo, source, fetch_injuries, today: date, now: datetime) -> RunResult:
 
 
 def main() -> None:
-    from engine.io.espn import fetch_all_injuries
+    from engine.io.espn import fetch_all_injuries, fetch_espn_scoreboard
     from engine.io.guard import ApiGuard
-    from engine.io.nba import NbaSource
     from engine.io.repo import SupabaseRepo
 
     guard = ApiGuard()
     repo = SupabaseRepo.from_env()
-    source = NbaSource(guard, allow_stats=False)
     now = datetime.now(UTC)
     today = now.astimezone(PARIS).date()
     log_id = repo.start_log("daily_sync")
     try:
-        result = run(repo, source, lambda: fetch_all_injuries(guard), today, now)
+        result = run(repo, lambda d: fetch_espn_scoreboard(d, guard), lambda: fetch_all_injuries(guard), today, now)
     except Exception as exc:
         repo.finish_log(log_id, status="error", error=str(exc), api_calls=guard.summary())
         raise

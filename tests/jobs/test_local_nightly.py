@@ -127,3 +127,24 @@ def test_calendrier_indisponible_n_arrete_pas_le_job():
             raise ConnectionError("stats KO")
     warnings = run(FakeRepo(), Boom(), date(2026, 9, 26), [])
     assert any("calendrier" in w for w in warnings)
+
+
+def test_picks_scores_des_le_chargement_des_logs():
+    # Un pick d'hier, un match d'hier "final", un log LeagueGameLog pour ce
+    # match → le pick est scoré dès le chargement des logs, sans attendre
+    # daily_sync.
+    yesterday = TODAY - timedelta(days=1)
+    game = {"0022600011": {"id": "0022600011", "date": yesterday.isoformat(), "home_team": "BOS",
+                           "away_team": "DEN", "status": "final"}}
+    logs = [{"player_id": 5, "game_id": "0022600011", "date": yesterday.isoformat(), "team": "BOS",
+             "minutes": 30, "ttfl_score": 37, "is_home": True, "pts": 20, "reb": 5, "ast": 5, "stl": 1,
+             "blk": 1, "fgm": 8, "fga": 15, "tpm": 2, "tpa": 5, "ftm": 2, "fta": 2, "tov": 1, "fouls": 2}]
+    players = {5: {"id": 5, "name": "Nouveau", "team": "BOS"}}
+    nba = FakeStatsSource(game_logs={("2026-27", "Regular Season"): (game, logs, players)})
+    repo = FakeRepo(players=[{"id": 5, "name": "Nouveau", "team": "BOS", "position": "F", "active": True}],
+                    games=[{"id": "0022600011", "date": yesterday.isoformat(), "home_team": "BOS",
+                            "away_team": "DEN", "status": "final", "game_type": "regular", "season": "2026-27"}],
+                    picks=[{"id": 1, "player_id": 5, "game_id": "0022600011", "date": yesterday.isoformat(),
+                            "mode": "regular", "season": "2026-27", "actual_score": None, "is_x2": False}])
+    run(repo, nba, TODAY, [])
+    assert repo.picks[0]["actual_score"] == 37
