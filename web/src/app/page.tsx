@@ -8,14 +8,10 @@ import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import MyPickCard from "@/components/MyPickCard";
 import { deckDate, frLongDate, parisTime } from "@/lib/date";
-import { homeState } from "@/lib/display";
+import { HARD_OUT_STATUSES, homeState } from "@/lib/display";
 
 export const revalidate = 0;
 
-// Garde-fou d'affichage (pas une règle) : un joueur passé « Out » après la
-// dernière synchro ne doit pas rester en tête. Miroir de HARD_OUT_STATUSES
-// (engine/stats/availability_prob.py).
-const HARD_OUT_STATUSES = new Set(["Out", "Doubtful", "Out For Season", "Suspended"]);
 // Affichage seulement (R10) : la base refuse un x2 hors fenêtre (check
 // picks_x2_window, migration 021), ce set ne fait que masquer le bouton.
 const X2_MONTHS = new Set([11, 12, 1, 2, 3, 4]);
