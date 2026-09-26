@@ -14,7 +14,9 @@ export async function sendCode(email: string): Promise<{ ok: boolean; error?: st
 }
 
 export async function verifyCode(email: string, code: string): Promise<{ ok: boolean; error?: string }> {
+  const clean = email.trim().toLowerCase();
+  if (!isOwnerEmail(clean, process.env.OWNER_EMAIL)) return { ok: false, error: "Code invalide ou expiré." };
   const supabase = await createAuthClient();
-  const { error } = await supabase.auth.verifyOtp({ email: email.trim().toLowerCase(), token: code.trim(), type: "email" });
+  const { error } = await supabase.auth.verifyOtp({ email: clean, token: code.replace(/\D/g, ""), type: "email" });
   return error ? { ok: false, error: "Code invalide ou expiré." } : { ok: true };
 }

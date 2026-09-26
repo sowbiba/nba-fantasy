@@ -47,7 +47,7 @@ export default function LoginForm() {
   ) : (
     <form onSubmit={submitCode} className="mt-6">
       <label className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--color-text-mute)]">Code reçu par e-mail</label>
-      <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} required value={code}
+      <input inputMode="numeric" autoComplete="one-time-code" maxLength={10} required value={code}
              onChange={(e) => setCode(e.target.value)} className={`${input} tracking-[0.5em] text-center text-2xl`} />
       <button disabled={pending} className={button}>{pending ? "…" : "VALIDER"}</button>
       {error && <p role="alert" className="mt-2 text-xs text-[color:var(--color-crimson)]">{error}</p>}
