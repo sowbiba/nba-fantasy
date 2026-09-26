@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { espnTricode, findEspnEvent, matchPlayerId, normalizeName, parseEspnBox } from "./espn";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  espnTricode,
+  fetchEspnLiveBox,
+  findEspnEvent,
+  matchPlayerId,
+  normalizeName,
+  parseEspnBox,
+} from "./espn";
 
 describe("espn", () => {
   it("tricodes", () => {
@@ -36,5 +43,40 @@ describe("espn", () => {
         { homeAway: "away", team: { abbreviation: "NY" }, score: "48" }] }] }] };
     expect(findEspnEvent(sb, "GSW", "NYK")).toEqual({ id: "401", state: "in", period: 2, clock: "5:12", homeScore: 50, awayScore: 48 });
     expect(findEspnEvent(sb, "BOS", "NYK")).toBeNull();
+  });
+
+  describe("fetchEspnLiveBox — échecs réseau/parsing", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("renvoie null si le fetch du scoreboard rejette (réseau)", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+      await expect(fetchEspnLiveBox("20260410", "GSW", "NYK")).resolves.toBeNull();
+    });
+
+    it("renvoie null si le scoreboard répond 200 avec un corps non-JSON", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.reject(new SyntaxError("Unexpected token < in JSON")),
+        }),
+      );
+      await expect(fetchEspnLiveBox("20260410", "GSW", "NYK")).resolves.toBeNull();
+    });
+
+    it("renvoie null si le fetch du summary rejette après un scoreboard valide", async () => {
+      const sb = { events: [{ id: "401", status: { period: 2, displayClock: "5:12", type: { state: "in" } },
+        competitions: [{ competitors: [
+          { homeAway: "home", team: { abbreviation: "GS" }, score: "50" },
+          { homeAway: "away", team: { abbreviation: "NY" }, score: "48" }] }] }] };
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(sb) })
+        .mockRejectedValueOnce(new Error("summary unreachable"));
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(fetchEspnLiveBox("20260410", "GSW", "NYK")).resolves.toBeNull();
+    });
   });
 });

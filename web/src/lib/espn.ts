@@ -203,21 +203,28 @@ export async function fetchEspnLiveBox(
   home: string,
   away: string,
 ): Promise<{ event: EspnEvent; rows: EspnBoxRow[] } | null> {
-  const scoreboardRes = await fetch(`${SCOREBOARD_URL}?dates=${date}`, {
-    next: { revalidate: 8 },
-  });
-  if (!scoreboardRes.ok) return null;
-  const scoreboard = await scoreboardRes.json();
+  // Any network failure (DNS/timeout/reset) or non-JSON body must resolve
+  // to null rather than throw, so the route can turn it into a 502 instead
+  // of leaking an uncaught exception as a generic 500.
+  try {
+    const scoreboardRes = await fetch(`${SCOREBOARD_URL}?dates=${date}`, {
+      next: { revalidate: 8 },
+    });
+    if (!scoreboardRes.ok) return null;
+    const scoreboard = await scoreboardRes.json();
 
-  const event = findEspnEvent(scoreboard, home, away);
-  if (!event) return null;
+    const event = findEspnEvent(scoreboard, home, away);
+    if (!event) return null;
 
-  const summaryRes = await fetch(`${SUMMARY_URL}?event=${event.id}`, {
-    next: { revalidate: 8 },
-  });
-  if (!summaryRes.ok) return null;
-  const summary = await summaryRes.json();
-  const rows = parseEspnBox(summary);
+    const summaryRes = await fetch(`${SUMMARY_URL}?event=${event.id}`, {
+      next: { revalidate: 8 },
+    });
+    if (!summaryRes.ok) return null;
+    const summary = await summaryRes.json();
+    const rows = parseEspnBox(summary);
 
-  return { event, rows };
+    return { event, rows };
+  } catch {
+    return null;
+  }
 }
