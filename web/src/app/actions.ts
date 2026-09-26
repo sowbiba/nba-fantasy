@@ -55,8 +55,10 @@ export async function setX2(input: { date: string; value: boolean }): Promise<Ac
   const denied = await owner();
   if (denied) return denied;
   if (input.date < deckDate()) return { ok: false, error: "Le x2 ne se modifie plus après la fermeture." };
-  const { error } = await adminClient().from("picks").update({ is_x2: input.value }).eq("date", input.date);
+  const { data, error } = await adminClient().from("picks")
+    .update({ is_x2: input.value }).eq("date", input.date).select("id");
   if (error) return { ok: false, error: pickErrorMessage(error) };
+  if (!data?.length) return { ok: false, error: "Aucun pick ce soir-là : choisis d'abord un joueur." };
   refresh();
   return { ok: true };
 }
