@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeState, recMeta } from "./display";
+import { homeState, pickPoints, recMeta } from "./display";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -10,6 +10,16 @@ describe("recMeta", () => {
     expect(recMeta({ p_play: null, value: null, locked_until: null, best_future: null }))
       .toEqual({ pPlay: null, value: null, lockedUntil: null, bestFuture: null });
   });
+});
+
+describe("pickPoints", () => {
+  it("score positif x2 : doublé", () => expect(pickPoints(31, true)).toBe(62));
+  it("score négatif x2 : doublé aussi (double faute)", () => expect(pickPoints(-4, true)).toBe(-8));
+  it("zéro : reste zéro, x2 ou pas", () => {
+    expect(pickPoints(0, true)).toBe(0);
+    expect(pickPoints(0, false)).toBe(0);
+  });
+  it("pas encore scoré : null", () => expect(pickPoints(null, false)).toBeNull());
 });
 
 describe("homeState", () => {

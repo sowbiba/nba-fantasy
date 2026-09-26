@@ -49,6 +49,20 @@ export async function savePick(input: { date: string; playerId: number; gameId: 
   return { ok: true };
 }
 
+/** R2/R9 : annule une réservation ou un pick pas encore scoré, pour libérer
+ *  la soirée. Un pick déjà scoré ne peut plus être annulé. */
+export async function cancelPick(input: { date: string }): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  if (input.date < deckDate()) return { ok: false, error: "Cette soirée est passée." };
+  const { data, error } = await adminClient().from("picks")
+    .delete().eq("date", input.date).is("actual_score", null).select("id");
+  if (error) return { ok: false, error: pickErrorMessage(error) };
+  if (!data?.length) return { ok: false, error: "Aucun pick annulable ce soir-là." };
+  refresh();
+  return { ok: true };
+}
+
 /** R10 : activable jusqu'à la fermeture (soirée ≥ aujourd'hui) ; l'unicité
  *  mensuelle et la fenêtre novembre-avril sont garanties par la base. */
 export async function setX2(input: { date: string; value: boolean }): Promise<ActionResult> {

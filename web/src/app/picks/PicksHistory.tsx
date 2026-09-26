@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { addSecondChance } from "@/app/actions";
+import { addSecondChance, cancelPick } from "@/app/actions";
 import { frDayMonth, frLongDate } from "@/lib/date";
+import { pickPoints } from "@/lib/display";
 
 export type HistoryRow = {
   id: number; date: string; player_id: number; player_name: string; team: string;
@@ -12,6 +13,7 @@ export type HistoryRow = {
 
 export default function PicksHistory({ rows, today }: { rows: HistoryRow[]; today: string }) {
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
 
   const secondChance = (id: number) => {
@@ -22,11 +24,25 @@ export default function PicksHistory({ rows, today }: { rows: HistoryRow[]; toda
     });
   };
 
+  const cancel = (r: HistoryRow) => {
+    if (confirmingId !== r.id) {
+      setConfirmingId(r.id);
+      return;
+    }
+    setMsg(null);
+    startTransition(async () => {
+      const res = await cancelPick({ date: r.date });
+      setConfirmingId(null);
+      if (!res.ok) setMsg(res.error);
+    });
+  };
+
   return (
     <div>
       <ol className="flex flex-col gap-1.5">
         {rows.map((r) => {
-          const points = r.actual_score === null ? null : r.actual_score * (r.is_x2 ? 2 : 1);
+          const points = pickPoints(r.actual_score, r.is_x2);
+          const cancellable = r.date >= today && r.actual_score === null;
           return (
             <li key={r.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/5">
               <div className="min-w-0">
@@ -36,6 +52,12 @@ export default function PicksHistory({ rows, today }: { rows: HistoryRow[]; toda
                 <div className="text-[11px] text-[color:var(--color-text-mute)] capitalize">
                   {r.date > today ? `réservé · ${frLongDate(r.date)}` : frLongDate(r.date)}
                 </div>
+                {cancellable && (
+                  <button onClick={() => cancel(r)} disabled={pending}
+                          className="mt-1 text-[10px] underline text-[color:var(--color-text-soft)]">
+                    {confirmingId === r.id ? "Confirmer l'annulation" : "Annuler"}
+                  </button>
+                )}
               </div>
               <div className="text-right shrink-0">
                 <div className="font-display text-xl leading-none font-mono-num text-[color:var(--color-text)]">

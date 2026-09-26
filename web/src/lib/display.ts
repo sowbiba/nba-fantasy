@@ -11,6 +11,11 @@ export function recMeta(rec: RecS1) {
   };
 }
 
+/** Points affichés pour un pick scoré : score réel × 2 si x2, sinon tel quel. */
+export function pickPoints(actualScore: number | null, isX2: boolean): number | null {
+  return actualScore === null ? null : actualScore * (isX2 ? 2 : 1);
+}
+
 export function homeState(s: { hasNight: boolean; recCount: number; hasPick: boolean }) {
   if (!s.hasNight) return "no_games" as const;
   if (s.hasPick) return "picked" as const;
