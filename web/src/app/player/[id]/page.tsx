@@ -1,19 +1,13 @@
 import { supabase } from "@/lib/supabase/public";
-import {
-  Player,
-  Recommendation,
-  Game,
-  Pick,
-  WatchlistEntry,
-  WeeklyPlanEntry,
-} from "@/types";
+import { Player, Recommendation, WatchlistEntry } from "@/types";
 import { ProsBlock, ConsBlock, VerdictBlock } from "@/components/ProsCons";
-import PickButton from "./PickButton";
 import BackButton from "./BackButton";
 import WatchlistStar from "./WatchlistStar";
-import { todayNBA } from "@/lib/date";
+import PickControls, { CalendarNight } from "./PickControls";
+import { deckDate, addDays } from "@/lib/date";
+import { recMeta } from "@/lib/display";
 
-export const revalidate = 300;
+export const revalidate = 0;
 
 const tierLabels: Record<
   string,
@@ -36,80 +30,44 @@ const tierLabels: Record<
   },
 };
 
-async function getData(playerId: number, planDate: string | null) {
-  const today = todayNBA();
-  const isFuturePlan = !!planDate && planDate !== today;
-  const effectiveDate = planDate || today;
-
-  const [playerRes, recRes, planRes, gamesRes, picksRes, watchlistRes] =
-    await Promise.all([
-      supabase.from("players").select("*").eq("id", playerId).single(),
-      isFuturePlan
-        ? Promise.resolve({ data: null })
-        : supabase
-            .from("recommendations")
-            .select("*")
-            .eq("player_id", playerId)
-            .eq("date", today)
-            .single(),
-      isFuturePlan
-        ? supabase
-            .from("weekly_plan")
-            .select("*")
-            .eq("player_id", playerId)
-            .eq("date", planDate)
-            .single()
-        : Promise.resolve({ data: null }),
-      supabase.from("games").select("*").eq("date", effectiveDate),
-      supabase.from("picks").select("*").eq("mode", "playoffs"),
-      supabase
-        .from("player_watchlist")
-        .select("*")
-        .eq("player_id", playerId)
-        .maybeSingle(),
-    ]);
-  const player = playerRes.data as Player | null;
-  const rec = recRes.data as Recommendation | null;
-  const plan = planRes.data as WeeklyPlanEntry | null;
-  const games = (gamesRes.data || []) as Game[];
-  const picks = (picksRes.data || []) as Pick[];
-  const watchlist = (watchlistRes.data as WatchlistEntry | null) ?? null;
-  const game = games.find(
-    (g) => g.home_team === player?.team || g.away_team === player?.team
-  );
-  const alreadyPicked = picks.some((p) => p.player_id === playerId);
-  const pickedToday = picks.some((p) => p.date === today);
+async function getData(playerId: number) {
+  const today = deckDate();
+  const [playerRes, recRes, calRes, watchlistRes] = await Promise.all([
+    supabase.from("players").select("*").eq("id", playerId).single(),
+    supabase
+      .from("recommendations")
+      .select("*")
+      .eq("player_id", playerId)
+      .eq("date", today)
+      .maybeSingle(),
+    supabase.rpc("player_calendar", {
+      p_player_id: playerId,
+      p_from: today,
+      p_to: addDays(today, 29),
+    }),
+    supabase
+      .from("player_watchlist")
+      .select("*")
+      .eq("player_id", playerId)
+      .maybeSingle(),
+  ]);
   return {
-    player,
-    rec,
-    plan,
-    game,
-    alreadyPicked,
-    pickedToday,
-    isFuturePlan,
-    watchlist,
+    today,
+    player: playerRes.data as Player | null,
+    rec: (recRes.data as Recommendation | null) ?? null,
+    nights: (calRes.data || []) as CalendarNight[],
+    watchlist: (watchlistRes.data as WatchlistEntry | null) ?? null,
   };
 }
 
 export default async function PlayerPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ planDate?: string }>;
 }) {
-  const [{ id }, { planDate }] = await Promise.all([params, searchParams]);
+  const { id } = await params;
   const playerId = parseInt(id, 10);
-  const {
-    player,
-    rec,
-    plan,
-    game,
-    alreadyPicked,
-    pickedToday,
-    isFuturePlan,
-    watchlist,
-  } = await getData(playerId, planDate ?? null);
+  const { today, player, rec, nights, watchlist } = await getData(playerId);
 
   if (!player) {
     return (
@@ -123,37 +81,14 @@ export default async function PlayerPage({
     );
   }
 
-  const isHome = isFuturePlan
-    ? plan?.is_home ?? false
-    : game
-    ? player.team === game.home_team
-    : false;
-  const opponent = isFuturePlan
-    ? plan?.opponent ?? "?"
-    : game
-    ? isHome
-      ? game.away_team
-      : game.home_team
-    : "?";
-  const gameNumber = isFuturePlan
-    ? plan?.game_number ?? null
-    : game?.game_number ?? null;
-  const tier = tierLabels[(isFuturePlan ? plan?.tier : rec?.tier) || "filler"];
-  const estimatedScore = isFuturePlan
-    ? plan?.estimated_score
-    : rec?.estimated_score;
-  const pros = isFuturePlan ? plan?.pros ?? [] : rec?.pros ?? [];
-  const cons = isFuturePlan ? plan?.cons ?? [] : rec?.cons ?? [];
-  const verdict = isFuturePlan ? plan?.verdict ?? "" : rec?.verdict ?? "";
-  const hasArgumentaire = isFuturePlan ? !!plan : !!rec;
-  const planDayLabel = plan
-    ? new Date(plan.date + "T12:00:00")
-        .toLocaleDateString("fr-FR", {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-        })
-    : null;
+  const tonight = nights.find((n) => n.night === today);
+  const tier = tierLabels[rec?.tier || "filler"];
+  const estimatedScore = rec?.estimated_score;
+  const pros = rec?.pros ?? [];
+  const cons = rec?.cons ?? [];
+  const verdict = rec?.verdict ?? "";
+  const hasArgumentaire = !!rec;
+  const meta = rec ? recMeta(rec) : null;
 
   return (
     <div className="px-4 py-4 animate-fade-in">
@@ -188,29 +123,18 @@ export default async function PlayerPage({
               <span className="text-[color:var(--color-text-soft)]">
                 {player.position}
               </span>
-              {(game || isFuturePlan) && (
+              {tonight && (
                 <>
                   <span className="text-[color:var(--color-text-mute)]">·</span>
                   <span className="text-[color:var(--color-text-soft)]">
-                    {isHome ? "vs" : "@"}{" "}
+                    {tonight.is_home ? "vs" : "@"}{" "}
                     <span className="font-bold text-[color:var(--color-text)]">
-                      {opponent}
+                      {tonight.opponent}
                     </span>
-                    {gameNumber && (
-                      <span className="text-[color:var(--color-gold)] ml-1">
-                        · G{gameNumber}
-                      </span>
-                    )}
                   </span>
                 </>
               )}
             </div>
-            {isFuturePlan && planDayLabel && (
-              <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.22em] font-bold text-[color:var(--color-gold)]">
-                <span>📅</span>
-                <span>Calé pour {planDayLabel}</span>
-              </div>
-            )}
           </div>
 
           {estimatedScore !== undefined && (
@@ -219,7 +143,7 @@ export default async function PlayerPage({
                 {estimatedScore.toFixed(1)}
               </div>
               <div className="text-[9px] uppercase tracking-[0.22em] text-[color:var(--color-text-mute)] mt-1">
-                Score estimé
+                Espérance
               </div>
             </div>
           )}
@@ -255,31 +179,49 @@ export default async function PlayerPage({
           {pros.length > 0 && <ProsBlock pros={pros} />}
           {cons.length > 0 && <ConsBlock cons={cons} />}
           {verdict && <VerdictBlock verdict={verdict} />}
-        </div>
-      )}
-
-      {/* ----------------- pick cta (today only) ----------------- */}
-      {/* Render whenever there's a game tonight, even if the engine
-          didn't produce a recommendation (e.g. player was Out at sync
-          time and is now Probable). Falls back to L5 avg as the
-          estimated_score so the column isn't left empty. */}
-      {!isFuturePlan && game && (
-        <div className="mt-6">
-          <PickButton
-            playerId={player.id}
-            gameId={game.id}
-            playerName={player.name}
-            estimatedScore={rec?.estimated_score ?? player.avg_ttfl_l5 ?? 0}
-            alreadyPicked={alreadyPicked}
-            pickedToday={pickedToday}
-          />
-          {!rec && (
-            <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-text-mute)] text-center">
-              Hors top reco · pick manuel
+          {meta && (meta.pPlay || meta.lockedUntil) && (
+            <p className="text-[11px] tracking-wide text-[color:var(--color-text-mute)]">
+              {meta.pPlay && (
+                <>
+                  Joue à{" "}
+                  <span className="text-[color:var(--color-text-soft)] font-semibold">
+                    {meta.pPlay}
+                  </span>
+                </>
+              )}
+              {meta.value && (
+                <>
+                  {" "}
+                  · valeur{" "}
+                  <span className="text-[color:var(--color-text-soft)] font-semibold">
+                    {meta.value}
+                  </span>
+                </>
+              )}
+              {meta.lockedUntil && <> · bloqué jusqu&apos;au {meta.lockedUntil}</>}
+              {meta.bestFuture && (
+                <>
+                  <br />
+                  Meilleur soir à venir : {meta.bestFuture}
+                </>
+              )}
             </p>
           )}
         </div>
       )}
+
+      {/* ----------------- soirées à venir ----------------- */}
+      <section className="mt-6">
+        <h2 className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--color-text-mute)] mb-2">
+          Ses soirées (30 jours)
+        </h2>
+        <PickControls
+          playerId={player.id}
+          nights={nights}
+          today={today}
+          lastBookable={addDays(today, 14)}
+        />
+      </section>
     </div>
   );
 }

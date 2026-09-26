@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase/public";
+import { setWatchlist } from "@/app/actions";
 
 type Priority = 1 | 2 | 3 | null;
 
@@ -31,25 +31,11 @@ export default function WatchlistStar({
     setError(null);
     setPriority(next);
 
-    if (next === null) {
-      const { error } = await supabase
-        .from("player_watchlist")
-        .delete()
-        .eq("player_id", playerId);
-      if (error) {
-        setPriority(priority);
-        setError(error.message);
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from("player_watchlist")
-        .upsert({ player_id: playerId, priority: next });
-      if (error) {
-        setPriority(priority);
-        setError(error.message);
-        return;
-      }
+    const res = await setWatchlist({ playerId, priority: next });
+    if (!res.ok) {
+      setPriority(priority);
+      setError(res.error);
+      return;
     }
     startTransition(() => router.refresh());
   };
@@ -64,24 +50,31 @@ export default function WatchlistStar({
     : "Ajouter à ta watchlist";
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={isPending}
-      aria-label={label}
-      title={label}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all disabled:opacity-50 ${
-        count
-          ? "border-[color:var(--color-gold)]/40 bg-[color:var(--color-gold)]/10 text-[color:var(--color-gold)]"
-          : "border-white/10 bg-white/[0.02] text-[color:var(--color-text-mute)] hover:border-[color:var(--color-gold)]/30 hover:text-[color:var(--color-gold)]"
-      }`}
-    >
-      <span className="font-mono-num text-[12px] tracking-widest leading-none">
-        <span>{stars}</span>
-        <span className="opacity-30">{empty}</span>
-      </span>
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+      <button
+        onClick={handleClick}
+        disabled={isPending}
+        aria-label={label}
+        title={label}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all disabled:opacity-50 ${
+          count
+            ? "border-[color:var(--color-gold)]/40 bg-[color:var(--color-gold)]/10 text-[color:var(--color-gold)]"
+            : "border-white/10 bg-white/[0.02] text-[color:var(--color-text-mute)] hover:border-[color:var(--color-gold)]/30 hover:text-[color:var(--color-gold)]"
+        }`}
+      >
+        <span className="font-mono-num text-[12px] tracking-widest leading-none">
+          <span>{stars}</span>
+          <span className="opacity-30">{empty}</span>
+        </span>
+        {error && (
+          <span className="text-[9px] text-[color:var(--color-crimson)]">!</span>
+        )}
+      </button>
       {error && (
-        <span className="text-[9px] text-[color:var(--color-crimson)]">!</span>
+        <span role="alert" className="text-[10px] text-[color:var(--color-crimson)]">
+          {error}
+        </span>
       )}
-    </button>
+    </span>
   );
 }
