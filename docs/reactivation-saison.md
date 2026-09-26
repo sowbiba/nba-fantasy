@@ -15,7 +15,7 @@
 ## Quand le calendrier 2026-27 est publié
 
 3. **(prod)** Vérifier que `local_nightly` a chargé le calendrier (étape 2). Le calendrier est désormais chargé par le cron local depuis stats.nba.com : 
-   `select count(*) from games where season='2026-27'` doit renvoyer >1200 lignes.
+   Le calendrier est chargé sur une **fenêtre glissante** (J−5 à J+35, `SCHEDULE_PAST_DAYS` / `SCHEDULE_AHEAD_DAYS`), pas en entier : au 2026-09-27, `select game_type, count(*) from games where season='2026-27' group by 1` renvoyait 67 `preseason` + 92 `regular` (20/10 → 01/11).
    
    Note : `cdn.nba.com` renvoie 403 depuis l'IP locale au 2026-09-26. Le cron local `local_nightly` s'appuie alors sur le calendrier chargé via stats.nba.com; les box scores sont rattrapés chaque nuit par LeagueGameLog (scores des picks à J+1 ou J+2).
 
@@ -23,6 +23,10 @@
    Vérifier :
    - `select game_type, count(*) from games where season='2026-27' group by 1` : la présaison est en `preseason`, et la **finale NBA Cup en `cup_final`** (préfixe `006`, ex. `0062600001` le 11/12/2026). Sinon : migration de correction du préfixe (voir le plan L1a, tâche 9, step 6).
    - `select * from nights order by date limit 5` : aucune soirée de présaison.
+
+**Fait le 2026-09-27** : étapes 3-6 exécutées (calendrier, `daily_sync` local, workflow réactivé et run manuel OK, crontab `local_nightly` 23:50). 13 soirées créées (20/10 → 01/11), aucune de présaison. Reste : vérifier la finale NBA Cup (`0062600001`, 11/12) quand elle entrera dans la fenêtre, **début novembre**.
+
+Constat du 2026-09-27 : `cdn.nba.com` renvoie aussi 403 depuis GitHub Actions (calendrier et scoreboard). Le calendrier ne vient donc que du cron local (stats.nba.com) ; à vérifier avant le 20/10 : scores live et finalisation des matchs sans le scoreboard CDN.
 
 ## Quelques jours avant le premier match (après L1c)
 
