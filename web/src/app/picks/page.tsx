@@ -48,7 +48,12 @@ export default async function PicksPage() {
         <h1 className="font-display text-4xl leading-none tracking-wide text-white">
           MES <span className="flame-text">PICKS</span>
         </h1>
-        {signedIn ? <SignOutButton /> : (
+        {signedIn ? (
+          <div className="flex items-center gap-3">
+            <Link href="/rappels" className="text-xs underline text-[color:var(--color-text-soft)]">Rappels</Link>
+            <SignOutButton />
+          </div>
+        ) : (
           <Link href="/connexion" className="text-xs underline text-[color:var(--color-text-soft)]">Connexion</Link>
         )}
       </div>

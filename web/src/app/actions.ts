@@ -7,6 +7,7 @@ import { pickErrorMessage } from "@/lib/errors";
 import { isClosed } from "@/lib/display";
 import { adminClient } from "@/lib/supabase/admin";
 import { createAuthClient } from "@/lib/supabase/server";
+import { notifyAll } from "@/lib/notify";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -193,6 +194,41 @@ export async function playersForNight(date: string): Promise<{ id: number; name:
   const { data } = await db.from("players").select("id, name, team")
     .in("team", teams).eq("active", true).order("name");
   return data ?? [];
+}
+
+/** Abonnement Web Push (tâche 7) : upsert sur endpoint, pour permettre un
+ *  ré-abonnement (ex. clé renouvelée) sans doublon. */
+export async function subscribePush(sub: { endpoint: string; keys: { p256dh: string; auth: string } }): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  const admin = getAdmin();
+  if ("err" in admin) return admin.err;
+  const { db } = admin;
+  const { error } = await db.from("push_subscriptions")
+    .upsert({ endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth }, { onConflict: "endpoint" });
+  if (error) return { ok: false, error: "Échec de l'abonnement aux rappels." };
+  return { ok: true };
+}
+
+export async function unsubscribePush(endpoint: string): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  const admin = getAdmin();
+  if ("err" in admin) return admin.err;
+  const { db } = admin;
+  const { error } = await db.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  if (error) return { ok: false, error: "Échec de la désactivation des rappels." };
+  return { ok: true };
+}
+
+export async function sendTestNotification(): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  const { push, telegram } = await notifyAll({ title: "TTFL Advisor", body: "Notification de test — les rappels fonctionnent." });
+  if (push === 0 && !telegram) {
+    return { ok: false, error: "Aucun abonnement actif (et Telegram non configuré)." };
+  }
+  return { ok: true };
 }
 
 export async function signOut(): Promise<ActionResult> {

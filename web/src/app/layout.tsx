@@ -3,6 +3,7 @@ import { Bebas_Neue, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 import PullToRefresh from "@/components/PullToRefresh";
+import ServiceWorker from "@/components/ServiceWorker";
 
 const display = Bebas_Neue({
   weight: "400",
@@ -40,6 +41,7 @@ export default function RootLayout({
   return (
     <html lang="fr" className={`${display.variable} ${body.variable}`}>
       <body className="font-body text-[color:var(--color-text)] min-h-screen">
+        <ServiceWorker />
         <PullToRefresh />
         <main className="max-w-lg mx-auto pb-24">{children}</main>
         <BottomNav />
