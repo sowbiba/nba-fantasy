@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/auth";
-import { addDays, deckDate } from "@/lib/date";
+import { addDays, deckDate, seasonForDate } from "@/lib/date";
 import { pickErrorMessage } from "@/lib/errors";
 import { isClosed } from "@/lib/display";
 import { adminClient } from "@/lib/supabase/admin";
@@ -155,6 +155,44 @@ export async function setWatchlist(input: { playerId: number; priority: 1 | 2 | 
   if (error) return { ok: false, error: "Échec de la mise à jour des favoris." };
   revalidatePath(`/player/${input.playerId}`);
   return { ok: true };
+}
+
+/** Correction d'une soirée passée de la saison (synchro TrashTalk oubliée) :
+ *  lève la fermeture en base (correct_pick), jamais le cooldown. */
+export async function correctPick(input: { date: string; playerId: number | null }): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  const today = deckDate();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || input.date >= today) {
+    return { ok: false, error: "Seules les soirées passées se corrigent ici." };
+  }
+  if (seasonForDate(input.date) !== seasonForDate(today)) {
+    return { ok: false, error: "Seules les soirées de la saison en cours se corrigent." };
+  }
+  const admin = getAdmin();
+  if ("err" in admin) return admin.err;
+  const { db } = admin;
+  const { error } = await db.rpc("correct_pick", { p_date: input.date, p_player_id: input.playerId });
+  if (error) return { ok: false, error: pickErrorMessage(error) };
+  refresh(input.playerId ?? undefined);
+  return { ok: true };
+}
+
+/** Effectif actuel (players.active) des équipes qui jouent un match éligible
+ *  ce soir-là, pour choisir le joueur à corriger. Limite connue et acceptée :
+ *  un joueur transféré depuis se corrige en base à la demande. */
+export async function playersForNight(date: string): Promise<{ id: number; name: string; team: string }[]> {
+  if (await owner()) return [];
+  const admin = getAdmin();
+  if ("err" in admin) return [];
+  const { db } = admin;
+  const { data: games } = await db.from("games").select("home_team, away_team")
+    .eq("date", date).in("game_type", ["regular", "cup_final", "playoffs"]);
+  const teams = [...new Set((games ?? []).flatMap((g) => [g.home_team, g.away_team]))];
+  if (!teams.length) return [];
+  const { data } = await db.from("players").select("id, name, team")
+    .in("team", teams).eq("active", true).order("name");
+  return data ?? [];
 }
 
 export async function signOut(): Promise<ActionResult> {

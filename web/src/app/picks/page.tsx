@@ -17,12 +17,15 @@ export default async function PicksPage() {
   const { data: userData } = await auth.auth.getUser();
   const signedIn = isOwnerEmail(userData.user?.email, process.env.OWNER_EMAIL);
 
-  const [statsRes, picksRes, scRes, nightRes] = await Promise.all([
+  const [statsRes, picksRes, scRes, nightRes, pastNightsRes] = await Promise.all([
     supabase.rpc("period_stats", { p_season: season, p_mode: "regular", p_until: today }),
     supabase.from("picks").select("id, date, player_id, actual_score, is_x2, players(name, team)").eq("season", season).order("date", { ascending: false }),
     // Filtré par saison courante (jointure sur picks.season) : second_chances n'a pas sa propre colonne season (migration 018).
     supabase.from("second_chances").select("pick_id, bought_on, expires_on, picks!inner(season)").eq("picks.season", season),
     supabase.from("nights").select("closing_at").eq("date", today).maybeSingle(),
+    // Soirées passées éligibles de la saison, pour proposer la correction même sans pick (tâche 5).
+    supabase.from("nights").select("date").eq("season", season).lt("date", today)
+      .eq("is_phantom", false).gt("n_eligible_games", 0).order("date", { ascending: false }),
   ]);
   const stats = ((statsRes.data || [])[0] ?? null) as Stats | null;
   const scByPick = new Map(((scRes.data || []) as { pick_id: number; bought_on: string; expires_on: string }[])
@@ -33,6 +36,11 @@ export default async function PicksPage() {
     id: p.id, date: p.date, player_id: p.player_id, player_name: p.players?.name ?? `#${p.player_id}`,
     team: p.players?.team ?? "", actual_score: p.actual_score, is_x2: p.is_x2, second_chance: scByPick.get(p.id) ?? null,
   }));
+  const pickedDates = new Set(rows.map((r) => r.date));
+  const noPickRows: HistoryRow[] = ((pastNightsRes.data || []) as { date: string }[])
+    .filter((n) => !pickedDates.has(n.date))
+    .map((n) => ({ id: null, date: n.date, player_id: null, player_name: null, team: "", actual_score: null, is_x2: false, second_chance: null }));
+  const allRows = [...rows, ...noPickRows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   return (
     <div className="px-4 py-5 animate-fade-in">
@@ -63,7 +71,7 @@ export default async function PicksPage() {
       </p>
 
       <div className="mt-5">
-        <PicksHistory rows={rows} today={today} todayClosingAt={todayClosingAt} />
+        <PicksHistory rows={allRows} today={today} todayClosingAt={todayClosingAt} />
       </div>
     </div>
   );
