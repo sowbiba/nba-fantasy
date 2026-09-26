@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isOwnerEmail } from "./auth";
+import { isOwnerEmail } from "./owner";
 
 describe("isOwnerEmail", () => {
   it("compare sans tenir compte de la casse", () => {

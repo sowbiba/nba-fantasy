@@ -6,8 +6,11 @@ describe("deckDate", () => {
     // 2026-11-03 01:30 à Paris = 2026-11-02 19:30 à New York
     expect(deckDate(new Date("2026-11-03T00:30:00Z"))).toBe("2026-11-03");
   });
-  it("gère le passage à l'heure d'hiver", () => {
+  it("juste avant minuit la veille du changement d'heure", () => {
     expect(deckDate(new Date("2026-10-24T22:30:00Z"))).toBe("2026-10-25");
+  });
+  it("gère le passage effectif à l'heure d'hiver (CET)", () => {
+    expect(deckDate(new Date("2026-10-25T23:30:00Z"))).toBe("2026-10-26");
   });
 });
 

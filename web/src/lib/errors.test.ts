@@ -6,6 +6,10 @@ describe("pickErrorMessage", () => {
     expect(pickErrorMessage({ code: "P0001", message: "player_unavailable:cooldown", details: "2026-11-24" }))
       .toBe("Joueur bloqué jusqu'au 24/11 (cooldown de 30 jours).");
   });
+  it("cooldown avec des détails qui ne sont pas une date", () => {
+    expect(pickErrorMessage({ code: "P0001", message: "player_unavailable:cooldown", details: "not-a-date" }))
+      .toBe("Joueur bloqué par le cooldown de 30 jours.");
+  });
   it("réservation proche", () => {
     expect(pickErrorMessage({ code: "P0001", message: "player_unavailable:reserved_nearby" }))
       .toBe("Ce joueur est déjà réservé à moins de 30 jours de cette soirée.");

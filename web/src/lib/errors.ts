@@ -18,7 +18,7 @@ export function pickErrorMessage(err: DbError): string {
   const message = err.message ?? "";
   if (err.code === "P0001") {
     if (message.startsWith("player_unavailable:cooldown")) {
-      return err.details
+      return err.details && /^\d{4}-\d{2}-\d{2}$/.test(err.details)
         ? `Joueur bloqué jusqu'au ${frDayMonth(err.details)} (cooldown de 30 jours).`
         : "Joueur bloqué par le cooldown de 30 jours.";
     }
