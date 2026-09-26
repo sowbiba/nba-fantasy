@@ -132,16 +132,19 @@ def test_reconciliation_mode_avant_backfill_x2(pg):
     # Historique importé avec mode='playoffs' (défaut de l'ancien front) sur
     # un match SR : la réconciliation doit le remettre en 'regular' avant le
     # backfill x2, sinon le pick reste ignoré.
+    # Date dans la fenêtre R10 (nov-avril) : depuis 021, un x2 hors fenêtre
+    # est rejeté par la contrainte picks_x2_window, indépendamment de la
+    # réconciliation de mode testée ici.
     with pg.transaction(force_rollback=True):
         _seed(pg)
         pg.execute("set local session_replication_role = replica")
         pg.execute(
             "insert into picks (player_id, game_id, date, mode, season, estimated_score, actual_score) "
-            "values (1, '0022500100', '2025-10-25', 'playoffs', null, 106, 53)"
+            "values (1, '0022500200', '2025-11-10', 'playoffs', null, 106, 53)"
         )
         pg.execute("set local session_replication_role = origin")
         pg.execute(MIGRATION_018.read_text())  # rejouer la migration applique la réconciliation
         row = pg.execute(
-            "select mode, season, is_x2, estimated_score from picks where date = '2025-10-25'"
+            "select mode, season, is_x2, estimated_score from picks where date = '2025-11-10'"
         ).fetchone()
         assert row == ("regular", "2025-26", True, None)
