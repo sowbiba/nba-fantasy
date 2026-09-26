@@ -179,3 +179,24 @@ class FakeNbaSource:
     def box_score(self, game_id, game_date):
         self._maybe_fail()
         return list(self._box.get(game_id, []))
+
+
+class FakeStatsSource:
+    def __init__(self, rosters=None, game_logs=None, matchups=None, fail_teams=()):
+        self._rosters = rosters or {}
+        self._logs = game_logs or {}
+        self._matchups = matchups or {}
+        self.fail_teams = set(fail_teams)
+        self.log_calls = []
+
+    def roster(self, team_id, tricode):
+        if tricode in self.fail_teams:
+            raise ConnectionError("roster KO")
+        return list(self._rosters.get(tricode, []))
+
+    def league_game_log(self, season, season_type, date_from=None):
+        self.log_calls.append((season, season_type, date_from))
+        return self._logs.get((season, season_type), ({}, [], {}))
+
+    def matchups(self, game_id):
+        return list(self._matchups.get(game_id, []))
