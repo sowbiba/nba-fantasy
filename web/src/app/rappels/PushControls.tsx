@@ -3,7 +3,9 @@
 import { useEffect, useState, useTransition } from "react";
 import { subscribePush, unsubscribePush, sendTestNotification } from "@/app/actions";
 
-type Status = "checking" | "unsupported" | "ios-not-installed" | "disabled" | "enabled";
+type Status = "checking" | "unsupported" | "ios-not-installed" | "not-configured" | "disabled" | "enabled";
+
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 function isIos(): boolean {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window);
@@ -38,8 +40,19 @@ export default function PushControls() {
         setStatus("ios-not-installed");
         return;
       }
+      if (!VAPID_PUBLIC_KEY) {
+        setStatus("not-configured");
+        return;
+      }
       try {
-        const registration = await navigator.serviceWorker.ready;
+        // getRegistration() résout undefined si l'enregistrement a échoué
+        // (ex. sw.js introuvable) — contrairement à `.ready`, qui resterait
+        // en attente indéfiniment et laisserait la page bloquée sur "checking".
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (!registration) {
+          setStatus("disabled");
+          return;
+        }
         const sub = await registration.pushManager.getSubscription();
         setStatus(sub ? "enabled" : "disabled");
       } catch {
@@ -53,8 +66,7 @@ export default function PushControls() {
     setError(null);
     startTransition(async () => {
       try {
-        const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-        if (!publicKey) {
+        if (!VAPID_PUBLIC_KEY) {
           setError("Rappels non configurés côté serveur (clé VAPID manquante).");
           return;
         }
@@ -66,7 +78,7 @@ export default function PushControls() {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
         });
         const result = await subscribePush(JSON.parse(JSON.stringify(sub)));
         if (!result.ok) {
@@ -101,12 +113,16 @@ export default function PushControls() {
     setTestResult(null);
     setError(null);
     startTransition(async () => {
-      const result = await sendTestNotification();
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      try {
+        const result = await sendTestNotification();
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setTestResult("Notification de test envoyée.");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Échec de l'envoi de la notification de test.");
       }
-      setTestResult("Notification de test envoyée.");
     });
   }
 
@@ -114,6 +130,10 @@ export default function PushControls() {
 
   if (status === "unsupported") {
     return <p className="text-sm text-[color:var(--color-text-soft)]">Les notifications ne sont pas supportées par ce navigateur.</p>;
+  }
+
+  if (status === "not-configured") {
+    return <p className="text-sm text-[color:var(--color-text-soft)]">Les rappels ne sont pas encore configurés côté serveur.</p>;
   }
 
   if (status === "ios-not-installed") {

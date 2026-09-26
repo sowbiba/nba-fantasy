@@ -201,6 +201,9 @@ export async function playersForNight(date: string): Promise<{ id: number; name:
 export async function subscribePush(sub: { endpoint: string; keys: { p256dh: string; auth: string } }): Promise<ActionResult> {
   const denied = await owner();
   if (denied) return denied;
+  if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
+    return { ok: false, error: "Abonnement invalide." };
+  }
   const admin = getAdmin();
   if ("err" in admin) return admin.err;
   const { db } = admin;
@@ -224,7 +227,14 @@ export async function unsubscribePush(endpoint: string): Promise<ActionResult> {
 export async function sendTestNotification(): Promise<ActionResult> {
   const denied = await owner();
   if (denied) return denied;
-  const { push, telegram } = await notifyAll({ title: "TTFL Advisor", body: "Notification de test — les rappels fonctionnent." });
+  let push: number;
+  let telegram: boolean;
+  try {
+    ({ push, telegram } = await notifyAll({ title: "TTFL Advisor", body: "Notification de test — les rappels fonctionnent." }));
+  } catch (e) {
+    console.error("Échec de notifyAll() :", e instanceof Error ? e.message : e);
+    return { ok: false, error: "Erreur serveur, réessaie plus tard." };
+  }
   if (push === 0 && !telegram) {
     return { ok: false, error: "Aucun abonnement actif (et Telegram non configuré)." };
   }
