@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeState, pickPoints, recMeta } from "./display";
+import { homeState, pickPoints, recMeta, topDefender } from "./display";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -20,6 +20,19 @@ describe("pickPoints", () => {
     expect(pickPoints(0, false)).toBe(0);
   });
   it("pas encore scoré : null", () => expect(pickPoints(null, false)).toBeNull());
+});
+
+describe("topDefender", () => {
+  it("prend le défenseur le plus présent et sa part", () => {
+    expect(topDefender([
+      { def_player_name: "Davis", minutes: 10, points: 12, games: 1 },
+      { def_player_name: "James", minutes: 5, points: 5, games: 1 },
+    ])).toEqual({ name: "Davis", share: 67, per36: 43.2, games: 1 });
+  });
+  it("rien sous 5 minutes d'échantillon", () => {
+    expect(topDefender([{ def_player_name: "Davis", minutes: 4, points: 3, games: 1 }])).toBeNull();
+    expect(topDefender([])).toBeNull();
+  });
 });
 
 describe("homeState", () => {

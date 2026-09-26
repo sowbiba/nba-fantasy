@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/public";
-import { Game, Night, Pick, Player, Recommendation, RecommendationWithPlayer, SyncLog } from "@/types";
+import { Game, MatchupSeasonRow, Night, Pick, Player, Recommendation, RecommendationWithPlayer, SyncLog } from "@/types";
 import SyncStatus from "@/components/SyncStatus";
 import NoPickBanner from "@/components/NoPickBanner";
 import GamesCollapsible from "@/components/GamesCollapsible";
@@ -8,7 +8,7 @@ import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import MyPickCard from "@/components/MyPickCard";
 import { deckDate, frLongDate, parisTime } from "@/lib/date";
-import { HARD_OUT_STATUSES, homeState } from "@/lib/display";
+import { HARD_OUT_STATUSES, homeState, topDefender } from "@/lib/display";
 
 export const revalidate = 0;
 
@@ -36,7 +36,7 @@ async function getData() {
   const playersRes = ids.length ? await supabase.from("players").select("*").in("id", ids) : { data: [] };
   const players = new Map(((playersRes.data || []) as Player[]).map((p) => [p.id, p]));
 
-  const recsWithPlayers = recs
+  const recsWithPlayersBase = recs
     .map((r) => {
       const player = players.get(r.player_id);
       const game = games.find((g) => g.home_team === player?.team || g.away_team === player?.team);
@@ -44,6 +44,30 @@ async function getData() {
       return { ...r, player, game };
     })
     .filter(Boolean) as RecommendationWithPlayer[];
+
+  const opponentOf = (r: RecommendationWithPlayer) => r.game.home_team === r.player.team ? r.game.away_team : r.game.home_team;
+
+  // Défenseur principal de la saison : une seule requête pour tous les joueurs recommandés (pas une par carte),
+  // restreinte aux adversaires du soir pour rester légère.
+  const season = night?.season;
+  let defenders = new Map<string, ReturnType<typeof topDefender>>();
+  if (season && recsWithPlayersBase.length) {
+    const opponents = [...new Set(recsWithPlayersBase.map(opponentOf))];
+    const { data } = await supabase.from("matchup_season")
+      .select("player_id, opponent_team, def_player_name, minutes, points, games")
+      .eq("season", season)
+      .in("player_id", recsWithPlayersBase.map((r) => r.player_id))
+      .in("opponent_team", opponents);
+    const byKey = new Map<string, MatchupSeasonRow[]>();
+    for (const r of (data || []) as (MatchupSeasonRow & { player_id: number; opponent_team: string })[]) {
+      const k = `${r.player_id}:${r.opponent_team}`;
+      byKey.set(k, [...(byKey.get(k) ?? []), r]);
+    }
+    defenders = new Map([...byKey].map(([k, rows]) => [k, topDefender(rows)]));
+  }
+  const recsWithPlayers = recsWithPlayersBase.map((r) => ({
+    ...r, defender: defenders.get(`${r.player_id}:${opponentOf(r)}`) ?? null,
+  }));
 
   return {
     deck, night, games, recsWithPlayers, pick,

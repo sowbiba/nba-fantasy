@@ -91,8 +91,16 @@ export interface SyncLog {
   error_message: string | null;
 }
 
+export interface MatchupSeasonRow {
+  def_player_name: string | null;
+  minutes: number;
+  points: number;
+  games: number;
+}
+
 export interface RecommendationWithPlayer extends Recommendation {
   player: Player;
   game: Game;
+  defender?: { name: string; share: number; per36: number | null; games: number } | null;
 }
 

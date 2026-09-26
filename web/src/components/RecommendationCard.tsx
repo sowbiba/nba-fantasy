@@ -227,6 +227,13 @@ export default function RecommendationCard({
             );
           })()}
 
+          {rec.defender && (
+            <p className="mt-1 text-[11px] text-[color:var(--color-text-mute)]">
+              Défendu par <span className="font-semibold text-[color:var(--color-text)]">{rec.defender.name}</span> ({rec.defender.share} %)
+              {rec.defender.per36 !== null && <> · {rec.defender.per36} pts/36 contre lui</>} cette saison
+            </p>
+          )}
+
           {/* badges */}
           <div className="flex flex-wrap gap-1.5 mt-3">
             <span
