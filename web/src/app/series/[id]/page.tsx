@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/public";
 import { MatchupAggregate, Player, Series } from "@/types";
 import BackButton from "../../player/[id]/BackButton";
 

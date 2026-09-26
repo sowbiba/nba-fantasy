@@ -1,27 +1,47 @@
-/**
- * Returns the current TTFL "game day" as YYYY-MM-DD.
- *
- * The NBA schedule uses US dates: a game on "April 18" tips off at 7pm ET
- * (= 1am Paris April 19). For a French user at 3am, "ce soir" should still
- * show April 18 games (they're live right now), not April 19.
- *
- * We use America/New_York (US Eastern) as the reference timezone. The NBA
- * game day effectively flips around midnight ET (= ~6am Paris). This covers:
- *
- *   23h Paris (17h ET) → same NBA day → upcoming games
- *    2h Paris (20h ET) → same NBA day → live games
- *    5h Paris (23h ET) → same NBA day → late West Coast games
- *    7h Paris ( 1h ET) → next day    → tomorrow's games
- */
+/** Journée NBA (heure de l'Est) : uniquement pour les vues de matchs en direct. */
 export function todayNBA(): string {
-  return new Date().toLocaleDateString("en-CA", {
-    timeZone: "America/New_York",
-  });
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
+/** Aujourd'hui à Paris. */
+export function todayParis(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
 }
 
 /**
- * Returns today in Paris timezone (for display / non-game-day contexts).
+ * Soirée du deck TTFL : le deck du jour D ferme à 00:00 heure de Paris (R8).
+ * À toute heure de la journée D à Paris, la soirée à préparer est D.
  */
-export function todayParis(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
+export function deckDate(now: Date = new Date()): string {
+  return now.toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
+}
+
+export function addDays(iso: string, n: number): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Saison NBA d'une date (à partir de septembre, la saison qui commence). */
+export function seasonForDate(iso: string): string {
+  const [y, m] = iso.split("-").map(Number);
+  const start = m >= 9 ? y : y - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
+}
+
+export function frDayMonth(iso: string): string {
+  const [, m, d] = iso.split("-");
+  return `${d}/${m}`;
+}
+
+export function frLongDate(iso: string): string {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString("fr-FR", {
+    weekday: "long", day: "numeric", month: "long", timeZone: "UTC",
+  });
+}
+
+export function parisTime(isoTimestamp: string): string {
+  return new Date(isoTimestamp).toLocaleTimeString("fr-FR", {
+    hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris",
+  });
 }

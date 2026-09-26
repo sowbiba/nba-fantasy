@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/public";
 import { Pick, Player } from "@/types";
 import PicksTabs from "./PicksTabs";
 

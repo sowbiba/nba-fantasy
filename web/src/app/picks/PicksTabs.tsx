@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pick, Player } from "@/types";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/public";
 
 function effectiveScore(pick: Pick): number {
   if (

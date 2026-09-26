@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/public";
 import { Game, Series } from "@/types";
 import GamesList from "./GamesList";
 
