@@ -39,6 +39,7 @@ from pathlib import Path
 
 from engine.backtest.data import SeasonData, load_season, played_on
 from engine.stats.elo import (
+    ABSENT_MIN_SHARE,
     EloParams,
     apply_game,
     as_date,
@@ -51,7 +52,6 @@ from engine.stats.elo import (
 K_GRID = (15.0, 20.0, 25.0)
 HCA_GRID = (40.0, 70.0, 100.0)
 SHARE_GRID = (0.0, 150.0, 300.0, 450.0)
-ROTATION_SHARE = 0.05     # part minimale pour compter comme un absent de rotation
 PROB_EPS = 1e-9           # évite log(0) dans la perte logarithmique
 
 
@@ -84,7 +84,7 @@ def _absent_shares_by_game(data: SeasonData, window_games: list[dict]) -> dict[s
         for team in (game["home_team"], game["away_team"]):
             shares = team_shares(data.logs, team, d)
             absent = sum(share for pid, share in shares.items()
-                        if share >= ROTATION_SHARE and not played_on(data, pid, d))
+                        if share >= ABSENT_MIN_SHARE and not played_on(data, pid, d))
             shares_by_team[team] = absent
         result[game["id"]] = shares_by_team
     return result
@@ -100,11 +100,29 @@ class GridRow:
     accuracy: float            # part des matchs où le favori prédit (p > 0.5) l'a emporté
     brier: float
     log_loss: float
+    margin_slope: float | None = None   # pente écart réel / écart attendu (M-4), None si non calculable
 
 
 def _log_loss(y: float, p: float) -> float:
     p = min(max(p, PROB_EPS), 1 - PROB_EPS)
     return -(y * math.log(p) + (1 - y) * math.log(1 - p))
+
+
+def _ols_slope(pairs: list[tuple[float, float]]) -> float | None:
+    """Pente des moindres carrés de `y` (écart réel) sur `x` (écart Elo
+    attendu avant-match) : `cov(x, y) / var(x)`. `None` si moins de 2 points
+    ou si `x` est constant (pente indéfinie) — le rapport vérifie
+    `points_per_elo` (≈1 attendu), pas une exigence produit (M-4)."""
+    n = len(pairs)
+    if n < 2:
+        return None
+    mean_x = sum(x for x, _ in pairs) / n
+    mean_y = sum(y for _, y in pairs) / n
+    var_x = sum((x - mean_x) ** 2 for x, _ in pairs)
+    if var_x == 0:
+        return None
+    cov_xy = sum((x - mean_x) * (y - mean_y) for x, y in pairs)
+    return cov_xy / var_x
 
 
 def _replay(data: SeasonData, eligible: list[dict], absent_shares: dict[str, dict[str, float]],
@@ -115,6 +133,7 @@ def _replay(data: SeasonData, eligible: list[dict], absent_shares: dict[str, dic
     calcule la prédiction des `elo_per_share` de `share_grid` (par défaut
     `SHARE_GRID`) avant de mettre les notes à jour avec le vrai résultat."""
     predictions: dict[float, list[tuple[float, float]]] = {eps: [] for eps in share_grid}
+    margins: dict[float, list[tuple[float, float]]] = {eps: [] for eps in share_grid}   # (attendu, réel)
     ratings: dict[str, float] = {}
 
     for game in eligible:
@@ -123,10 +142,12 @@ def _replay(data: SeasonData, eligible: list[dict], absent_shares: dict[str, dic
             absent = absent_shares[game["id"]]
             home_score, away_score = game["home_score"], game["away_score"]
             actual_home = 1.0 if home_score > away_score else 0.0
+            actual_margin = float(home_score - away_score)
             for eps in share_grid:
                 params = EloParams(k=k, home_advantage=hca, elo_per_share=eps)
                 pred = predict(game, ratings, absent, params)
                 predictions[eps].append((actual_home, pred.home_win_prob))
+                margins[eps].append((pred.expected_margin, actual_margin))
         # Mise à jour des notes avec le vrai résultat — indépendante de
         # `elo_per_share` (qui ne corrige que la probabilité prédite, pas la
         # note elle-même). `home_advantage` influe sur la mise à jour (via
@@ -139,13 +160,17 @@ def _replay(data: SeasonData, eligible: list[dict], absent_shares: dict[str, dic
         pairs = predictions[eps]
         n = len(pairs)
         if n == 0:
-            rows.append(GridRow(k, hca, eps, 0, 0.0, 0.0, 0.0, 0.0))
+            # M-1 : aucun match dans la fenêtre pour cette combinaison → perte
+            # logarithmique infinie (jamais un minimum valide), pas 0.0 (qui
+            # gagnerait `min()` à tort sur une fenêtre dégénérée).
+            rows.append(GridRow(k, hca, eps, 0, 0.0, 0.0, 0.0, math.inf, None))
             continue
         home_win_rate = sum(y for y, _ in pairs) / n
         accuracy = sum(1 for y, p in pairs if (p > 0.5) == (y == 1.0)) / n
         brier = sum((p - y) ** 2 for y, p in pairs) / n
         log_loss = sum(_log_loss(y, p) for y, p in pairs) / n
-        rows.append(GridRow(k, hca, eps, n, home_win_rate, accuracy, brier, log_loss))
+        slope = _ols_slope(margins[eps])
+        rows.append(GridRow(k, hca, eps, n, home_win_rate, accuracy, brier, log_loss, slope))
     return rows
 
 
@@ -174,16 +199,23 @@ def run(data: SeasonData, season: str, from_date: date | None = None, *,
     naive_brier = (sum((p - y) ** 2 for y, p in naive_pairs) / n_window) if n_window else 0.0
     naive_log_loss = (sum(_log_loss(y, p) for y, p in naive_pairs) / n_window) if n_window else 0.0
 
-    best = min(rows, key=lambda r: r.log_loss) if rows else None
+    def _best(candidates: list[GridRow]) -> GridRow | None:
+        # M-1 : une combinaison à `n = 0` a `log_loss = inf` — jamais un
+        # minimum valide. Si TOUTES les candidates sont dégénérées (fenêtre
+        # vide), il n'y a pas de « meilleur jeu » à rapporter.
+        best_row = min(candidates, key=lambda r: r.log_loss) if candidates else None
+        return best_row if best_row is not None and math.isfinite(best_row.log_loss) else None
+
+    best = _best(rows)
     no_injury_rows = [r for r in rows if r.elo_per_share == 0.0]
     injury_rows = [r for r in rows if r.elo_per_share > 0.0]
-    best_no_injury = min(no_injury_rows, key=lambda r: r.log_loss) if no_injury_rows else None
+    best_no_injury = _best(no_injury_rows)
     # « Apport de la correction blessures » = meilleur jeu AVEC correction
     # (elo_per_share > 0) contre le meilleur jeu SANS (elo_per_share = 0) —
     # littéralement la comparaison du brief, pas le minimum global (qui
     # inclurait elo_per_share = 0 et masquerait un apport négatif derrière un
     # gain à zéro).
-    best_with_injury = min(injury_rows, key=lambda r: r.log_loss) if injury_rows else None
+    best_with_injury = _best(injury_rows)
     injury_gain = (best_no_injury.log_loss - best_with_injury.log_loss) \
         if best_no_injury and best_with_injury else 0.0
 
@@ -198,6 +230,8 @@ def run(data: SeasonData, season: str, from_date: date | None = None, *,
         "best_no_injury": best_no_injury,
         "best_with_injury": best_with_injury,
         "injury_gain": injury_gain,
+        "k_grid": k_grid,
+        "hca_grid": hca_grid,
     }
 
 
@@ -225,6 +259,24 @@ def render_report(season: str, result: dict) -> str:
         lines.append(f"Écart à la référence naïve : {gain_vs_naive:+.4f} en perte logarithmique "
                      f"({'mieux' if gain_vs_naive > 0 else 'moins bien' if gain_vs_naive < 0 else 'égal'} "
                      "que la référence).")
+        # M-2 : le minimum global n'est significatif que s'il n'est pas au
+        # bord de la grille cherchée (sinon la vraie plage optimale est peut-
+        # être hors grille) — averti seulement si la grille avait plus d'une
+        # valeur (une grille à un seul point n'est pas une recherche).
+        k_grid, hca_grid = result.get("k_grid") or (), result.get("hca_grid") or ()
+        edges = []
+        if len(k_grid) > 1 and best.k in (min(k_grid), max(k_grid)):
+            edges.append(f"k = {best.k:g}")
+        if len(hca_grid) > 1 and best.home_advantage in (min(hca_grid), max(hca_grid)):
+            edges.append(f"home_advantage = {best.home_advantage:g}")
+        if edges:
+            lines.append(f"⚠ à la borne de la grille : {', '.join(edges)} — la vraie valeur optimale est "
+                         "peut-être hors grille, élargir `--k`/`--hca` avant de figer les défauts.")
+        # M-4 : vérifie `points_per_elo` (1/28 par défaut) — pente attendue ≈1
+        # si l'échelle des points est correctement calibrée sur cette grille.
+        if best.margin_slope is not None:
+            lines.append(f"Pente écart réel / écart attendu (avant-match) = {best.margin_slope:.3f} "
+                         "(≈1 attendu si `points_per_elo` est bien calibré sur ce jeu de paramètres).")
         lines.append("")
 
     lines += ["## Apport de la correction blessures", ""]

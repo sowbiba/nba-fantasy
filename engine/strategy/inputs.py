@@ -12,7 +12,16 @@ from engine.rules.availability import PickRow, SecondChance, SeriesRow
 from engine.rules.calendar import Night
 from engine.stats.availability_prob import HARD_OUT_STATUSES
 from engine.stats.blowout import calibrate
-from engine.stats.elo import EloParams, adjusted, as_date, expected_margin, ratings_before, START_RATING, team_shares
+from engine.stats.elo import (
+    ABSENT_MIN_SHARE,
+    EloParams,
+    adjusted,
+    as_date,
+    expected_margin,
+    ratings_before,
+    START_RATING,
+    team_shares,
+)
 from engine.stats.profile import GameLog, PlayerProfile, build_profile, prior_minutes, role_scales
 from engine.stats.team_defense import defense_factors
 from engine.strategy.config import BLOWOUT_ENABLED
@@ -98,8 +107,13 @@ def build_decision_inputs(
 def absent_shares(*, today: date, players: dict[int, dict], logs: list[GameLog]) -> dict[str, float]:
     """Part de production des absents (statut `HARD_OUT_STATUSES` ce soir)
     par équipe, calculée seulement pour les équipes ayant au moins un absent.
-    En backtest (`dnp_oracle`), les joueurs sans minutes le soir D sont
-    marqués « Out » : même chemin."""
+    Seuls les joueurs de rotation (part de production `team_shares` ≥
+    `ABSENT_MIN_SHARE`) comptent — même seuil que `elo_report` (calibration),
+    pour que la correction appliquée en production corresponde à celle
+    mesurée par le rapport qui a choisi `elo_per_share` (sinon un joueur du
+    fond de banc absent gonflerait la correction sans que ça n'ait jamais
+    été calibré). En backtest (`dnp_oracle`), les joueurs sans minutes le
+    soir D sont marqués « Out » : même chemin."""
     out_by_team: dict[str, set[int]] = defaultdict(set)
     for pid, row in players.items():
         if row.get("injury_status") in HARD_OUT_STATUSES and row.get("team"):
@@ -113,7 +127,7 @@ def absent_shares(*, today: date, players: dict[int, dict], logs: list[GameLog])
     result = {}
     for team, out in out_by_team.items():
         shares = team_shares(logs_by_team[team], team, today)
-        result[team] = sum(shares.get(pid, 0.0) for pid in out)
+        result[team] = sum(share for pid in out if (share := shares.get(pid, 0.0)) >= ABSENT_MIN_SHARE)
     return result
 
 

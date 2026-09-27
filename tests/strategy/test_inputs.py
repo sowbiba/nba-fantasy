@@ -152,6 +152,28 @@ def test_blowout_un_resultat_du_soir_d_ne_change_pas_la_projection_de_d():
            [(r.cell.player_id, r.cell.projection) for r in dc.recommendations]
 
 
+def test_absent_shares_ignore_les_absents_sous_le_seuil_de_rotation():
+    """Seuil partagé avec `elo_report` (`ABSENT_MIN_SHARE`, `engine.stats.elo`) :
+    un absent hors rotation (part de production < 5 %) ne doit pas compter,
+    même statut `Out` que la vedette."""
+    from engine.strategy.inputs import absent_shares
+
+    # Joueur 1 (vedette, ~90 % de la production de DEN) et joueur 3 (rotation
+    # marginale, < 5 %) tous les deux marqués « Out » ce soir.
+    history = [_scored(f"h{i}", TODAY - timedelta(days=10 - i), "DEN", "LAL", 130, 95) for i in range(6)]
+    logs = []
+    for i, g in enumerate(history):
+        d = date.fromisoformat(g["date"])
+        logs.append(_log(1, g["id"], d, "DEN", minutes=36, ttfl=45))
+        logs.append(_log(3, g["id"], d, "DEN", minutes=2, ttfl=1))
+        logs.append(_log(2, g["id"], d, "LAL", minutes=30, ttfl=30, home=False))
+    players = {1: {**_player(1, "DEN", "C"), "injury_status": "Out"},
+              3: {**_player(3, "DEN", "F"), "injury_status": "Out"},
+              2: _player(2, "LAL", "G")}
+    result = absent_shares(today=TODAY, players=players, logs=logs)
+    assert result["DEN"] == pytest.approx(270 / 276)   # seule la vedette compte (part ≥ 5 %), pas le 3
+
+
 def test_blowout_correction_blessures_seulement_ce_soir_et_si_calibree():
     players, history, logs, tonight, nights = _blowout_setup()
     later = _game("t2", TODAY + timedelta(days=3), "DEN", "LAL", status="scheduled")

@@ -19,6 +19,12 @@ from engine.rules.game_types import is_eligible, season_for_date
 from engine.stats.profile import GameLog
 
 START_RATING = 1500.0
+# Part minimale de production pour compter un joueur absent comme un
+# « absent de rotation » (calibration `elo_report` ET production
+# `engine.strategy.inputs.absent_shares` — un seul seuil, partagé, plutôt
+# que deux constantes qui pourraient diverger silencieusement quand
+# `elo_per_share` passe de 0 à une valeur calibrée sur ce seuil).
+ABSENT_MIN_SHARE = 0.05
 
 
 @dataclass(frozen=True)
