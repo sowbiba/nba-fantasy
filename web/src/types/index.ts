@@ -99,6 +99,26 @@ export interface MatchupSeasonRow {
   games: number;
 }
 
+/** Vue publique `standings` (migration 027) : classement Est/Ouest calculé
+ *  depuis `games`, saison régulière (NBA Cup comprise, finale exclue). */
+export interface StandingsRow {
+  season: string;
+  conference: "Est" | "Ouest";
+  team: string;
+  wins: number;
+  losses: number;
+  pct: number;
+  games_behind: number;
+  home_wins: number;
+  home_losses: number;
+  away_wins: number;
+  away_losses: number;
+  last10_wins: number;
+  last10_losses: number;
+  streak: string;
+  rank: number;
+}
+
 export interface RecommendationWithPlayer extends Recommendation {
   player: Player;
   game: Game;

@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase/public";
 import { Game } from "@/types";
 import { addDays, frDayMonth, todayNBA, weekStart } from "@/lib/date";
 import GamesList from "./GamesList";
+import GamesTabs from "@/components/GamesTabs";
 
 export const revalidate = 300;
 
@@ -32,6 +33,7 @@ export default async function GamesPage({
 
   return (
     <div className="px-4 py-5 animate-fade-in">
+      <GamesTabs active="matchs" />
       <div className="mb-5">
         <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-flame)]">
           <span className="w-1 h-1 rounded-full bg-[color:var(--color-flame)]" />

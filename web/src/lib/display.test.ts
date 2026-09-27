@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeState, isClosed, pickPoints, recMeta, topDefender, x2Hint, x2HintText } from "./display";
+import { homeState, isClosed, pickPoints, recMeta, standingsTint, standingsZone, topDefender, x2Hint, x2HintText } from "./display";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -86,4 +86,25 @@ describe("homeState", () => {
     expect(homeState({ hasNight: true, recCount: 0, hasPick: false })).toBe("waiting_sync"));
   it("pick déjà posé", () => expect(homeState({ hasNight: true, recCount: 12, hasPick: true })).toBe("picked"));
   it("à picker", () => expect(homeState({ hasNight: true, recCount: 12, hasPick: false })).toBe("to_pick"));
+});
+
+describe("standingsZone", () => {
+  it.each([1, 3, 6])("place %i : playoffs", (rank) => expect(standingsZone(rank)).toBe("playoffs"));
+  it.each([7, 8, 10])("place %i : play-in", (rank) => expect(standingsZone(rank)).toBe("playin"));
+  it.each([0, -1, 11, 15])("place %i : aucune zone", (rank) => expect(standingsZone(rank)).toBeNull());
+});
+
+describe("standingsTint", () => {
+  it("dégressif sur 1-6, jamais fort", () => {
+    expect(standingsTint(1)).toBeGreaterThan(standingsTint(6));
+    expect(standingsTint(1)).toBeLessThanOrEqual(0.07);
+  });
+  it("plus léger sur 7-10 que sur 1-6", () => {
+    expect(standingsTint(7)).toBeLessThan(standingsTint(6));
+    expect(standingsTint(10)).toBeGreaterThanOrEqual(0);
+  });
+  it("nul au-delà de la 10e place", () => {
+    expect(standingsTint(11)).toBe(0);
+    expect(standingsTint(15)).toBe(0);
+  });
 });

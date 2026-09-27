@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/public";
-import { ownerDb } from "@/lib/viewer";
+import { getViewer, ownerDb } from "@/lib/viewer";
 import { Game, MatchupSeasonRow, Night, Pick, Player, Recommendation, RecommendationWithPlayer, SyncLog } from "@/types";
 import SyncStatus from "@/components/SyncStatus";
 import NoPickBanner from "@/components/NoPickBanner";
@@ -19,12 +19,63 @@ const X2_MONTHS = new Set([11, 12, 1, 2, 3, 4]);
 
 type PlanRow = { night: string; player_id: number; is_x2: boolean };
 
+// Mode public (tâche 5) : uniquement les matchs de la soirée du deck, sans
+// recos/pick/x2/bannière — aucune donnée TTFL privée n'est lue ici.
+async function getPublicData() {
+  const deck = deckDate();
+  // Miroir de ELIGIBLE_TYPES (engine/rules/game_types.py, R4).
+  const { data, error } = await supabase.from("games").select("*").eq("date", deck)
+    .in("game_type", ["regular", "cup_final", "playoffs"]).order("tip_off");
+  return { deck, games: (data || []) as Game[], dataError: !!error };
+}
+
+function PublicTonight({ deck, games, dataError }: { deck: string; games: Game[]; dataError: boolean }) {
+  return (
+    <div className="animate-fade-in">
+      <header className="relative overflow-hidden px-4 pt-5 pb-4">
+        <div className="flex items-start justify-between gap-3 relative">
+          <div className="min-w-0">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-gold)]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--color-gold)] animate-live-dot" />
+              Ce soir
+            </span>
+            <h1 className="font-display text-5xl leading-none tracking-wide text-white">
+              CE <span className="flame-text">SOIR</span>
+            </h1>
+            <p className="text-xs text-[color:var(--color-text-mute)] mt-1.5 capitalize tracking-wide">
+              {frLongDate(deck)} ·{" "}
+              <span className="text-[color:var(--color-text-soft)] font-semibold">
+                {games.length} match{games.length > 1 ? "s" : ""}
+              </span>
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 pt-1">
+            <RefreshButton />
+          </div>
+        </div>
+      </header>
+
+      {dataError && (
+        <div className="px-4">
+          <p role="alert" className="rounded-[var(--radius-card-sm)] border border-[color:var(--color-crimson)]/40 bg-[color:var(--color-crimson)]/10 px-3 py-2 text-sm text-[color:var(--color-crimson)]">
+            Données indisponibles pour le moment, réessaie dans quelques minutes.
+          </p>
+        </div>
+      )}
+
+      <div className="mt-3 px-3">
+        <GamesCollapsible games={games} defaultOpen />
+      </div>
+    </div>
+  );
+}
+
+// Appelée uniquement pour le propriétaire (TonightPage bifurque avant) :
+// `db` est donc toujours le client service. Les repli `emptyList`/`emptySingle`
+// restent une défense en profondeur si jamais appelé sans vérification.
 async function getData() {
   const deck = deckDate();
   const db = await ownerDb();
-  // Recos, pick et plan sont des données TTFL privées (migration 028) : en
-  // mode public (db === null), on ne les interroge pas du tout — la page
-  // publique de la tâche 5 les remplacera par les vues publiques.
   const emptyList: { data: never[]; error: null } = { data: [], error: null };
   const emptySingle: { data: null; error: null } = { data: null, error: null };
   const [nightRes, gamesRes, recsRes, pickRes, syncRes, planRes] = await Promise.all([
@@ -93,6 +144,12 @@ async function getData() {
 }
 
 export default async function TonightPage() {
+  const { owner } = await getViewer();
+  if (!owner) {
+    const { deck, games, dataError } = await getPublicData();
+    return <PublicTonight deck={deck} games={games} dataError={dataError} />;
+  }
+
   const { deck, night, games, recsWithPlayers, pick, pickPlayer, plan, planPlayer, sync, dataError } = await getData();
   const state = homeState({ hasNight: !!night && night.n_eligible_games > 0, recCount: recsWithPlayers.length, hasPick: !!pick });
   const top3 = recsWithPlayers.slice(0, 3);
