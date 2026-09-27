@@ -91,3 +91,12 @@ L'app n'écrit jamais sur trashtalk.co : le pick y est toujours recopié à la m
 - **Web Push de la PWA** (iPhone 15 : iOS ≥ 16.4 requis). **Conditions iOS** : app ajoutée à l'écran d'accueil depuis Safari, manifest `display: standalone`, service worker, et demande de permission déclenchée **par un tap de l'utilisateur dans l'app installée** (jamais au chargement).
 - **Fallback Telegram** si le push iOS ne fonctionne pas après un essai. Le module d'envoi doit donc avoir une interface commune aux deux canaux.
 - **Timing** : rappel **2 h avant la fermeture**, relance **30 min avant** si aucun pick n'est validé. Fermeture = R8 (minuit Paris, ou 1er match si plus tôt). Nécessite un déclencheur horaire précis (le sync 4×/jour ne suffit pas), à traiter dans l'architecture.
+
+## Backtest 2025-26 (2026-09-27) — décision
+
+Rapport : `docs/backtest/2025-26-sr.md` (fenêtre 01/02 → 12/04/2026, 64 soirées, lecture seule).
+
+- **S2 (plan 30 j) non activé** : le plan perd contre le meilleur choix du soir dans les deux modes de blessures (−4,9 et −2,6 pts/soirée). `TONIGHT_SOURCE` reste `best_available` ; le plan reste indicatif.
+- **S3 (x2 du plan) gardé** : x2 posé par le plan sur le pick « meilleur choix » = +1,0 à +1,1 pt/soirée par rapport à la règle naïve de fin de mois (gain x2 +130 à +165 contre +99 pour les vrais picks). Suggestion affichée, x2 toujours posé par l'utilisateur.
+- Meilleur choix du soir vs vrais picks : +1,3 (sans info blessures) à +4,7 (absents connus) ; bruit ≈ 2,7 pts sur 64 soirées.
+
