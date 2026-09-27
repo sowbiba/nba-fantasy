@@ -72,7 +72,10 @@ def apply_scoreboard(repo, rows: list[dict], window_games: list[dict]) -> int:
 
 
 def score_picks(repo, season: str, today: date) -> None:
-    games = {g["id"]: g for g in repo.load_games_between(today - timedelta(days=40), today)}
+    # Toute la saison, pas seulement les 40 derniers jours : une correction
+    # (`correct_pick`) peut porter sur une soirée plus ancienne et doit être
+    # rescorée par la synchro suivante (spec §3.1).
+    games = {g["id"]: g for g in repo.load_games_of_seasons([season])}
     picks = [p for p in repo.load_picks(season) if p.get("actual_score") is None and _d(p["date"]) < today]
     logs = {(l["player_id"], l["game_id"]): l for l in repo.load_game_logs([season])}
     with_logs = {gid for (_, gid) in logs}

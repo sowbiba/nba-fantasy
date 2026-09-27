@@ -134,6 +134,23 @@ def test_daily_sync_match_ancien_non_final_score_le_pick():
     assert repo.picks[0]["actual_score"] == 40
 
 
+def test_score_picks_rescore_un_pick_vieux_de_60_jours():
+    # I1 : une correction (correct_pick) peut porter sur une soirée ancienne
+    # (actual_score remis à null) ; la synchro suivante doit la rescorer même
+    # si le match a plus de 40 jours (spec §3.1 : "recalculé par la synchro
+    # suivante").
+    old = TODAY - timedelta(days=60)
+    players = [_player(1, "DEN", "C")]
+    games = [{"id": "0022600099", "date": old.isoformat(), "home_team": "DEN", "away_team": "LAL",
+              "status": "final", "game_type": "regular", "season": "2026-27"}]
+    logs = [_log(1, "0022600099", old, "DEN", ttfl=37)]
+    picks = [{"id": 1, "player_id": 1, "game_id": "0022600099", "date": old.isoformat(),
+              "mode": "regular", "season": "2026-27", "actual_score": None, "is_x2": False}]
+    repo = FakeRepo(players=players, games=games, logs=logs, picks=picks)
+    run(repo, _fetch_scoreboard({}), lambda: {}, TODAY, NOW)
+    assert repo.picks[0]["actual_score"] == 37
+
+
 def test_scoreboard_espn_apparie_par_date_et_equipes():
     game = {"id": "0022600001", "date": "2026-10-20", "home_team": "DET", "away_team": "BOS",
             "status": "scheduled", "game_type": "regular", "season": "2026-27"}
