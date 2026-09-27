@@ -1,5 +1,5 @@
 import { StandingsRow } from "@/types";
-import { standingsTint } from "@/lib/display";
+import { standingsTint, standingsZone } from "@/lib/display";
 
 /** `.652`, jamais `0.652` (convention NBA). 0 match joué → `.000`. */
 function formatPct(pct: number): string {
@@ -30,12 +30,18 @@ function ConferenceTable({ rows }: { rows: StandingsRow[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {rows.map((r, i) => {
+            const zone = standingsZone(r.rank);
             const tint = standingsTint(r.rank);
-            const separator = r.rank === 6 || r.rank === 10;
+            // Séparateur dès que la zone change (playoffs → play-in → hors zone),
+            // donc toujours après la 6e et la 10e place sans dupliquer ces
+            // numéros en dur ici.
+            const next = rows[i + 1];
+            const separator = !!next && standingsZone(next.rank) !== zone;
             return (
               <tr
                 key={r.team}
+                data-zone={zone ?? undefined}
                 className={`font-mono-num ${separator ? "border-b border-white/15" : "border-b border-white/[0.03]"}`}
                 style={tint > 0 ? { backgroundColor: `rgba(255, 255, 255, ${tint})` } : undefined}
               >

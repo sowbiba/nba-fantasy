@@ -3,9 +3,10 @@ import { StandingsRow } from "@/types";
 import GamesTabs from "@/components/GamesTabs";
 import StandingsTable from "@/components/StandingsTable";
 
-// Vue publique (migration 027), même convention que /injuries : pas
-// d'entrée dynamique (pas de searchParams/cookies), revalidée toutes les
-// 5 minutes plutôt que lue à chaque requête.
+// Vue publique (migration 027), même convention que /injuries : pas de
+// searchParams ici, `revalidate` déclaré pour cohérence (en pratique la
+// route reste rendue à la demande, le layout racine lit les cookies via
+// getViewer()).
 export const revalidate = 300;
 
 async function getData() {
