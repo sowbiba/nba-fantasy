@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { StandingsRow } from "@/types";
-import { formatPointDiff, sortStandings, standingsTint, standingsZone, StandingsSortKey, SortDir } from "@/lib/display";
+import { displayedSortDir, formatPointDiff, sortStandings, standingsTint, standingsZone, StandingsSortKey, SortDir } from "@/lib/display";
 
 /** `.652`, jamais `0.652` (convention NBA). 0 match joué → `.000`. */
 function formatPct(pct: number): string {
@@ -33,7 +33,7 @@ function SortableHeader({
   ariaLabel,
   align,
   active,
-  dir,
+  displayDir,
   onToggle,
 }: {
   sortKey: StandingsSortKey;
@@ -41,13 +41,17 @@ function SortableHeader({
   ariaLabel: string;
   align: "left" | "right";
   active: boolean;
-  dir: SortDir;
+  /** Sens réel affiché (croissant/décroissant des valeurs), pas l'état
+   *  interne « meilleur d'abord vs inversé » — voir `displayedSortDir`
+   *  (@/lib/display) : « meilleur d'abord » n'est pas toujours décroissant
+   *  (D, GB, Rang sont meilleurs en croissant). */
+  displayDir: SortDir;
   onToggle: (key: StandingsSortKey) => void;
 }) {
   return (
     <th
       scope="col"
-      aria-sort={ariaSort(active, dir)}
+      aria-sort={ariaSort(active, displayDir)}
       className={`font-semibold py-1.5 ${align === "left" ? "text-left pr-2" : "text-right px-1.5"}`}
     >
       <button
@@ -57,7 +61,7 @@ function SortableHeader({
         className={`w-full py-0.5 ${align === "left" ? "text-left" : "text-right"} ${active ? "text-white" : ""}`}
       >
         {label}
-        <SortIndicator active={active} dir={dir} />
+        <SortIndicator active={active} dir={displayDir} />
       </button>
     </th>
   );
@@ -86,7 +90,15 @@ function ConferenceTable({ rows, ratings }: { rows: StandingsRow[]; ratings?: Re
   const sorted = sortStandings(rows, sortKey, sortDir, ratings);
   const isDefaultOrder = sortKey === "rank";
   const header = (key: StandingsSortKey, label: string, ariaLabel: string, align: "left" | "right" = "right") => (
-    <SortableHeader sortKey={key} label={label} ariaLabel={ariaLabel} align={align} active={sortKey === key} dir={sortDir} onToggle={toggleSort} />
+    <SortableHeader
+      sortKey={key}
+      label={label}
+      ariaLabel={ariaLabel}
+      align={align}
+      active={sortKey === key}
+      displayDir={displayedSortDir(key, sortDir)}
+      onToggle={toggleSort}
+    />
   );
 
   return (

@@ -150,11 +150,55 @@ export type StandingsSortKey =
 
 export type SortDir = "asc" | "desc";
 
+/** Clés numériques comparées par `compareBestFirst` — `"force"` est géré à
+ *  part dans `sortStandings` (valeurs manquantes toujours en fin de liste,
+ *  quelle que soit la direction ; pas de valeur numérique unique sans
+ *  `ratings`), donc jamais passé à `compareBestFirst`. */
+type NumericSortKey = Exclude<StandingsSortKey, "force">;
+
+/** Sens réel des valeurs affichées quand la colonne est triée « meilleur
+ *  d'abord » (1er appui, `dir` interne = `"asc"`) : `true` = valeurs
+ *  décroissantes (ex. V : le plus haut nombre de victoires en tête), `false`
+ *  = valeurs croissantes (ex. D : le plus petit nombre de défaites en tête).
+ *  Sert à afficher le bon `aria-sort`/▲▼ — l'état interne `dir` code
+ *  « meilleur d'abord vs inversé », pas « croissant vs décroissant », ce qui
+ *  diffère selon la colonne. `streak` est ordonné par `streakScore` (une
+ *  série de victoires plus longue = un score plus haut = « décroissant »
+ *  au sens de ce score, même si le libellé affiché n'est pas un nombre). */
+const BEST_FIRST_IS_DESCENDING: Record<StandingsSortKey, boolean> = {
+  rank: false,
+  wins: true,
+  losses: false,
+  pct: true,
+  games_behind: false,
+  last10: true,
+  streak: true,
+  point_diff: true,
+  force: true,
+};
+
+export function bestFirstIsDescending(key: StandingsSortKey): boolean {
+  return BEST_FIRST_IS_DESCENDING[key];
+}
+
+/** Direction réellement affichée (pour `aria-sort` et l'indicateur ▲/▼) à
+ *  partir de la direction interne du tri (`"asc"` = 1er appui/meilleur
+ *  d'abord, `"desc"` = 2e appui/inversé) : contrairement à `dir`, celle-ci
+ *  correspond au sens effectif des valeurs de la colonne, qui dépend de la
+ *  colonne (V trié meilleur d'abord affiche du plus grand au plus petit :
+ *  `"desc"` ; D trié meilleur d'abord affiche du plus petit au plus grand :
+ *  `"asc"`). */
+export function displayedSortDir(key: StandingsSortKey, dir: SortDir): SortDir {
+  const bestFirstDir: SortDir = bestFirstIsDescending(key) ? "desc" : "asc";
+  if (dir === "asc") return bestFirstDir;
+  return bestFirstDir === "asc" ? "desc" : "asc";
+}
+
 /** Comparaison « meilleur d'abord » (indépendante de la direction affichée) :
  *  négatif si `a` doit passer avant `b`. `dir` inverse ensuite ce résultat
  *  (2e appui = sens inverse) sans jamais casser la stabilité du départage
  *  par rang officiel. */
-function compareBestFirst(key: StandingsSortKey, a: StandingsRow, b: StandingsRow): number {
+function compareBestFirst(key: NumericSortKey, a: StandingsRow, b: StandingsRow): number {
   switch (key) {
     case "rank":
       return a.rank - b.rank;
@@ -172,10 +216,6 @@ function compareBestFirst(key: StandingsSortKey, a: StandingsRow, b: StandingsRo
       return streakScore(b.streak) - streakScore(a.streak);
     case "point_diff":
       return Number(b.point_diff) - Number(a.point_diff);
-    case "force":
-      // Traité à part dans sortStandings (valeurs manquantes toujours en
-      // fin de liste, quelle que soit la direction).
-      return 0;
   }
 }
 

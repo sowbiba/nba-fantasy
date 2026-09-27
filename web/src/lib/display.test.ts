@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  bestFirstIsDescending,
+  displayedSortDir,
   formatPointDiff,
   homeState,
   isClosed,
@@ -176,6 +178,29 @@ describe("streakScore", () => {
     expect(streakScore("V")).toBe(0);
     expect(streakScore("2")).toBe(0);
   });
+});
+
+describe("displayedSortDir / bestFirstIsDescending", () => {
+  it("V (meilleur d'abord = plus de victoires en tête) : 1er appui affiche décroissant", () => {
+    expect(bestFirstIsDescending("wins")).toBe(true);
+    expect(displayedSortDir("wins", "asc")).toBe("desc");
+  });
+  it("D (meilleur d'abord = moins de défaites en tête) : 1er appui affiche croissant", () => {
+    expect(bestFirstIsDescending("losses")).toBe(false);
+    expect(displayedSortDir("losses", "asc")).toBe("asc");
+  });
+  it("2e appui inverse toujours le sens affiché, quelle que soit la colonne", () => {
+    expect(displayedSortDir("wins", "desc")).toBe("asc");
+    expect(displayedSortDir("losses", "desc")).toBe("desc");
+  });
+  it.each(["pct", "last10", "streak", "point_diff", "force"] as const)(
+    "%s : meilleur d'abord = décroissant",
+    (key) => expect(displayedSortDir(key, "asc")).toBe("desc"),
+  );
+  it.each(["rank", "games_behind"] as const)(
+    "%s : meilleur d'abord = croissant",
+    (key) => expect(displayedSortDir(key, "asc")).toBe("asc"),
+  );
 });
 
 describe("sortStandings", () => {
