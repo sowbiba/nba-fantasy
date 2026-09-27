@@ -11,7 +11,7 @@ function formatGB(gb: number, rank: number): string {
   return gb.toFixed(1).replace(/\.0$/, "");
 }
 
-function ConferenceTable({ rows }: { rows: StandingsRow[] }) {
+function ConferenceTable({ rows, ratings }: { rows: StandingsRow[]; ratings?: Record<string, number> | null }) {
   return (
     <div className="overflow-x-auto -mx-1 px-1">
       <table className="w-full text-xs border-collapse min-w-[420px]">
@@ -27,6 +27,7 @@ function ConferenceTable({ rows }: { rows: StandingsRow[] }) {
             <th className="text-right font-semibold py-1.5 px-1.5">Ext.</th>
             <th className="text-right font-semibold py-1.5 px-1.5">10 der.</th>
             <th className="text-right font-semibold py-1.5 pl-1.5">Série</th>
+            {ratings && <th className="text-right font-semibold py-1.5 pl-1.5">Force</th>}
           </tr>
         </thead>
         <tbody>
@@ -55,6 +56,11 @@ function ConferenceTable({ rows }: { rows: StandingsRow[] }) {
                 <td className="text-right py-1.5 px-1.5 text-[color:var(--color-text-mute)]">{r.away_wins}-{r.away_losses}</td>
                 <td className="text-right py-1.5 px-1.5 text-[color:var(--color-text-mute)]">{r.last10_wins}-{r.last10_losses}</td>
                 <td className="text-right py-1.5 pl-1.5 text-[color:var(--color-text-mute)]">{r.streak || "—"}</td>
+                {ratings && (
+                  <td className="text-right py-1.5 pl-1.5 text-[color:var(--color-text-mute)]">
+                    {r.team in ratings ? Math.round(ratings[r.team]) : "—"}
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -64,7 +70,7 @@ function ConferenceTable({ rows }: { rows: StandingsRow[] }) {
   );
 }
 
-export default function StandingsTable({ rows }: { rows: StandingsRow[] }) {
+export default function StandingsTable({ rows, ratings }: { rows: StandingsRow[]; ratings?: Record<string, number> | null }) {
   const est = rows.filter((r) => r.conference === "Est").sort((a, b) => a.rank - b.rank);
   const ouest = rows.filter((r) => r.conference === "Ouest").sort((a, b) => a.rank - b.rank);
 
@@ -83,11 +89,11 @@ export default function StandingsTable({ rows }: { rows: StandingsRow[] }) {
     <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--color-text-mute)] mb-2">Conférence Est</h2>
-        <ConferenceTable rows={est} />
+        <ConferenceTable rows={est} ratings={ratings} />
       </div>
       <div>
         <h2 className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--color-text-mute)] mb-2">Conférence Ouest</h2>
-        <ConferenceTable rows={ouest} />
+        <ConferenceTable rows={ouest} ratings={ratings} />
       </div>
       <p className="text-[10px] text-[color:var(--color-text-mute)] tracking-wide">
         1-6 playoffs · 7-10 play-in

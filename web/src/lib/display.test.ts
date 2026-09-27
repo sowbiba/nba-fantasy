@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeState, isClosed, pickPoints, recMeta, standingsTint, standingsZone, topDefender, x2Hint, x2HintText } from "./display";
+import { homeState, isClosed, pickPoints, recMeta, standingsTint, standingsZone, topDefender, winPct, x2Hint, x2HintText } from "./display";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -78,6 +78,17 @@ describe("x2HintText", () => {
     expect(x2HintText("pose_sur_pick", "X")).not.toContain("reste valable");
   });
   it("déjà posé", () => expect(x2HintText("deja")).toBe("x2 activé sur ton pick, comme le suggère le plan pour ce soir."));
+});
+
+describe("winPct", () => {
+  it("arrondit à l'entier, espace avant %", () => {
+    expect(winPct(0.64)).toBe("64 %");
+    expect(winPct(0.355)).toBe("36 %");
+  });
+  it("bornes 0 et 1", () => {
+    expect(winPct(0)).toBe("0 %");
+    expect(winPct(1)).toBe("100 %");
+  });
 });
 
 describe("homeState", () => {

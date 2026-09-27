@@ -85,6 +85,12 @@ export function standingsZone(rank: number): "playoffs" | "playin" | null {
   return null;
 }
 
+/** Chance de victoire affichée (mode connecté, `game_predictions.home_win_prob`) :
+ *  « 64 % », arrondi à l'entier, jamais de décimale. */
+export function winPct(p: number): string {
+  return `${Math.round(p * 100)} %`;
+}
+
 /** Opacité du fond de ligne du classement : dégressive sur 1-6, plus légère
  *  sur 7-10, nulle au-delà. Reste discrète par construction (jamais > 0.07). */
 export function standingsTint(rank: number): number {

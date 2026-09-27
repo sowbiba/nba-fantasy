@@ -15,7 +15,7 @@ const SRC_DIR = fileURLToPath(new URL("..", import.meta.url));
 const EXCLUDED = [join(SRC_DIR, "lib", "viewer.ts"), join(SRC_DIR, "app", "actions.ts")];
 const EXCLUDED_DIRS = [join(SRC_DIR, "app", "api", "reminders")];
 
-const PRIVATE_TABLES = ["picks", "recommendations", "plan_latest", "player_watchlist", "second_chances"];
+const PRIVATE_TABLES = ["picks", "recommendations", "plan_latest", "player_watchlist", "second_chances", "team_elo", "game_predictions"];
 const PRIVATE_RPCS = ["period_stats", "player_calendar"];
 
 // `\s*` (qui matche aussi les retours à la ligne) entre `supabase`, `.` et
@@ -54,6 +54,7 @@ function walk(dir: string): string[] {
 describe("findLeaks (détecteur du test anti-fuite)", () => {
   it("détecte un appel sur une seule ligne", () => {
     expect(findLeaks('supabase.from("picks").select("*")')).not.toEqual([]);
+    expect(findLeaks('supabase.from("team_elo").select("*")')).not.toEqual([]);
     expect(findLeaks('supabase.rpc("period_stats", {})')).not.toEqual([]);
   });
 
