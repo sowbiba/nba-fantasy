@@ -18,9 +18,9 @@ from engine.rules.availability import PickRow, SecondChance, SeriesRow
 from engine.rules.calendar import PARIS, build_nights
 from engine.rules.game_types import previous_season, season_for_date
 from engine.stats.aggregates import player_aggregates
-from engine.stats.profile import GameLog, build_profile, prior_minutes, role_scales
-from engine.stats.team_defense import defense_factors
-from engine.strategy.regular import HORIZON_DAYS, DecisionInputs, decide
+from engine.stats.profile import GameLog
+from engine.strategy.inputs import build_decision_inputs
+from engine.strategy.regular import HORIZON_DAYS, decide
 
 SCHEDULE_PAST_DAYS = 5
 SCHEDULE_AHEAD_DAYS = 35
@@ -132,22 +132,12 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime) -> R
         _apply_injuries(repo, injuries)
 
     players = {p["id"]: p for p in repo.load_players()}
-    season_games = {g["id"]: g for g in repo.load_games_of_seasons([season, prior])}
+    season_games = repo.load_games_of_seasons([season, prior])
     all_logs = [GameLog.from_row(r) for r in repo.load_game_logs([season, prior])]
     current_by_player: dict[int, list[GameLog]] = defaultdict(list)
-    prior_by_player: dict[int, list[GameLog]] = defaultdict(list)
     for log in all_logs:
-        (current_by_player if log.season == season else prior_by_player)[log.player_id].append(log)
-
-    rosters: dict[str, list[int]] = defaultdict(list)
-    for pid, p in players.items():
-        if p.get("active", True):
-            rosters[p["team"]].append(pid)
-    scales = role_scales(prior_minutes([l for l in all_logs if l.season == prior]), rosters)
-    profiles = {pid: build_profile(pid, current_by_player[pid], prior_by_player[pid], scales.get(p["team"], 1.0))
-                for pid, p in players.items() if p.get("active", True)}
-    defense = defense_factors([l for l in all_logs if l.season == season], [l for l in all_logs if l.season == prior],
-                              season_games, {pid: p.get("position", "F") for pid, p in players.items()})
+        if log.season == season:
+            current_by_player[log.player_id].append(log)
 
     aggregate_rows = [{**{k: p[k] for k in IDENTITY}, **player_aggregates(current_by_player[pid])}
                       for pid, p in players.items() if current_by_player[pid]]
@@ -162,16 +152,15 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime) -> R
                                  "n_eligible_games": n.n_eligible_games, "closing_at": n.closing_at.isoformat(),
                                  "is_phantom": n.is_phantom, "updated_at": now.isoformat()} for n in nights])
 
-    recent_logs = {pid: [{"minutes": l.minutes} for l in sorted(logs, key=lambda l: l.date, reverse=True)[:5]]
-                   for pid, logs in current_by_player.items()}
     picks = [PickRow(p["id"], p["player_id"], _d(p["date"]), p["mode"], p["season"]) for p in repo.load_picks(season)]
     second_chances = [SecondChance(s["pick_id"], s["player_id"], _d(s["bought_on"]), _d(s["expires_on"]))
                       for s in repo.load_second_chances()]
-    series = [SeriesRow(s["season"], s["round"], s["home_team"], s["away_team"],
-                        s.get("home_wins") or 0, s.get("away_wins") or 0, s["status"]) for s in series_rows]
-    decision = decide(DecisionInputs(today=today, nights=nights, games=window, players=players,
-                                     profiles=profiles, recent_logs=recent_logs, defense=defense,
-                                     picks=picks, second_chances=second_chances, series=series))
+    decision_inputs, _profiles = build_decision_inputs(
+        today=today, players=players, games=window, season_games=season_games, logs=all_logs,
+        season=season, prior=prior, picks=picks, second_chances=second_chances,
+        series_rows=series_rows, nights=nights,
+    )
+    decision = decide(decision_inputs)
 
     if decision.tonight is not None:
         rows = []
