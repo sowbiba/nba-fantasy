@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import pytest
 
 from engine.jobs.backtest import STRATEGIES, INJURY_MODES, main, render_report, run
+from engine.stats.elo import PRODUCTION_ELO
 from engine.strategy.value import FUTURE_DECAY
 from tests.jobs.fakes import FakeRepo
 
@@ -180,6 +181,19 @@ def test_main_accepte_elo_k_hca_eps_et_les_imprime_dans_le_rapport(monkeypatch, 
     for mode in INJURY_MODES:
         # M-8 : la ligne « écart de force » apparaît une seule fois par mode, y compris via le CLI.
         assert report.count(f"| {BLOWOUT_LABEL} | {mode} |") == 1
+
+
+def test_main_sans_elo_flags_utilise_production_elo(monkeypatch, tmp_path):
+    from engine.jobs.backtest import BLOWOUT_LABEL
+
+    readonly = ReadOnlyRepo(_season_repo())
+    monkeypatch.setattr("engine.io.repo.SupabaseRepo.from_env", classmethod(lambda cls: readonly))
+    out = tmp_path / "rapport.md"
+    main(["--season", SEASON, "--from", NIGHTS[0].isoformat(), "--to", NIGHTS[-1].isoformat(), "--out", str(out)])
+    report = out.read_text(encoding="utf-8")
+    assert (f"k = {PRODUCTION_ELO.k:g}, home_advantage = {PRODUCTION_ELO.home_advantage:g}, "
+           f"elo_per_share = {PRODUCTION_ELO.elo_per_share:g}") in report
+    assert BLOWOUT_LABEL in report
 
 
 def test_run_amorce_les_simulations_avec_les_vrais_picks_pre_fenetre():

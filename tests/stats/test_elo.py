@@ -4,6 +4,7 @@ from datetime import date
 import pytest
 
 from engine.stats.elo import (
+    PRODUCTION_ELO,
     EloParams,
     GamePrediction,
     adjusted,
@@ -17,6 +18,23 @@ from engine.stats.elo import (
 from engine.stats.profile import GameLog
 
 NO_HCA = EloParams(home_advantage=0.0)
+
+
+def test_production_elo_valeurs_choisies_sur_le_rapport_2025_26():
+    # Valeurs figées par docs/backtest/elo-2025-26.md — ne touche jamais aux
+    # défauts de `EloParams` (les tests en dépendent).
+    assert PRODUCTION_ELO.k == 50.0
+    assert PRODUCTION_ELO.home_advantage == 20.0
+    assert PRODUCTION_ELO.elo_per_share == 300.0
+    assert PRODUCTION_ELO.points_per_elo == pytest.approx(1 / 7)
+
+
+def test_eloparams_defauts_inchanges():
+    defaults = EloParams()
+    assert defaults.k == 20.0
+    assert defaults.home_advantage == 70.0
+    assert defaults.elo_per_share == 0.0
+    assert defaults.points_per_elo == pytest.approx(1 / 28)
 
 
 def _game(gid, d, home, away, home_score=100, away_score=90, status="final",

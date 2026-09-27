@@ -31,7 +31,7 @@ from engine.backtest.simulate import (
 )
 from engine.rules.availability import COOLDOWN_DAYS, PickRow
 from engine.rules.scoring import night_points
-from engine.stats.elo import EloParams
+from engine.stats.elo import PRODUCTION_ELO, EloParams
 from engine.strategy.value import FUTURE_DECAY, X2_MONTHS
 
 INJURY_MODES = ("none", "dnp_oracle")
@@ -333,11 +333,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--no-blowout", dest="blowout", action="store_false",
                         help="ne pas simuler la ligne « best_available + écart de force »")
     parser.add_argument("--elo-k", type=float, default=None, help="k Elo pour la ligne « écart de force » "
-                                                                   "(défaut : EloParams().k)")
+                                                                   "(défaut : PRODUCTION_ELO.k)")
     parser.add_argument("--elo-hca", type=float, default=None, help="home_advantage Elo pour la ligne "
-                                                                     "« écart de force » (défaut : EloParams().home_advantage)")
+                                                                     "« écart de force » (défaut : PRODUCTION_ELO.home_advantage)")
     parser.add_argument("--elo-eps", type=float, default=None, help="elo_per_share pour la ligne « écart de "
-                                                                     "force » (défaut : EloParams().elo_per_share)")
+                                                                     "force » (défaut : PRODUCTION_ELO.elo_per_share)")
     parser.add_argument("--out", default=None, help="chemin du rapport Markdown (défaut : docs/backtest/<saison>-sr.md)")
     return parser.parse_args(argv)
 
@@ -349,11 +349,12 @@ def main(argv: list[str] | None = None) -> None:
     start, end = date.fromisoformat(args.start), date.fromisoformat(args.end)
     decays = [float(x) for x in args.decay.split(",")] if args.decay else []
     out = Path(args.out) if args.out else Path(f"docs/backtest/{args.season}-sr.md")
-    defaults = EloParams()
+    defaults = PRODUCTION_ELO
     elo_params = EloParams(
         k=args.elo_k if args.elo_k is not None else defaults.k,
         home_advantage=args.elo_hca if args.elo_hca is not None else defaults.home_advantage,
         elo_per_share=args.elo_eps if args.elo_eps is not None else defaults.elo_per_share,
+        points_per_elo=defaults.points_per_elo,
     )
 
     repo = SupabaseRepo.from_env()

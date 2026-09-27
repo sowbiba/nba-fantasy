@@ -19,7 +19,7 @@ from engine.rules.availability import PickRow, SecondChance
 from engine.rules.calendar import PARIS, build_nights
 from engine.rules.game_types import is_eligible, previous_season, season_for_date
 from engine.stats.aggregates import player_aggregates
-from engine.stats.elo import EloParams, game_season, is_countable, predict, ratings_before
+from engine.stats.elo import PRODUCTION_ELO, EloParams, game_season, is_countable, predict, ratings_before
 from engine.stats.profile import GameLog
 from engine.strategy.inputs import absent_shares, build_decision_inputs
 from engine.strategy.regular import HORIZON_DAYS, decide
@@ -269,7 +269,8 @@ def main() -> None:
     today = now.astimezone(PARIS).date()
     log_id = repo.start_log("daily_sync")
     try:
-        result = run(repo, lambda d: fetch_espn_scoreboard(d, guard), lambda: fetch_all_injuries(guard), today, now)
+        result = run(repo, lambda d: fetch_espn_scoreboard(d, guard), lambda: fetch_all_injuries(guard), today, now,
+                    elo_params=PRODUCTION_ELO)
     except Exception as exc:
         repo.finish_log(log_id, status="error", error=str(exc), api_calls=guard.summary())
         raise

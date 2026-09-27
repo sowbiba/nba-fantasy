@@ -37,6 +37,14 @@ class EloParams:
     points_per_elo: float = 1 / 28
 
 
+# Choisis sur la saison 2025-26 (rapport docs/backtest/elo-2025-26.md) :
+# plateau de perte logarithmique k 50–60 sur février–avril, HCA 20,
+# correction blessures 300 ; points_per_elo recalibré (pente écart réel/
+# écart attendu ≈ 4 avec 1/28) ; saison de départ à froid (pas de 2024-25)
+# → à revoir mi-décembre 2026 sur les données 2026-27.
+PRODUCTION_ELO = EloParams(k=50.0, home_advantage=20.0, elo_per_share=300.0, points_per_elo=1 / 7)
+
+
 def win_prob(home: float, away: float, p: EloParams) -> float:
     """Probabilité de victoire à domicile, avantage du terrain inclus."""
     return 1.0 / (1.0 + 10 ** (-((home + p.home_advantage - away) / 400.0)))

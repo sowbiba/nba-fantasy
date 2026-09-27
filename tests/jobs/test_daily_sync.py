@@ -2,8 +2,8 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from engine.jobs.daily_sync import apply_scoreboard, game_prediction_rows, run, team_elo_rows
-from engine.stats.elo import EloParams
+from engine.jobs.daily_sync import RunResult, apply_scoreboard, game_prediction_rows, run, team_elo_rows
+from engine.stats.elo import PRODUCTION_ELO, EloParams
 from tests.jobs.fakes import FakeRepo
 
 TODAY = date(2026, 11, 2)
@@ -302,6 +302,37 @@ def test_daily_sync_transmet_elo_params_a_build_decision_inputs(monkeypatch):
     run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW, elo_params=params)
 
     assert captured.get("elo_params") is params
+
+
+def test_main_utilise_production_elo(monkeypatch):
+    # `main` (production, GitHub Actions) doit tourner avec `PRODUCTION_ELO`
+    # (rapport docs/backtest/elo-2025-26.md), pas le défaut de `run` réservé
+    # aux tests — capture l'appel réel plutôt que de vérifier un effet
+    # indirect, jamais d'accès réseau/DB ici (repo, guard et fetchers
+    # doublés).
+    import engine.jobs.daily_sync as daily_sync_module
+
+    captured = {}
+
+    def _fake_run(repo, fetch_scoreboard, fetch_injuries, today, now, elo_params=None):
+        captured["elo_params"] = elo_params
+        return RunResult()
+
+    class _FakeLogRepo:
+        def start_log(self, name):
+            return 1
+
+        def finish_log(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr(daily_sync_module, "run", _fake_run)
+    monkeypatch.setattr("engine.io.repo.SupabaseRepo.from_env", classmethod(lambda cls: _FakeLogRepo()))
+    monkeypatch.setattr("engine.io.espn.fetch_all_injuries", lambda guard: {})
+    monkeypatch.setattr("engine.io.espn.fetch_espn_scoreboard", lambda d, guard: [])
+
+    daily_sync_module.main()
+
+    assert captured["elo_params"] is PRODUCTION_ELO
 
 
 class _BoomTeamElo:

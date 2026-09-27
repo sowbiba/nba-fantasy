@@ -157,9 +157,9 @@ Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.co
 # --decay 0.97,0.985,1.0   : variantes de decay pour `plan` (diagnostic, en plus du décay par défaut)
 # --out docs/backtest/2025-26-sr.md   : chemin du rapport (défaut : docs/backtest/<saison>-sr.md)
 # --elo-k 30 --elo-hca 55 --elo-eps 200   : paramètres Elo pour la ligne « best_available + écart de
-#   force » (défaut : EloParams() — k=20, home_advantage=70, elo_per_share=0) ; le rapport les imprime
-#   toujours dans les Limites, pour que le rapport dise avec quels paramètres il a tourné (review
-#   finale L3a, Important 3)
+#   force » (défaut : PRODUCTION_ELO — k=50, home_advantage=20, elo_per_share=300) ; le rapport les
+#   imprime toujours dans les Limites, pour que le rapport dise avec quels paramètres il a tourné
+#   (review finale L3a, Important 3)
 ```
 
 **Lecture seule** : le job n'appelle que les méthodes `load_*` de `SupabaseRepo` — aucune écriture, aucune ligne `sync_log` (contrairement à `daily_sync`/`local_nightly`). Testé par `tests/jobs/test_backtest_job.py` avec un faux repo dont seules les méthodes de lecture nécessaires sont déléguées ; tout le reste (écritures, `sync_log`, futures méthodes) lève une `AssertionError`.
@@ -204,6 +204,10 @@ Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.co
 - Une seule saison chargée en base à ce stade → pas de validation croisée entre saisons, les paramètres choisis sont ceux qui minimisent la perte logarithmique sur 2025-26 uniquement.
 - Fenêtre par défaut à partir du 1er décembre : les deux premiers mois de la saison ne servent qu'à faire chauffer les notes depuis 1500, sans compter dans les métriques.
 - `points_per_elo` (1/28, le réglage 538 pour k≈20) n'est pas recalibré : à k élevé, l'écart de points attendu (stocké dans `game_predictions`, utilisé par le seuil du facteur « écart de force ») est probablement surestimé — la pente affichée dans le rapport le vérifie.
+
+### Paramètres Elo de production
+
+`PRODUCTION_ELO` (`engine/stats/elo.py`, à côté de `EloParams`, dont les défauts restent inchangés pour les tests) fige les paramètres choisis sur le rapport `docs/backtest/elo-2025-26.md` : `k = 50`, `home_advantage = 20`, `elo_per_share = 300` (correction blessures), `points_per_elo = 1/7` (recalibré, pente écart réel/écart attendu ≈ 4 avec 1/28). `daily_sync.main()` et `backtest.main()` (défauts de `--elo-k`/`--elo-hca`/`--elo-eps`) l'utilisent par défaut ; `elo_report` n'en a pas besoin, il ne fait que rejouer une grille. Choisi sur une saison de départ à froid (pas de saison 2024-25 en base) : à revoir à la mi-décembre 2026 sur les données 2026-27.
 
 ## Tests SQL
 
