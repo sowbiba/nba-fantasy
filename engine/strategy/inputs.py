@@ -128,10 +128,12 @@ def expected_margins(*, today: date, players: dict[int, dict], games: list[dict]
     absent = absent_shares(today=today, players=players, logs=logs) if p.elo_per_share else {}
     out: dict[str, float] = {}
     for g in games:
+        if g.get("id") is None:
+            continue   # sans id : aucun écart plutôt qu'un écart partagé sous la clé "None"
         home, away = g["home_team"], g["away_team"]
         r_home, r_away = ratings.get(home, START_RATING), ratings.get(away, START_RATING)
         if as_date(g["date"]) == today:
             r_home = adjusted(r_home, absent.get(home, 0.0), p)
             r_away = adjusted(r_away, absent.get(away, 0.0), p)
-        out[str(g.get("id"))] = expected_margin(r_home, r_away, p)
+        out[str(g["id"])] = expected_margin(r_home, r_away, p)
     return out

@@ -325,3 +325,12 @@ def test_blowout_un_score_anterieur_change_bien_l_ecart_attendu(monkeypatch):
         simulate(_scored(_season(SIX_NIGHTS), scores), SIX_NIGHTS[0], d, "best_available", blowout=True)
         margins.append(next(c[0].expected_margins for c in calls if c[0].today == d))
     assert margins[0] != margins[1]
+
+
+def test_blowout_x2plan_les_deux_decisions_recoivent_le_modele(monkeypatch):
+    nights = [date(2026, 11, 28), date(2026, 11, 29), date(2026, 11, 30)]
+    calls = _spy_decide(monkeypatch)
+    data = _scored(_season(nights), {n: (130, 90) for n in nights})
+    result = simulate(data, nights[0], nights[-1], "best_available_x2plan", blowout=True)
+    assert len(calls) == 2 * len(result.nights)
+    assert all(kw["blowout"] is not None and kw["blowout"] is inputs.blowout_model for inputs, kw, _ in calls)

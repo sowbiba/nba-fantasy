@@ -176,8 +176,8 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         status = row.get("injury_status")
         rd = rest_days(team, d, team_dates)
         margin = None
-        if blowout is not None:
-            home_margin = inputs.expected_margins.get(str(game.get("id")))
+        if blowout is not None and game.get("id") is not None:
+            home_margin = inputs.expected_margins.get(str(game["id"]))
             if home_margin is not None:
                 margin = home_margin if is_home else -home_margin
         ctx = GameContext(opponent, is_home, rd, opp_factor(inputs.defense, opponent, row.get("position", "F")),
