@@ -91,6 +91,15 @@ export function winPct(p: number): string {
   return `${Math.round(p * 100)} %`;
 }
 
+/** Paire domicile/extérieur affichée à partir de `home_win_prob` (M-10, review
+ *  finale L3a) : l'extérieur = 100 − l'arrondi du domicile, jamais un arrondi
+ *  indépendant de `1 - p` — sinon un match à 35.5 % peut afficher 36 % / 65 %
+ *  (65 au lieu de 64) au lieu de 36 % / 64 %. */
+export function winPctPair(homeProb: number): { home: string; away: string } {
+  const home = Math.round(homeProb * 100);
+  return { home: `${home} %`, away: `${100 - home} %` };
+}
+
 /** Opacité du fond de ligne du classement : dégressive sur 1-6, plus légère
  *  sur 7-10, nulle au-delà. Reste discrète par construction (jamais > 0.07). */
 export function standingsTint(rank: number): number {

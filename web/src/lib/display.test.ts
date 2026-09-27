@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeState, isClosed, pickPoints, recMeta, standingsTint, standingsZone, topDefender, winPct, x2Hint, x2HintText } from "./display";
+import { homeState, isClosed, pickPoints, recMeta, standingsTint, standingsZone, topDefender, winPct, winPctPair, x2Hint, x2HintText } from "./display";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -43,6 +43,20 @@ describe("isClosed", () => {
   it("pas de closingAt connu : ne bloque pas", () => {
     expect(isClosed(null, new Date("2026-11-24T23:00:00Z"))).toBe(false);
     expect(isClosed(undefined, new Date("2026-11-24T23:00:00Z"))).toBe(false);
+  });
+});
+
+describe("winPctPair", () => {
+  it("l'extérieur = 100 − l'arrondi du domicile, jamais un arrondi indépendant de 1 - p", () => {
+    // Arrondis indépendants donneraient 36 % / 65 % (36 + 65 = 101) : ici
+    // l'extérieur doit être 100 − 36 = 64 % (M-10, review finale L3a).
+    expect(winPctPair(0.355)).toEqual({ home: "36 %", away: "64 %" });
+  });
+  it("la paire somme toujours à 100", () => {
+    for (const p of [0.0, 0.001, 0.125, 0.355, 0.5, 0.645, 0.999, 1.0]) {
+      const { home, away } = winPctPair(p);
+      expect(parseInt(home) + parseInt(away)).toBe(100);
+    }
   });
 });
 

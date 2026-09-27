@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Game } from "@/types";
-import { winPct } from "@/lib/display";
+import { winPctPair } from "@/lib/display";
 
 interface Props {
   games: Game[];
@@ -82,6 +82,7 @@ export default function GamesCollapsible({ games, defaultOpen = false, predictio
           {games.map((game) => {
             const p = predictions?.[game.id];
             const showPct = p !== undefined && Number.isFinite(p);
+            const pct = showPct ? winPctPair(p) : null;
             return (
               <div key={game.id} className="flex justify-between items-center py-2">
                 <div className="flex items-center gap-2 min-w-0">
@@ -90,8 +91,8 @@ export default function GamesCollapsible({ games, defaultOpen = false, predictio
                       <span className={`${game.status === "final" && game.home_score !== null && game.away_score !== null && game.home_score > game.away_score ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text)]"}`}>
                         {game.home_team}
                       </span>
-                      {showPct && (
-                        <span className="text-[9px] font-normal text-[color:var(--color-text-mute)]">{winPct(p)}</span>
+                      {pct && (
+                        <span className="text-[9px] font-normal text-[color:var(--color-text-mute)]">{pct.home}</span>
                       )}
                     </span>
                     {game.status === "final" && game.home_score !== null && game.away_score !== null ? (
@@ -111,8 +112,8 @@ export default function GamesCollapsible({ games, defaultOpen = false, predictio
                       <span className={`${game.status === "final" && game.home_score !== null && game.away_score !== null && game.away_score > game.home_score ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text)]"}`}>
                         {game.away_team}
                       </span>
-                      {showPct && (
-                        <span className="text-[9px] font-normal text-[color:var(--color-text-mute)]">{winPct(1 - p)}</span>
+                      {pct && (
+                        <span className="text-[9px] font-normal text-[color:var(--color-text-mute)]">{pct.away}</span>
                       )}
                     </span>
                   </div>
