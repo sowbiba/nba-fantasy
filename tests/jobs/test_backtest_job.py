@@ -116,6 +116,22 @@ def test_run_contexte_saison_complete_present():
     assert sum(1 for n in fs["logs"].nights if n.player_id is not None) == 3
 
 
+def test_contexte_saison_bornes_aux_soirees_de_saison_reguliere():
+    # I-5 : un match de playoffs après la saison régulière (et un match de
+    # présaison avant) ne doivent pas élargir les bornes affichées.
+    repo = _season_repo()
+    po_day = NIGHTS[-1] + timedelta(days=40)
+    pre_day = NIGHTS[0] - timedelta(days=20)
+    repo.games["g_po"] = {**_game_row(po_day), "id": "g_po", "game_type": "playoffs"}
+    repo.games["g_pre"] = {**_game_row(pre_day), "id": "g_pre", "game_type": "preseason"}
+    from engine.backtest.data import load_season
+    data = load_season(repo, SEASON)
+    fs = run(data, NIGHTS[0], NIGHTS[-1])["full_season"]
+    assert (fs["start"], fs["end"]) == (NIGHTS[0], NIGHTS[-1])
+    report = render_report(SEASON, NIGHTS[0], NIGHTS[-1], [], run(data, NIGHTS[0], NIGHTS[-1]))
+    assert f"({NIGHTS[0].isoformat()} → {NIGHTS[-1].isoformat()})" in report
+
+
 def test_report_contient_les_sections_et_la_conclusion_factuelle():
     data = _data()
     result = run(data, NIGHTS[0], NIGHTS[-1], decays=[0.97])
@@ -129,6 +145,11 @@ def test_report_contient_les_sections_et_la_conclusion_factuelle():
     assert "mode dnp_oracle : plan − meilleur choix" in report
     assert "mode none : best_available_x2plan − best_available" in report
     assert "| best_available_x2plan | dnp_oracle |" in report
+    # M-6 (zéros), M-2 (bruit), I-4 (officiel = logs), M-7 (seconde chance).
+    assert "Zéros : soirées à 0 point, soirées sans pick comprises" in report
+    assert f"sur {len(NIGHTS)} soirées" in report and "erreur type d'une différence de moyennes" in report
+    assert "pas une vérification indépendante contre trashtalk.co" in report
+    assert "Pas de seconde chance dans les simulations" in report
     assert "decay=0.97" in report
 
 

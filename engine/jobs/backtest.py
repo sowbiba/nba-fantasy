@@ -15,6 +15,7 @@ optimiste) plutôt qu'une vérité unique ; la saison 2024-25 n'est pas chargée
 restreinte à la saison régulière (R14, pas de x2 en playoffs).
 """
 import argparse
+import math
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -34,6 +35,7 @@ from engine.strategy.value import FUTURE_DECAY, X2_MONTHS
 
 INJURY_MODES = ("none", "dnp_oracle")
 DEFAULT_WINDOW = (2, 4)   # février → avril : fenêtre par défaut (voir docstring module)
+TTFL_NIGHT_STDDEV = 15.0   # écart-type approximatif d'un score TTFL sur une soirée (bruit, M-2)
 SEED_DAYS = COOLDOWN_DAYS   # amorce des simulations avec les vrais picks des 30 jours avant `start`
 
 
@@ -145,8 +147,11 @@ def run(data: SeasonData, start: date, end: date, decays: list[float] | None = N
 
     diverging = _diverging_nights(official, logs_based)
 
-    full_start, full_end = _season_bounds(data)
-    full_regular_dates = _regular_dates(data, full_start, full_end)
+    # Bornes de la saison régulière (pas de tout le calendrier : les playoffs
+    # repousseraient la fin affichée bien au-delà des soirées comptées).
+    full_regular_dates = _regular_dates(data, *_season_bounds(data))
+    full_start, full_end = (min(full_regular_dates), max(full_regular_dates)) if full_regular_dates \
+        else _season_bounds(data)
     full_official = _only(_official_user_result(data, full_start, full_end), full_regular_dates)
     full_logs = _only(user_result(data, full_start, full_end), full_regular_dates)
 
@@ -192,6 +197,17 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
         lines.append(f"| {r.label} | {r.mode} | {r.result.average:.2f} | {r.result.zeros} | "
                      f"{r.result.x2_gain:+d} | {len(r.result.nights)} |")
     lines.append("")
+    lines.append("Zéros : soirées à 0 point, soirées sans pick comprises (à la différence du compteur "
+                 "« zéros » de la page picks, qui ne compte que les picks notés 0).")
+    lines.append("")
+    n = data["total_nights"]
+    if n:
+        se = TTFL_NIGHT_STDDEV * math.sqrt(2 / n)
+        lines.append(f"Bruit statistique : sur {n} soirées, avec un écart-type d'environ "
+                     f"{TTFL_NIGHT_STDDEV:.0f} pts par soirée, l'erreur type d'une différence de moyennes est "
+                     f"≈ {se:.1f} pts. Un écart plus petit que cela est du bruit ; la règle d'activation "
+                     "exige d'ailleurs que le plan gagne dans les deux modes de blessures.")
+        lines.append("")
     n_div = len(data["diverging_nights"])
     lines.append(f"Écart officiel vs logs (même sélection, même x2, note différente) : {n_div} soirée(s) "
                  f"sur {data['total_nights']}"
@@ -229,6 +245,12 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
                      "la dernière soirée éligible du mois, hors fenêtre, donc perd le x2 de ce mois ; "
                      "`plan` (planificateur MILP, S3) peut le poser plus tôt dans le mois dès que la fin du "
                      "mois est visible dans son horizon de 35 jours, donc à l'intérieur de la fenêtre.")
+    lines.append("- Le score « officiel » (`picks.actual_score`) est rempli à partir des mêmes game_logs "
+                 "(`score_picks`) : l'écart officiel/logs n'est pas une vérification indépendante contre "
+                 "trashtalk.co. Dates vérifiées sur 2025-26 (lecture seule) : aucun log dont la date "
+                 "diffère de celle de son match, donc pas de décalage d'un jour.")
+    lines.append("- Pas de seconde chance dans les simulations (les secondes chances réelles portent sur "
+                 "mes propres picks) : léger biais en défaveur des stratégies simulées.")
     lines.append("- Saison régulière uniquement (R14, R10) : les soirées de playoffs, s'il y en a dans la "
                  "fenêtre, sont exclues du calcul.")
     lines.append("")
