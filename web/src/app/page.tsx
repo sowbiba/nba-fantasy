@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/public";
+import { ownerDb } from "@/lib/viewer";
 import { Game, MatchupSeasonRow, Night, Pick, Player, Recommendation, RecommendationWithPlayer, SyncLog } from "@/types";
 import SyncStatus from "@/components/SyncStatus";
 import NoPickBanner from "@/components/NoPickBanner";
@@ -20,13 +21,19 @@ type PlanRow = { night: string; player_id: number; is_x2: boolean };
 
 async function getData() {
   const deck = deckDate();
+  const db = await ownerDb();
+  // Recos, pick et plan sont des données TTFL privées (migration 028) : en
+  // mode public (db === null), on ne les interroge pas du tout — la page
+  // publique de la tâche 5 les remplacera par les vues publiques.
+  const emptyList: { data: never[]; error: null } = { data: [], error: null };
+  const emptySingle: { data: null; error: null } = { data: null, error: null };
   const [nightRes, gamesRes, recsRes, pickRes, syncRes, planRes] = await Promise.all([
     supabase.from("nights").select("*").eq("date", deck).maybeSingle(),
     supabase.from("games").select("*").eq("date", deck).order("tip_off"),
-    supabase.from("recommendations").select("*").eq("date", deck).order("rank"),
-    supabase.from("picks").select("*").eq("date", deck).maybeSingle(),
+    db ? db.from("recommendations").select("*").eq("date", deck).order("rank") : emptyList,
+    db ? db.from("picks").select("*").eq("date", deck).maybeSingle() : emptySingle,
     supabase.from("sync_log").select("*").eq("job", "daily_sync").order("started_at", { ascending: false }).limit(1),
-    supabase.from("plan_latest").select("night, player_id, is_x2").eq("night", deck).maybeSingle(),
+    db ? db.from("plan_latest").select("night, player_id, is_x2").eq("night", deck).maybeSingle() : emptySingle,
   ]);
   const night = (nightRes.data as Night | null) ?? null;
   const plan = (planRes.data as PlanRow | null) ?? null;

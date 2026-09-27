@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase/public";
+import { getViewer, ownerDb } from "@/lib/viewer";
 import { addDays, deckDate } from "@/lib/date";
 import { Night, Player } from "@/types";
 import DeckNight from "@/components/DeckNight";
@@ -9,12 +11,16 @@ type PlanRow = { night: string; player_id: number; projection: number; explanati
 type PickRow = { date: string; player_id: number; is_x2: boolean; game_id: string };
 
 export default async function DeckPage() {
+  const viewer = await getViewer();
+  if (!viewer.owner) redirect("/");
+  const db = await ownerDb();
+
   const today = deckDate();
   const until = addDays(today, 14);
   const [nightsRes, planRes, picksRes] = await Promise.all([
     supabase.from("nights").select("*").gte("date", today).lte("date", until).order("date"),
-    supabase.from("plan_latest").select("night, player_id, projection, explanation, is_x2").gte("night", today).lte("night", until),
-    supabase.from("picks").select("date, player_id, is_x2, game_id").gte("date", today).lte("date", until),
+    db!.from("plan_latest").select("night, player_id, projection, explanation, is_x2").gte("night", today).lte("night", until),
+    db!.from("picks").select("date, player_id, is_x2, game_id").gte("date", today).lte("date", until),
   ]);
   const nights = (nightsRes.data || []) as Night[];
   const plan = (planRes.data || []) as PlanRow[];

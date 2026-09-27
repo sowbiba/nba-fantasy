@@ -1,14 +1,12 @@
-import Link from "next/link";
-import { createAuthClient } from "@/lib/supabase/server";
-import { isOwnerEmail } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { getViewer } from "@/lib/viewer";
 import PushControls from "./PushControls";
 
 export const revalidate = 0;
 
 export default async function RappelsPage() {
-  const auth = await createAuthClient();
-  const { data: userData } = await auth.auth.getUser();
-  const signedIn = isOwnerEmail(userData.user?.email, process.env.OWNER_EMAIL);
+  const viewer = await getViewer();
+  if (!viewer.owner) redirect("/");
 
   return (
     <div className="px-4 py-5 animate-fade-in">
@@ -24,13 +22,7 @@ export default async function RappelsPage() {
       </ul>
 
       <div className="mt-6">
-        {signedIn ? (
-          <PushControls />
-        ) : (
-          <p className="text-sm text-[color:var(--color-text-soft)]">
-            <Link href="/connexion" className="underline">Connecte-toi</Link> pour activer les rappels.
-          </p>
-        )}
+        <PushControls />
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/public";
+import { ownerDb } from "@/lib/viewer";
 import { Player, Recommendation, WatchlistEntry } from "@/types";
 import { ProsBlock, ConsBlock, VerdictBlock } from "@/components/ProsCons";
 import BackButton from "./BackButton";
@@ -33,30 +34,28 @@ const tierLabels: Record<
 async function getData(playerId: number) {
   const today = deckDate();
   const until = addDays(today, 29);
+  const db = await ownerDb();
+  // recommendations, player_calendar, player_watchlist et picks sont des
+  // données TTFL privées (migration 028) : en mode public (db === null),
+  // on ne les interroge pas — la fiche publique (tâche 5) affiche seulement
+  // les données publiques ci-dessous (players).
+  const emptySingle: { data: null; error: null } = { data: null, error: null };
+  const emptyList: { data: never[]; error: null } = { data: [], error: null };
   const [playerRes, recRes, calRes, watchlistRes, picksRes] = await Promise.all([
     supabase.from("players").select("*").eq("id", playerId).single(),
-    supabase
-      .from("recommendations")
-      .select("*")
-      .eq("player_id", playerId)
-      .eq("date", today)
-      .maybeSingle(),
-    supabase.rpc("player_calendar", {
-      p_player_id: playerId,
-      p_from: today,
-      p_to: until,
-    }),
-    supabase
-      .from("player_watchlist")
-      .select("*")
-      .eq("player_id", playerId)
-      .maybeSingle(),
+    db
+      ? db.from("recommendations").select("*").eq("player_id", playerId).eq("date", today).maybeSingle()
+      : emptySingle,
+    db
+      ? db.rpc("player_calendar", { p_player_id: playerId, p_from: today, p_to: until })
+      : emptyList,
+    db
+      ? db.from("player_watchlist").select("*").eq("player_id", playerId).maybeSingle()
+      : emptySingle,
     // Le pick déjà posé (par ce joueur ou un autre) sur chaque soirée du calendrier (M2).
-    supabase
-      .from("picks")
-      .select("date, player_id, players(name)")
-      .gte("date", today)
-      .lte("date", until),
+    db
+      ? db.from("picks").select("date, player_id, players(name)").gte("date", today).lte("date", until)
+      : emptyList,
   ]);
   type PickWithPlayer = { date: string; player_id: number; players: { name: string } | null };
   const picksByDate: Record<string, { playerId: number; name: string }> = {};
