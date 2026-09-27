@@ -5,10 +5,11 @@ import { Game } from "@/types";
 
 interface Props {
   games: Game[];
+  defaultOpen?: boolean;
 }
 
-export default function GamesCollapsible({ games }: Props) {
-  const [open, setOpen] = useState(false);
+export default function GamesCollapsible({ games, defaultOpen = false }: Props) {
+  const [open, setOpen] = useState(defaultOpen);
 
   const formatTipOff = (tipOff: string | null) => {
     if (!tipOff) return "";

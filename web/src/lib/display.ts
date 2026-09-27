@@ -75,3 +75,20 @@ export function homeState(s: { hasNight: boolean; recCount: number; hasPick: boo
   if (s.recCount === 0) return "waiting_sync" as const;
   return "to_pick" as const;
 }
+
+/** Zone du classement (tâche 5) : 1-6 playoffs direct, 7-10 play-in, sinon
+ *  aucune zone. Purement informatif (le tri officiel départage autrement) —
+ *  jamais de rouge/vert franc à l'affichage, juste une teinte discrète. */
+export function standingsZone(rank: number): "playoffs" | "playin" | null {
+  if (rank >= 1 && rank <= 6) return "playoffs";
+  if (rank >= 7 && rank <= 10) return "playin";
+  return null;
+}
+
+/** Opacité du fond de ligne du classement : dégressive sur 1-6, plus légère
+ *  sur 7-10, nulle au-delà. Reste discrète par construction (jamais > 0.07). */
+export function standingsTint(rank: number): number {
+  if (rank >= 1 && rank <= 6) return 0.07 - (rank - 1) * 0.008;
+  if (rank >= 7 && rank <= 10) return 0.02 - (rank - 7) * 0.0015;
+  return 0;
+}

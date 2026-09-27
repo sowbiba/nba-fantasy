@@ -9,7 +9,7 @@ export default function SignOutButton() {
   const [pending, startTransition] = useTransition();
   return (
     <button onClick={() => startTransition(async () => { await signOut(); router.refresh(); })}
-            disabled={pending} className="text-xs underline text-[color:var(--color-text-soft)]">
+            disabled={pending} className="text-[11px] uppercase tracking-[0.15em] text-[color:var(--color-text-mute)] underline">
       Déconnexion
     </button>
   );

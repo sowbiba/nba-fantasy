@@ -2,8 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Bebas_Neue, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
+import HeaderControl from "@/components/HeaderControl";
 import PullToRefresh from "@/components/PullToRefresh";
 import ServiceWorker from "@/components/ServiceWorker";
+import { getViewer } from "@/lib/viewer";
 
 const display = Bebas_Neue({
   weight: "400",
@@ -33,18 +35,25 @@ export const viewport: Viewport = {
   // and the default already prevents the iOS input-focus zoom jump.
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { owner } = await getViewer();
   return (
     <html lang="fr" className={`${display.variable} ${body.variable}`}>
       <body className="font-body text-[color:var(--color-text)] min-h-screen">
         <ServiceWorker />
         <PullToRefresh />
-        <main className="max-w-lg mx-auto pb-24">{children}</main>
-        <BottomNav />
+        <main
+          className="max-w-lg mx-auto pb-24"
+          style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+        >
+          <HeaderControl owner={owner} />
+          {children}
+        </main>
+        <BottomNav owner={owner} />
       </body>
     </html>
   );

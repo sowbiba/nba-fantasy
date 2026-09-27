@@ -1,30 +1,28 @@
 "use server";
 
-import { isOwnerEmail } from "@/lib/auth";
 import { createAuthClient } from "@/lib/supabase/server";
 
-/** Envoie un code à 6 chiffres (modèle d'e-mail Supabase avec {{ .Token }}).
- *  Réponse identique pour un e-mail non autorisé : on ne révèle rien. */
-export async function sendCode(email: string): Promise<{ ok: boolean; error?: string }> {
-  if (!process.env.OWNER_EMAIL) {
+/** Envoie un code à 6 chiffres à OWNER_EMAIL (modèle d'e-mail Supabase avec
+ *  {{ .Token }}). Aucun champ e-mail côté client : le code part toujours et
+ *  uniquement à l'adresse configurée côté serveur, jamais révélée ici. */
+export async function sendOwnerCode(): Promise<{ ok: boolean; error?: string }> {
+  const owner = process.env.OWNER_EMAIL;
+  if (!owner) {
     console.error("OWNER_EMAIL non défini");
     return { ok: false, error: "Connexion indisponible pour le moment." };
   }
-  const clean = email.trim().toLowerCase();
-  if (!isOwnerEmail(clean, process.env.OWNER_EMAIL)) return { ok: true };
   const supabase = await createAuthClient();
-  const { error } = await supabase.auth.signInWithOtp({ email: clean, options: { shouldCreateUser: false } });
+  const { error } = await supabase.auth.signInWithOtp({ email: owner, options: { shouldCreateUser: false } });
   return error ? { ok: false, error: "Envoi impossible pour le moment, réessaie dans quelques minutes." } : { ok: true };
 }
 
-export async function verifyCode(email: string, code: string): Promise<{ ok: boolean; error?: string }> {
-  if (!process.env.OWNER_EMAIL) {
+export async function verifyOwnerCode(code: string): Promise<{ ok: boolean; error?: string }> {
+  const owner = process.env.OWNER_EMAIL;
+  if (!owner) {
     console.error("OWNER_EMAIL non défini");
     return { ok: false, error: "Connexion indisponible pour le moment." };
   }
-  const clean = email.trim().toLowerCase();
-  if (!isOwnerEmail(clean, process.env.OWNER_EMAIL)) return { ok: false, error: "Code invalide ou expiré." };
   const supabase = await createAuthClient();
-  const { error } = await supabase.auth.verifyOtp({ email: clean, token: code.replace(/\D/g, ""), type: "email" });
+  const { error } = await supabase.auth.verifyOtp({ email: owner, token: code.replace(/\D/g, ""), type: "email" });
   return error ? { ok: false, error: "Code invalide ou expiré." } : { ok: true };
 }
