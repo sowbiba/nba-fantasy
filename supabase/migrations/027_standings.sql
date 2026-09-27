@@ -4,8 +4,18 @@
 -- `status = 'final'`) ; la finale de la NBA Cup (`cup_final`) et le
 -- préseason (`preseason`) sont exclus. Saison affichée = la plus récente
 -- présente dans `games` avec `game_type = 'regular'`. Idempotente.
+--
+-- Verbe DDL (2026-09, migration 031) : `drop view if exists` + `create view`
+-- au lieu de `create or replace view`. Schéma identique sur une base neuve —
+-- seule différence : rester rejouable (`tests/sql/test_migrations.py`)
+-- une fois qu'une migration ultérieure (031) a ajouté une colonne en fin de
+-- vue, ce que `create or replace view` refuse de « redéfaire » en arrière
+-- (« cannot drop columns from view ») quand toutes les migrations sont
+-- réappliquées dans l'ordre sur une base déjà à jour.
 
-create or replace view standings with (security_invoker = true) as
+drop view if exists standings;
+
+create view standings with (security_invoker = true) as
 with target_season as (
   select max(season) as season from games where game_type = 'regular'
 ),
