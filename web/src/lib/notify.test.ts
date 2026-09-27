@@ -79,4 +79,41 @@ describe("notifyAll", () => {
     );
     expect(result).toEqual({ push: 0, telegram: false });
   });
+
+  it("envoie avec le TTL fourni et l'urgence high (M4, revue finale)", async () => {
+    const db = fakeDb([{ id: 1, endpoint: "https://push/1", p256dh: "p1", auth: "a1" }]);
+    const calls: unknown[] = [];
+    await notifyAll(
+      { title: "Titre", body: "Corps", ttlSeconds: 3600 },
+      {
+        db,
+        sendPush: async (_sub, payload, options) => {
+          calls.push({ payload, options });
+          return { statusCode: 201 };
+        },
+        sendTelegram: async () => false,
+      },
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ options: { TTL: 3600, urgency: "high" } });
+    // ttlSeconds ne doit pas fuiter dans le payload envoyé au navigateur.
+    expect(JSON.parse((calls[0] as { payload: string }).payload)).toEqual({ title: "Titre", body: "Corps" });
+  });
+
+  it("utilise un TTL par défaut (4 semaines) quand ttlSeconds n'est pas fourni", async () => {
+    const db = fakeDb([{ id: 1, endpoint: "https://push/1", p256dh: "p1", auth: "a1" }]);
+    const calls: unknown[] = [];
+    await notifyAll(
+      { title: "Titre", body: "Corps" },
+      {
+        db,
+        sendPush: async (_sub, payload, options) => {
+          calls.push({ options });
+          return { statusCode: 201 };
+        },
+        sendTelegram: async () => false,
+      },
+    );
+    expect((calls[0] as { options: { TTL: number } }).options.TTL).toBe(4 * 7 * 24 * 60 * 60);
+  });
 });

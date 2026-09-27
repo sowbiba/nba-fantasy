@@ -2,7 +2,7 @@ import "server-only";
 import webpush from "web-push";
 import { adminClient } from "@/lib/supabase/admin";
 
-export type PushMessage = { title: string; body: string; url?: string };
+export type PushMessage = { title: string; body: string; url?: string; ttlSeconds?: number };
 
 type Subscription = { id: number; endpoint: string; p256dh: string; auth: string };
 
@@ -16,11 +16,19 @@ type Db = {
 
 type SendPushResult = { statusCode?: number } | Error | unknown;
 
+export type PushOptions = { TTL: number; urgency: "high" };
+
 export type NotifyDeps = {
-  sendPush?: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }, payload: string) => Promise<unknown>;
+  sendPush?: (
+    sub: { endpoint: string; keys: { p256dh: string; auth: string } },
+    payload: string,
+    options: PushOptions,
+  ) => Promise<unknown>;
   sendTelegram?: (text: string) => Promise<boolean>;
   db?: Db;
 };
+
+const DEFAULT_TTL_SECONDS = 4 * 7 * 24 * 60 * 60; // 4 semaines (défaut web-push), si aucune expiry connue
 
 /** Client Supabase avec la forme minimale utilisée ici (accès via la clé
  *  service, cf. push_subscriptions, migration 024). */
@@ -42,8 +50,12 @@ function configureVapid(): boolean {
   return true;
 }
 
-async function defaultSendPush(sub: { endpoint: string; keys: { p256dh: string; auth: string } }, payload: string): Promise<unknown> {
-  return webpush.sendNotification(sub, payload);
+async function defaultSendPush(
+  sub: { endpoint: string; keys: { p256dh: string; auth: string } },
+  payload: string,
+  options: PushOptions,
+): Promise<unknown> {
+  return webpush.sendNotification(sub, payload, options);
 }
 
 async function defaultSendTelegram(text: string): Promise<boolean> {
@@ -81,13 +93,15 @@ export async function notifyAll(msg: PushMessage, deps: NotifyDeps = {}): Promis
   const sendPush = deps.sendPush ?? defaultSendPush;
 
   const { data: subs } = await db.from("push_subscriptions").select("id, endpoint, p256dh, auth");
-  const payload = JSON.stringify(msg);
+  const { ttlSeconds, ...body } = msg;
+  const payload = JSON.stringify(body);
+  const options: PushOptions = { TTL: ttlSeconds ?? DEFAULT_TTL_SECONDS, urgency: "high" };
 
   let pushOk = 0;
   if (hasVapid || deps.sendPush) {
     for (const sub of subs ?? []) {
       try {
-        await sendPush({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
+        await sendPush({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload, options);
         pushOk += 1;
         await db.from("push_subscriptions").update({ last_ok_at: new Date().toISOString() }).eq("id", sub.id);
       } catch (e) {

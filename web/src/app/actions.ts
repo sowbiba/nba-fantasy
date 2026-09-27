@@ -230,7 +230,11 @@ export async function sendTestNotification(): Promise<ActionResult> {
   let push: number;
   let telegram: boolean;
   try {
-    ({ push, telegram } = await notifyAll({ title: "TTFL Advisor", body: "Notification de test — les rappels fonctionnent." }));
+    ({ push, telegram } = await notifyAll({
+      title: "TTFL Advisor",
+      body: "Notification de test — les rappels fonctionnent.",
+      ttlSeconds: 3600, // M4 (revue finale) : une notification de test n'a rien à survivre longtemps
+    }));
   } catch (e) {
     console.error("Échec de notifyAll() :", e instanceof Error ? e.message : e);
     return { ok: false, error: "Erreur serveur, réessaie plus tard." };
