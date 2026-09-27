@@ -14,6 +14,7 @@ select cron.schedule('ttfl-reminders', '*/15 * * * *', $$
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'reminders_secret')
     ),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    timeout_milliseconds := 30000
   )
 $$);
