@@ -11,7 +11,7 @@ Date : 2026-09-28. Complète `2026-09-26-moteur-sr-po-design.md` (S5 dans `docs/
 
 ## 2. Facteur « écart de force » dans la projection (SR)
 
-- Calibré sur les logs (saison courante + précédente, avant la date de décision) : variation des minutes par rapport à la moyenne du joueur selon l'écart de points final, séparément pour les titulaires (≥ 28 min de moyenne) et les autres ; appliqué avec l'écart **attendu** (Elo corrigé) : `facteur = 1 − a × max(0, |écart attendu| − t)` pour les titulaires, symétrique à la hausse bornée pour les remplaçants.
+- Calibré sur les logs (saison courante + précédente, avant la date de décision) : variation des minutes par rapport à la moyenne du joueur selon l'**écart attendu avant le match** (Elo d'avant-match de chaque match historique — ce qu'on sait réellement au moment de décider ; corrigé le 2026-09-28 : la calibration sur l'écart final, plus dispersé, rendait le facteur quasi nul), séparément pour les titulaires (≥ 28 min de moyenne) et les autres ; appliqué avec l'écart **attendu** (Elo corrigé) : `facteur = 1 − a × max(0, |écart attendu| − t)` pour les titulaires, symétrique à la hausse bornée pour les remplaçants.
 - Drapeau `BLOWOUT_ENABLED` (défaut `False`) : activé seulement s'il bat les projections actuelles au backtest L2 dans les deux modes de blessures (règle d'activation §7), avec l'accord de l'utilisateur.
 
 ## 3. Stockage et affichage
