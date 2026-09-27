@@ -2,13 +2,18 @@
 
 import { useState } from "react";
 import { Game } from "@/types";
+import { winPctPair } from "@/lib/display";
 
 interface Props {
   games: Game[];
   defaultOpen?: boolean;
+  // Mode connecté seulement (spec L3a §3, game_predictions) : home_win_prob par game_id,
+  // passé en objet simple (composant client, jamais de Map en props). Match absent de
+  // l'objet (prédiction manquante) → aucune chance de victoire affichée, jamais « NaN ».
+  predictions?: Record<string, number>;
 }
 
-export default function GamesCollapsible({ games, defaultOpen = false }: Props) {
+export default function GamesCollapsible({ games, defaultOpen = false, predictions }: Props) {
   const [open, setOpen] = useState(defaultOpen);
 
   const formatTipOff = (tipOff: string | null) => {
@@ -75,12 +80,20 @@ export default function GamesCollapsible({ games, defaultOpen = false }: Props) 
       {open && (
         <div className="border-t border-white/5 px-4 py-2 flex flex-col divide-y divide-white/5 animate-fade-up">
           {games.map((game) => {
+            const p = predictions?.[game.id];
+            const showPct = p !== undefined && Number.isFinite(p);
+            const pct = showPct ? winPctPair(p) : null;
             return (
               <div key={game.id} className="flex justify-between items-center py-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="flex items-center gap-1.5 font-mono-num text-[13px] font-semibold tracking-wide">
-                    <span className={`${game.status === "final" && game.home_score !== null && game.away_score !== null && game.home_score > game.away_score ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text)]"}`}>
-                      {game.home_team}
+                    <span className="flex flex-col items-center leading-tight">
+                      <span className={`${game.status === "final" && game.home_score !== null && game.away_score !== null && game.home_score > game.away_score ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text)]"}`}>
+                        {game.home_team}
+                      </span>
+                      {pct && (
+                        <span className="text-[9px] font-normal text-[color:var(--color-text-mute)]">{pct.home}</span>
+                      )}
                     </span>
                     {game.status === "final" && game.home_score !== null && game.away_score !== null ? (
                       <span className="text-[color:var(--color-text-soft)] text-[12px] font-bold font-mono-num">
@@ -95,8 +108,13 @@ export default function GamesCollapsible({ games, defaultOpen = false }: Props) 
                         vs
                       </span>
                     )}
-                    <span className={`${game.status === "final" && game.home_score !== null && game.away_score !== null && game.away_score > game.home_score ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text)]"}`}>
-                      {game.away_team}
+                    <span className="flex flex-col items-center leading-tight">
+                      <span className={`${game.status === "final" && game.home_score !== null && game.away_score !== null && game.away_score > game.home_score ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text)]"}`}>
+                        {game.away_team}
+                      </span>
+                      {pct && (
+                        <span className="text-[9px] font-normal text-[color:var(--color-text-mute)]">{pct.away}</span>
+                      )}
                     </span>
                   </div>
                 </div>

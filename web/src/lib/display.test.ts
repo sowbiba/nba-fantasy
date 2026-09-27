@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeState, isClosed, pickPoints, recMeta, standingsTint, standingsZone, topDefender, x2Hint, x2HintText } from "./display";
+import { homeState, isClosed, pickPoints, recMeta, standingsTint, standingsZone, topDefender, winPct, winPctPair, x2Hint, x2HintText } from "./display";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -46,6 +46,20 @@ describe("isClosed", () => {
   });
 });
 
+describe("winPctPair", () => {
+  it("l'extérieur = 100 − l'arrondi du domicile, jamais un arrondi indépendant de 1 - p", () => {
+    // Arrondis indépendants donneraient 36 % / 65 % (36 + 65 = 101) : ici
+    // l'extérieur doit être 100 − 36 = 64 % (M-10, review finale L3a).
+    expect(winPctPair(0.355)).toEqual({ home: "36 %", away: "64 %" });
+  });
+  it("la paire somme toujours à 100", () => {
+    for (const p of [0.0, 0.001, 0.125, 0.355, 0.5, 0.645, 0.999, 1.0]) {
+      const { home, away } = winPctPair(p);
+      expect(parseInt(home) + parseInt(away)).toBe(100);
+    }
+  });
+});
+
 describe("x2Hint", () => {
   const base = { planIsX2: true, planPlayerId: 7, pickPlayerId: null, pickIsX2: false, x2Allowed: true };
   it("sans pick, le plan suggère le x2 ce soir : pose", () => expect(x2Hint(base)).toBe("pose"));
@@ -78,6 +92,17 @@ describe("x2HintText", () => {
     expect(x2HintText("pose_sur_pick", "X")).not.toContain("reste valable");
   });
   it("déjà posé", () => expect(x2HintText("deja")).toBe("x2 activé sur ton pick, comme le suggère le plan pour ce soir."));
+});
+
+describe("winPct", () => {
+  it("arrondit à l'entier, espace avant %", () => {
+    expect(winPct(0.64)).toBe("64 %");
+    expect(winPct(0.355)).toBe("36 %");
+  });
+  it("bornes 0 et 1", () => {
+    expect(winPct(0)).toBe("0 %");
+    expect(winPct(1)).toBe("100 %");
+  });
 });
 
 describe("homeState", () => {

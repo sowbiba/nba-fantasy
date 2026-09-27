@@ -2,7 +2,8 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from engine.jobs.daily_sync import apply_scoreboard, run
+from engine.jobs.daily_sync import RunResult, apply_scoreboard, game_prediction_rows, run, team_elo_rows
+from engine.stats.elo import PRODUCTION_ELO, EloParams
 from tests.jobs.fakes import FakeRepo
 
 TODAY = date(2026, 11, 2)
@@ -182,6 +183,184 @@ def test_daily_sync_ecrit_le_x2_du_plan():
     repo = _base_repo()
     run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
     assert [(r["night"], r["is_x2"]) for r in repo.plan] == [(TODAY.isoformat(), True)]
+
+
+def test_daily_sync_ecrit_l_elo_des_equipes():
+    repo = _base_repo()
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
+    # Seul "0022600011" (BOS-DEN, hier) a un score connu (via le scoreboard
+    # ESPN de ce run) : "0022600010" (DEN-LAL, il y a 2 jours) n'en a jamais
+    # reçu dans cette fixture, donc n'est pas comptable par l'Elo — LAL n'a
+    # encore aucune ligne `team_elo`.
+    assert set(repo.team_elo) == {"DEN", "BOS"}
+    assert repo.team_elo["DEN"]["games"] == 1
+    assert repo.team_elo["BOS"]["games"] == 1
+    for row in repo.team_elo.values():
+        assert row["updated_at"] == NOW.isoformat()
+        assert isinstance(row["rating"], float)
+
+
+def test_daily_sync_ecrit_les_predictions_de_match_a_venir():
+    repo = _base_repo()
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
+    # Seul le match de ce soir (DEN-LAL, "scheduled") est dans la fenêtre à
+    # venir et non terminé : les matchs déjà "final" n'ont pas de prédiction.
+    assert set(repo.game_predictions) == {"0022600020"}
+    pred = repo.game_predictions["0022600020"]
+    assert 0.0 <= pred["home_win_prob"] <= 1.0
+    assert pred["updated_at"] == NOW.isoformat()
+
+
+def test_game_prediction_rows_hors_fenetre_ou_matchs_termines_ignores():
+    games = [
+        {"id": "past", "date": (TODAY - timedelta(days=1)).isoformat(), "home_team": "LAL",
+         "away_team": "DEN", "status": "final", "game_type": "regular"},
+        {"id": "loin", "date": (TODAY + timedelta(days=20)).isoformat(), "home_team": "LAL",
+         "away_team": "DEN", "status": "scheduled", "game_type": "regular"},
+        {"id": "preseason", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN",
+         "status": "scheduled", "game_type": "preseason"},   # R11 : jamais vu par l'Elo
+        {"id": "ok", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled",
+         "game_type": "regular"},
+    ]
+    rows = game_prediction_rows(games, TODAY, {"LAL": 1500.0, "DEN": 1500.0}, {}, EloParams(), NOW)
+    assert [r["game_id"] for r in rows] == ["ok"]
+
+
+def test_game_prediction_rows_joueur_out_baisse_la_probabilite_de_son_equipe():
+    # Correction blessures activée (elo_per_share > 0) : la part d'absents de
+    # l'équipe à domicile (LAL) baisse sa note et donc sa probabilité de
+    # victoire, par rapport à la même situation sans correction.
+    game = {"id": "g1", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled",
+            "game_type": "regular"}
+    ratings = {"LAL": 1550.0, "DEN": 1550.0}
+    absent = {"LAL": 0.6}
+    rows_no_injury = game_prediction_rows([game], TODAY, ratings, absent, EloParams(elo_per_share=0.0), NOW)
+    rows_injury = game_prediction_rows([game], TODAY, ratings, absent, EloParams(elo_per_share=200.0), NOW)
+    assert rows_no_injury[0]["home_win_prob"] > rows_injury[0]["home_win_prob"]
+    assert 0.0 <= rows_injury[0]["home_win_prob"] <= 1.0
+
+
+def test_team_elo_rows_note_arrondie_et_compte_les_matchs_comptables():
+    games = [
+        {"id": "1", "date": (TODAY - timedelta(days=2)).isoformat(), "home_team": "LAL", "away_team": "DEN",
+         "status": "final", "home_score": 100, "away_score": 90, "game_type": "regular", "season": "2026-27"},
+        {"id": "2", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled",
+         "game_type": "regular", "season": "2026-27"},
+        # Saison précédente : comptable par l'Elo (`ratings_before` mélange
+        # les saisons, retour vers la moyenne au changement) mais ne doit
+        # pas gonfler le compteur `games` de la saison en cours.
+        {"id": "0", "date": date(2025, 12, 1).isoformat(), "home_team": "LAL", "away_team": "DEN",
+         "status": "final", "home_score": 90, "away_score": 80, "game_type": "regular", "season": "2025-26"},
+    ]
+    ratings = {"LAL": 1512.345, "DEN": 1487.655}
+    rows = team_elo_rows(games, TODAY, "2026-27", ratings, NOW)
+    by_team = {r["team"]: r for r in rows}
+    assert by_team["LAL"]["games"] == 1 and by_team["DEN"]["games"] == 1   # le match du soir ne compte pas encore
+    assert by_team["LAL"]["rating"] == round(1512.345, 2)
+
+
+def test_daily_sync_correction_blessures_baisse_la_probabilite_de_l_equipe_du_blesse():
+    # Bout en bout (via `run`) : le joueur 2 (LAL) est 100 % de la production
+    # de LAL sur les logs de la fixture → statut "Out" et elo_per_share > 0
+    # doivent baisser `home_win_prob` de "0022600020" (DEN domicile, LAL
+    # extérieur) par rapport au même run sans blessure, EloParams identiques.
+    params = EloParams(elo_per_share=300.0)
+    injuries = {"LAL": [{"name": "Joueur 2", "status": "Out", "detail": "Genou", "return_date": None,
+                         "short_comment": "", "updated_at": ""}]}
+
+    repo_sain = _base_repo()
+    run(repo_sain, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW, elo_params=params)
+
+    repo_blesse = _base_repo()
+    run(repo_blesse, _fetch_scoreboard(SCOREBOARD), lambda: injuries, TODAY, NOW, elo_params=params)
+
+    prob_sain = repo_sain.game_predictions["0022600020"]["home_win_prob"]
+    prob_blesse = repo_blesse.game_predictions["0022600020"]["home_win_prob"]
+    # LAL (extérieur) affaibli → DEN (domicile) plus favorisé.
+    assert prob_blesse > prob_sain
+
+
+def test_daily_sync_transmet_elo_params_a_build_decision_inputs(monkeypatch):
+    # I-4 (review finale L3a) : `_write_elo` et le chemin de décision doivent
+    # utiliser les MÊMES `elo_params` — sinon ils divergeraient le jour où
+    # quelqu'un passe des paramètres non-défaut ou active le facteur « écart
+    # de force ». Capture l'appel réel à `build_decision_inputs` plutôt que
+    # de vérifier un effet indirect (le facteur est désactivé par défaut).
+    import engine.jobs.daily_sync as daily_sync_module
+
+    captured = {}
+    real = daily_sync_module.build_decision_inputs
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(daily_sync_module, "build_decision_inputs", _capture)
+
+    params = EloParams(k=33.0, home_advantage=55.0, elo_per_share=123.0)
+    repo = _base_repo()
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW, elo_params=params)
+
+    assert captured.get("elo_params") is params
+
+
+def test_main_utilise_production_elo(monkeypatch):
+    # `main` (production, GitHub Actions) doit tourner avec `PRODUCTION_ELO`
+    # (rapport docs/backtest/elo-2025-26.md), pas le défaut de `run` réservé
+    # aux tests — capture l'appel réel plutôt que de vérifier un effet
+    # indirect, jamais d'accès réseau/DB ici (repo, guard et fetchers
+    # doublés).
+    import engine.jobs.daily_sync as daily_sync_module
+
+    captured = {}
+
+    def _fake_run(repo, fetch_scoreboard, fetch_injuries, today, now, elo_params=None):
+        captured["elo_params"] = elo_params
+        return RunResult()
+
+    class _FakeLogRepo:
+        def start_log(self, name):
+            return 1
+
+        def finish_log(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr(daily_sync_module, "run", _fake_run)
+    monkeypatch.setattr("engine.io.repo.SupabaseRepo.from_env", classmethod(lambda cls: _FakeLogRepo()))
+    monkeypatch.setattr("engine.io.espn.fetch_all_injuries", lambda guard: {})
+    monkeypatch.setattr("engine.io.espn.fetch_espn_scoreboard", lambda d, guard: [])
+
+    daily_sync_module.main()
+
+    assert captured["elo_params"] is PRODUCTION_ELO
+
+
+class _BoomTeamElo:
+    """Enveloppe un `FakeRepo` : délègue tout sauf `upsert_team_elo`, qui
+    lève — simule une panne d'écriture Elo (table absente, erreur
+    transitoire) pour vérifier que `run` isole cette étape (`_step`)."""
+
+    def __init__(self, fake):
+        self._fake = fake
+
+    def upsert_team_elo(self, rows):
+        raise RuntimeError("team_elo indisponible")
+
+    def __getattr__(self, name):
+        return getattr(self._fake, name)
+
+
+def test_daily_sync_continue_si_l_ecriture_elo_echoue():
+    fake = _base_repo()
+    repo = _BoomTeamElo(fake)
+    result = run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
+    assert any("elo" in w.lower() for w in result.warnings)
+    # Le reste du job (recommandations, plan) doit quand même tourner :
+    # l'Elo n'est qu'un affichage additionnel, pas un pré-requis de decide().
+    assert fake.recommendations[TODAY]
+    assert fake.plan
+    # Et l'échec n'a laissé aucune ligne `team_elo` à moitié écrite.
+    assert not fake.team_elo
 
 
 def test_daily_sync_pas_de_x2_si_le_mois_est_deja_servi():

@@ -57,7 +57,8 @@ class SupabaseRepo:
 
     def load_games_of_seasons(self, seasons: list[str]) -> list[dict]:
         return self._all(lambda: self.c.table("games")
-                         .select("id,date,home_team,away_team,game_type,season,status,tip_off")
+                         .select("id,date,home_team,away_team,game_type,season,status,tip_off,"
+                                 "home_score,away_score")
                          .in_("season", seasons).order("id"))
 
     def load_game_logs(self, seasons: list[str]) -> list[dict]:
@@ -95,6 +96,12 @@ class SupabaseRepo:
 
     def upsert_matchups_raw(self, rows: list[dict]) -> None:
         self._upsert("box_score_matchups_raw", rows, "game_id,off_player_id,def_player_id")
+
+    def upsert_team_elo(self, rows: list[dict]) -> None:
+        self._upsert("team_elo", rows, "team")
+
+    def upsert_game_predictions(self, rows: list[dict]) -> None:
+        self._upsert("game_predictions", rows, "game_id")
 
     def set_inactive(self, player_ids: Iterable[int]) -> None:
         ids = sorted(set(player_ids))

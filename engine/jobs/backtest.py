@@ -31,12 +31,14 @@ from engine.backtest.simulate import (
 )
 from engine.rules.availability import COOLDOWN_DAYS, PickRow
 from engine.rules.scoring import night_points
+from engine.stats.elo import PRODUCTION_ELO, EloParams
 from engine.strategy.value import FUTURE_DECAY, X2_MONTHS
 
 INJURY_MODES = ("none", "dnp_oracle")
 DEFAULT_WINDOW = (2, 4)   # février → avril : fenêtre par défaut (voir docstring module)
 TTFL_NIGHT_STDDEV = 15.0   # écart-type approximatif d'un score TTFL sur une soirée (bruit, M-2)
 SEED_DAYS = COOLDOWN_DAYS   # amorce des simulations avec les vrais picks des 30 jours avant `start`
+BLOWOUT_LABEL = "best_available + écart de force"   # facteur L3a §2, candidat à l'activation
 
 
 def _as_date(v) -> date:
@@ -119,10 +121,19 @@ class Row:
     result: BacktestResult
 
 
-def run(data: SeasonData, start: date, end: date, decays: list[float] | None = None) -> dict:
+def run(data: SeasonData, start: date, end: date, decays: list[float] | None = None,
+        blowout: bool = False, elo_params: EloParams | None = None) -> dict:
     """Calcule toutes les lignes du rapport (lecture seule, aucun accès
-    réseau/base — `data` est déjà chargée)."""
+    réseau/base — `data` est déjà chargée). `blowout` : ajoute la ligne
+    « best_available + écart de force » (facteur L3a §2) dans les deux modes
+    de blessures (activé par défaut en ligne de commande). `elo_params`
+    (optionnel, `None` → `EloParams()` par défaut) : paramètres Elo utilisés
+    pour cette ligne — le rapport doit les afficher explicitement (review
+    finale L3a, Important 3 : sans ça, la ligne « écart de force » du
+    rapport ne dit pas avec quel k/home_advantage/elo_per_share elle a
+    tourné)."""
     decays = list(decays or [])
+    elo_params = elo_params if elo_params is not None else EloParams()
     regular_dates = _regular_dates(data, start, end)
     seed_picks = _seed_picks(data, start)
 
@@ -145,6 +156,12 @@ def run(data: SeasonData, start: date, end: date, decays: list[float] | None = N
                                          seed_picks=seed_picks), regular_dates)
                     rows.append(Row(f"plan (decay={decay})", mode, res))
 
+    if blowout:
+        for mode in INJURY_MODES:
+            res = _only(simulate(data, start, end, "best_available", injury_mode=mode, seed_picks=seed_picks,
+                                 blowout=True, elo_params=elo_params), regular_dates)
+            rows.append(Row(BLOWOUT_LABEL, mode, res))
+
     diverging = _diverging_nights(official, logs_based)
 
     # Bornes de la saison régulière (pas de tout le calendrier : les playoffs
@@ -166,6 +183,7 @@ def run(data: SeasonData, start: date, end: date, decays: list[float] | None = N
         "total_nights": len(official.nights),
         "full_season": {"start": full_start, "end": full_end, "officiel": full_official, "logs": full_logs},
         "x2_truncated_month": end_month if x2_truncated else None,
+        "elo_params": elo_params,
     }
 
 
@@ -252,6 +270,15 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
                  "diffère de celle de son match, donc pas de décalage d'un jour.")
     lines.append("- Pas de seconde chance dans les simulations (les secondes chances réelles portent sur "
                  "mes propres picks) : léger biais en défaveur des stratégies simulées.")
+    if any(r.label == BLOWOUT_LABEL for r in rows):
+        p = data["elo_params"]
+        lines.append(f"- Écart de force : paramètres Elo utilisés pour cette ligne — k = {p.k:g}, "
+                     f"home_advantage = {p.home_advantage:g}, elo_per_share = {p.elo_per_share:g} "
+                     "(`--elo-k`/`--elo-hca`/`--elo-eps`, défaut : `EloParams()`).")
+        lines.append("- Écart de force : dans le backtest, l'Elo et la calibration du facteur n'utilisent que "
+                     "la saison courante (la saison 2024-25 n'est pas en base : Elo parti de 1500 en début de "
+                     "saison, logs de la saison précédente sans écart attendu), alors qu'en production "
+                     "`daily_sync` dispose aussi de la saison précédente.")
     lines.append("- Saison régulière uniquement (R14, R10) : les soirées de playoffs, s'il y en a dans la "
                  "fenêtre, sont exclues du calcul.")
     lines.append("")
@@ -276,6 +303,16 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
             avg = by_mode[(strategy_label, mode)].result.average
             lines.append(f"  - {strategy_label} / {mode} : {avg - ref:+.2f}")
 
+    if any(r.label == BLOWOUT_LABEL for r in rows):
+        diffs_blowout = {mode: by_mode[(BLOWOUT_LABEL, mode)].result.average
+                         - by_mode[("best_available", mode)].result.average for mode in INJURY_MODES}
+        beats = all(diffs_blowout[m] > 0 for m in INJURY_MODES)
+        lines.append("- Facteur « écart de force » (règle d'activation de `BLOWOUT_ENABLED` : gagner dans les "
+                     "deux modes) : " + ("bat" if beats else "ne bat pas")
+                     + " best_available dans les deux modes :")
+        for mode in INJURY_MODES:
+            lines.append(f"  - mode {mode} : {BLOWOUT_LABEL} − best_available = {diffs_blowout[mode]:+.2f}")
+
     for decay in decays:
         lines.append(f"- decay={decay} (plan, diagnostic, hors règle d'activation) :")
         for mode in INJURY_MODES:
@@ -293,6 +330,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--from", dest="start", required=True, help="AAAA-MM-JJ")
     parser.add_argument("--to", dest="end", required=True, help="AAAA-MM-JJ")
     parser.add_argument("--decay", default=None, help="liste séparée par des virgules, ex: 0.97,0.985,1.0")
+    parser.add_argument("--no-blowout", dest="blowout", action="store_false",
+                        help="ne pas simuler la ligne « best_available + écart de force »")
+    parser.add_argument("--elo-k", type=float, default=None, help="k Elo pour la ligne « écart de force » "
+                                                                   "(défaut : PRODUCTION_ELO.k)")
+    parser.add_argument("--elo-hca", type=float, default=None, help="home_advantage Elo pour la ligne "
+                                                                     "« écart de force » (défaut : PRODUCTION_ELO.home_advantage)")
+    parser.add_argument("--elo-eps", type=float, default=None, help="elo_per_share pour la ligne « écart de "
+                                                                     "force » (défaut : PRODUCTION_ELO.elo_per_share)")
     parser.add_argument("--out", default=None, help="chemin du rapport Markdown (défaut : docs/backtest/<saison>-sr.md)")
     return parser.parse_args(argv)
 
@@ -304,11 +349,18 @@ def main(argv: list[str] | None = None) -> None:
     start, end = date.fromisoformat(args.start), date.fromisoformat(args.end)
     decays = [float(x) for x in args.decay.split(",")] if args.decay else []
     out = Path(args.out) if args.out else Path(f"docs/backtest/{args.season}-sr.md")
+    defaults = PRODUCTION_ELO
+    elo_params = EloParams(
+        k=args.elo_k if args.elo_k is not None else defaults.k,
+        home_advantage=args.elo_hca if args.elo_hca is not None else defaults.home_advantage,
+        elo_per_share=args.elo_eps if args.elo_eps is not None else defaults.elo_per_share,
+        points_per_elo=defaults.points_per_elo,
+    )
 
     repo = SupabaseRepo.from_env()
     data = load_season(repo, args.season)
 
-    result = run(data, start, end, decays)
+    result = run(data, start, end, decays, blowout=args.blowout, elo_params=elo_params)
     report = render_report(args.season, start, end, decays, result)
 
     out.parent.mkdir(parents=True, exist_ok=True)

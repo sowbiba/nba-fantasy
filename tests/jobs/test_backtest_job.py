@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import pytest
 
 from engine.jobs.backtest import STRATEGIES, INJURY_MODES, main, render_report, run
+from engine.stats.elo import PRODUCTION_ELO
 from engine.strategy.value import FUTURE_DECAY
 from tests.jobs.fakes import FakeRepo
 
@@ -167,6 +168,34 @@ def test_le_job_ne_lit_que_le_repo_lecture_seule_et_n_ecrit_jamais(monkeypatch, 
     assert "decay=0.97" in report   # parsing de --decay (liste séparée par virgules)
 
 
+def test_main_accepte_elo_k_hca_eps_et_les_imprime_dans_le_rapport(monkeypatch, tmp_path):
+    from engine.jobs.backtest import BLOWOUT_LABEL
+
+    readonly = ReadOnlyRepo(_season_repo())
+    monkeypatch.setattr("engine.io.repo.SupabaseRepo.from_env", classmethod(lambda cls: readonly))
+    out = tmp_path / "rapport.md"
+    main(["--season", SEASON, "--from", NIGHTS[0].isoformat(), "--to", NIGHTS[-1].isoformat(),
+          "--elo-k", "33", "--elo-hca", "55", "--elo-eps", "123", "--out", str(out)])
+    report = out.read_text(encoding="utf-8")
+    assert "k = 33, home_advantage = 55, elo_per_share = 123" in report
+    for mode in INJURY_MODES:
+        # M-8 : la ligne « écart de force » apparaît une seule fois par mode, y compris via le CLI.
+        assert report.count(f"| {BLOWOUT_LABEL} | {mode} |") == 1
+
+
+def test_main_sans_elo_flags_utilise_production_elo(monkeypatch, tmp_path):
+    from engine.jobs.backtest import BLOWOUT_LABEL
+
+    readonly = ReadOnlyRepo(_season_repo())
+    monkeypatch.setattr("engine.io.repo.SupabaseRepo.from_env", classmethod(lambda cls: readonly))
+    out = tmp_path / "rapport.md"
+    main(["--season", SEASON, "--from", NIGHTS[0].isoformat(), "--to", NIGHTS[-1].isoformat(), "--out", str(out)])
+    report = out.read_text(encoding="utf-8")
+    assert (f"k = {PRODUCTION_ELO.k:g}, home_advantage = {PRODUCTION_ELO.home_advantage:g}, "
+           f"elo_per_share = {PRODUCTION_ELO.elo_per_share:g}") in report
+    assert BLOWOUT_LABEL in report
+
+
 def test_run_amorce_les_simulations_avec_les_vrais_picks_pre_fenetre():
     # Un vrai pick posé 10 jours avant le début de la fenêtre, sur le
     # meilleur joueur (1), doit le bloquer (R3) pour toute la fenêtre : les
@@ -202,3 +231,31 @@ def test_le_repo_lecture_seule_leve_sur_toute_ecriture():
         readonly.upsert_players([])
     with pytest.raises(AssertionError):
         readonly.start_log("backtest")
+
+
+def test_run_blowout_ajoute_la_ligne_ecart_de_force_dans_les_deux_modes():
+    from engine.jobs.backtest import BLOWOUT_LABEL
+    data = _data()
+    result = run(data, NIGHTS[0], NIGHTS[-1], blowout=True)
+    labels = [(r.label, r.mode) for r in result["rows"]]
+    for mode in INJURY_MODES:
+        assert (BLOWOUT_LABEL, mode) in labels
+    assert len(result["rows"]) == 8 + 2
+    report = render_report(SEASON, NIGHTS[0], NIGHTS[-1], [], result)
+    for mode in INJURY_MODES:
+        assert f"mode {mode} : {BLOWOUT_LABEL} − best_available = " in report
+        # M-8 : chaque ligne « écart de force » apparaît une seule fois dans le
+        # tableau (bug de doublon signalé en review, non reproduit au HEAD
+        # révisé — garde de non-régression).
+        assert report.count(f"| {BLOWOUT_LABEL} | {mode} |") == 1
+    # I-3 : le rapport dit avec quels paramètres Elo la ligne a tourné.
+    p = result["elo_params"]
+    assert f"k = {p.k:g}, home_advantage = {p.home_advantage:g}, elo_per_share = {p.elo_per_share:g}" in report
+    # Sans l'option (défaut de `run`), aucune ligne ni conclusion d'écart de force.
+    plain = run(data, NIGHTS[0], NIGHTS[-1])
+    assert all(r.label != BLOWOUT_LABEL for r in plain["rows"])
+    assert BLOWOUT_LABEL not in render_report(SEASON, NIGHTS[0], NIGHTS[-1], [], plain)
+    # Limite : Elo et calibration du backtest = saison courante seulement.
+    assert "Écart de force : dans le backtest, l'Elo et la calibration du facteur n'utilisent que " \
+           "la saison courante" in report
+    assert "Écart de force : dans le backtest" not in render_report(SEASON, NIGHTS[0], NIGHTS[-1], [], plain)

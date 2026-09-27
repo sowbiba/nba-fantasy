@@ -16,6 +16,7 @@ from engine.rules.availability import COOLDOWN_DAYS, PickRow, SecondChance, Seri
 from engine.rules.calendar import Night
 from engine.rules.game_types import is_eligible
 from engine.stats.availability_prob import HARD_OUT_STATUSES, future_p_play, p_play
+from engine.stats.blowout import BlowoutModel
 from engine.stats.profile import PlayerProfile
 from engine.stats.projection import GameContext, project, rest_days
 from engine.stats.team_defense import opp_factor
@@ -43,6 +44,11 @@ class DecisionInputs:
     second_chances: list[SecondChance] = field(default_factory=list)
     series: list[SeriesRow] = field(default_factory=list)
     x2_used_months: frozenset[tuple[int, int]] = frozenset()   # mois où un pick is_x2 existe déjà
+    # Facteur « écart de force » (L3a §2), rempli par build_decision_inputs
+    # seulement si activé : écart attendu (domicile − extérieur) par id de
+    # match, et modèle calibré à passer explicitement à decide(blowout=...).
+    expected_margins: dict[str, float] = field(default_factory=dict)
+    blowout_model: BlowoutModel | None = None
 
 
 @dataclass(frozen=True)
@@ -126,13 +132,17 @@ def _picked_cells(inputs: DecisionInputs, nights: dict[date, Night],
         is_home = game["home_team"] == team
         opponent = game["away_team"] if is_home else game["home_team"]
         k = (d - inputs.today).days
-        projection, p, ctx = estimate(pick.player_id, team, opponent, is_home, d, k)
+        projection, p, ctx = estimate(pick.player_id, team, opponent, is_home, d, k, game)
         out[d] = Cell(pick.player_id, d, projection, p, future_value(k, p, projection, decay), ctx,
                       x2_gain=x2_gain(p, projection, inputs.profiles[pick.player_id].stddev))
     return out
 
 
-def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: float | None = None) -> Decision:
+def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: float | None = None,
+           blowout: BlowoutModel | None = None) -> Decision:
+    """`blowout` : modèle du facteur « écart de force » (L3a §2), en
+    général `inputs.blowout_model`. None (défaut) → projections exactement
+    celles d'avant L3a (contexte sans écart attendu, aucun facteur)."""
     today = inputs.today
     nights = {n.date: n for n in inputs.nights
               if not n.is_phantom and n.n_eligible_games > 0 and 0 <= (n.date - today).days < HORIZON_DAYS}
@@ -158,15 +168,21 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         if row.get("active", True):
             roster[row["team"]].append(pid)
 
-    def _estimate(pid: int, team: str, opponent: str, is_home: bool, d: date, k: int
+    def _estimate(pid: int, team: str, opponent: str, is_home: bool, d: date, k: int, game: dict
                   ) -> tuple[float, float, GameContext]:
         """(projection, p_play, contexte) d'un joueur sur un match (S1)."""
         profile = inputs.profiles[pid]
         row = inputs.players[pid]
         status = row.get("injury_status")
         rd = rest_days(team, d, team_dates)
-        ctx = GameContext(opponent, is_home, rd, opp_factor(inputs.defense, opponent, row.get("position", "F")))
-        projection = project(profile, ctx)
+        margin = None
+        if blowout is not None and game.get("id") is not None:
+            home_margin = inputs.expected_margins.get(str(game["id"]))
+            if home_margin is not None:
+                margin = home_margin if is_home else -home_margin
+        ctx = GameContext(opponent, is_home, rd, opp_factor(inputs.defense, opponent, row.get("position", "F")),
+                          expected_margin=margin)
+        projection = project(profile, ctx, blowout)
         b2b = rd == 0
         if k == 0:
             p = p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),
@@ -194,7 +210,7 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
                                         mode=night.mode, picks=inputs.picks,
                                         second_chances=inputs.second_chances, series=inputs.series).ok:
                         continue
-                    raw.append((k, pid, d, *_estimate(pid, team, opponent, is_home, d, k)))
+                    raw.append((k, pid, d, *_estimate(pid, team, opponent, is_home, d, k, g)))
 
     # Dédoublonnage par (joueur, soirée) : une ligne de match dupliquée ne
     # doit produire qu'une seule cellule, celle de plus forte espérance

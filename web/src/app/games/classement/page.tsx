@@ -1,21 +1,36 @@
 import { supabase } from "@/lib/supabase/public";
+import { ownerDb } from "@/lib/viewer";
 import { StandingsRow } from "@/types";
 import GamesTabs from "@/components/GamesTabs";
 import StandingsTable from "@/components/StandingsTable";
 
-// Vue publique (migration 027), même convention que /injuries : pas de
-// searchParams ici, `revalidate` déclaré pour cohérence (en pratique la
-// route reste rendue à la demande, le layout racine lit les cookies via
-// getViewer()).
-export const revalidate = 300;
+// Vue publique (migration 027) mais page owner-aware (colonne Force en mode
+// connecté, `ratings` lu via `ownerDb()`) : `revalidate = 0` comme toutes
+// les autres pages `ownerDb()` (page.tsx, picks/page.tsx, deck/page.tsx,
+// player/[id]/page.tsx) — la privacy du rendu owner ne doit pas dépendre
+// d'un comportement implicite du framework (review finale L3a, Important 1).
+export const revalidate = 0;
 
+// `ratings` reste `null` en mode public (db === null) : StandingsTable ne
+// rend alors aucune colonne « Force » (spec L3a §3, mode connecté seulement).
 async function getData() {
-  const { data, error } = await supabase.from("standings").select("*").order("conference").order("rank");
-  return { rows: (data || []) as StandingsRow[], dataError: !!error };
+  const db = await ownerDb();
+  const [standingsRes, eloRes] = await Promise.all([
+    supabase.from("standings").select("*").order("conference").order("rank"),
+    db ? db.from("team_elo").select("team, rating") : Promise.resolve({ data: null, error: null }),
+  ]);
+  const ratings = eloRes.data
+    ? Object.fromEntries(eloRes.data.map((r: { team: string; rating: number }) => [r.team, Number(r.rating)]))
+    : null;
+  return {
+    rows: (standingsRes.data || []) as StandingsRow[],
+    dataError: !!standingsRes.error,
+    ratings,
+  };
 }
 
 export default async function StandingsPage() {
-  const { rows, dataError } = await getData();
+  const { rows, dataError, ratings } = await getData();
 
   return (
     <div className="px-4 py-5 animate-fade-in">
@@ -35,7 +50,7 @@ export default async function StandingsPage() {
           Données indisponibles pour le moment, réessaie dans quelques minutes.
         </p>
       ) : (
-        <StandingsTable rows={rows} />
+        <StandingsTable rows={rows} ratings={ratings} />
       )}
     </div>
   );

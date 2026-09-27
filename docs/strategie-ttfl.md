@@ -100,3 +100,9 @@ Rapport : `docs/backtest/2025-26-sr.md` (fenêtre 01/02 → 12/04/2026, 64 soir�
 - **S3 (x2 du plan) gardé** : x2 posé par le plan sur le pick « meilleur choix » = +1,0 à +1,1 pt/soirée par rapport à la règle naïve de fin de mois (gain x2 +130 à +165 contre +99 pour les vrais picks). Suggestion affichée, x2 toujours posé par l'utilisateur.
 - Meilleur choix du soir vs vrais picks : +1,3 (sans info blessures) à +4,7 (absents connus) ; bruit ≈ 2,7 pts sur 64 soirées.
 
+## Elo et écart de force (2026-09-28) — décision
+
+- Elo maison validé sur 2025-26 (`docs/backtest/elo-2025-26.md`) : ~77 % de vainqueurs prévus, perte logarithmique ≈ 0,47 contre 0,69 pour « l'équipe à domicile gagne ». Paramètres de production (`PRODUCTION_ELO`) : k 50, avantage du terrain 20, correction blessures 300, 1 pt = 7 Elo. Saison de départ à froid : à revoir mi-décembre 2026.
+- Facteur « écart de force » (S5, usage SR) **non activé** : il perd contre le meilleur choix du soir dans les deux modes de blessures (−0,56 et −1,14 pt/soirée). `BLOWOUT_ENABLED = False`.
+- L'Elo est affiché en mode connecté (Force au Classement, chances de victoire sur Ce soir) et servira surtout en playoffs (L3b).
+

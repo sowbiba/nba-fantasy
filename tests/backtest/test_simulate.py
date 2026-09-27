@@ -263,3 +263,74 @@ def test_x2plan_replanifie_avec_le_pick_du_soir_fixe_et_suit_plan_du_soir(monkey
         # Un seul x2 par mois : un x2 suggéré après celui du mois n'est pas posé.
         assert night.is_x2 == (expected and not any(
             n.is_x2 for n in result.nights[:i] if n.night.month == night.night.month))
+
+
+# --- Facteur « écart de force » (L3a §2) -----------------------------------
+
+def _scored(data, scores):
+    """Copie de `data` avec les scores {date: (domicile, extérieur)}."""
+    games = [{**g, "home_score": scores[date.fromisoformat(g["date"])][0],
+              "away_score": scores[date.fromisoformat(g["date"])][1]} for g in data.games]
+    return SeasonData(season=data.season, prior=data.prior, players=data.players, games=games, logs=data.logs,
+                      picks=data.picks, second_chances=data.second_chances)
+
+
+def _spy_decide(monkeypatch):
+    calls = []
+    real = sim.decide
+
+    def spy(inputs, **kwargs):
+        decision = real(inputs, **kwargs)
+        calls.append((inputs, kwargs, decision))
+        return decision
+
+    monkeypatch.setattr(sim, "decide", spy)
+    return calls
+
+
+def test_blowout_desactive_par_defaut_dans_simulate(monkeypatch):
+    calls = _spy_decide(monkeypatch)
+    data = _scored(_season(SIX_NIGHTS), {d: (130, 90) for d in SIX_NIGHTS})
+    simulate(data, SIX_NIGHTS[0], SIX_NIGHTS[-1], "best_available")
+    assert calls and all(kw["blowout"] is None and inputs.expected_margins == {} for inputs, kw, _ in calls)
+
+
+def test_blowout_le_score_du_soir_d_ne_change_pas_la_decision_de_d(monkeypatch):
+    """Pas de fuite : seuls les scores des soirs < D entrent dans l'Elo et la
+    calibration de D. Deux saisons identiques sauf le score du soir D →
+    même écart attendu, même modèle et mêmes projections pour D."""
+    d = SIX_NIGHTS[3]
+    scores = {n: (130, 90) for n in SIX_NIGHTS}
+    flipped = {**scores, d: (70, 140)}
+    runs = []
+    for s in (scores, flipped):
+        calls = _spy_decide(monkeypatch)
+        simulate(_scored(_season(SIX_NIGHTS), s), SIX_NIGHTS[0], d, "best_available", blowout=True)
+        inputs, kw, decision = next(c for c in calls if c[0].today == d)
+        assert kw["blowout"] is inputs.blowout_model is not None
+        runs.append((inputs.expected_margins, inputs.blowout_model,
+                     [(r.cell.player_id, r.cell.projection, r.cell.ctx.expected_margin)
+                      for r in decision.recommendations]))
+    assert runs[0] == runs[1]
+    assert runs[0][2][0][2] is not None   # l'écart attendu est bien porté par la reco du soir
+
+
+def test_blowout_un_score_anterieur_change_bien_l_ecart_attendu(monkeypatch):
+    """Témoin du test précédent : un score d'avant D, lui, compte."""
+    d = SIX_NIGHTS[3]
+    margins = []
+    for first in ((130, 90), (70, 140)):
+        calls = _spy_decide(monkeypatch)
+        scores = {**{n: (130, 90) for n in SIX_NIGHTS}, SIX_NIGHTS[0]: first}
+        simulate(_scored(_season(SIX_NIGHTS), scores), SIX_NIGHTS[0], d, "best_available", blowout=True)
+        margins.append(next(c[0].expected_margins for c in calls if c[0].today == d))
+    assert margins[0] != margins[1]
+
+
+def test_blowout_x2plan_les_deux_decisions_recoivent_le_modele(monkeypatch):
+    nights = [date(2026, 11, 28), date(2026, 11, 29), date(2026, 11, 30)]
+    calls = _spy_decide(monkeypatch)
+    data = _scored(_season(nights), {n: (130, 90) for n in nights})
+    result = simulate(data, nights[0], nights[-1], "best_available_x2plan", blowout=True)
+    assert len(calls) == 2 * len(result.nights)
+    assert all(kw["blowout"] is not None and kw["blowout"] is inputs.blowout_model for inputs, kw, _ in calls)

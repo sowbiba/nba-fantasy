@@ -95,8 +95,16 @@ async function getData() {
   const pick = (pickRes.data as Pick | null) ?? null;
 
   const ids = [...new Set([...recs.map((r) => r.player_id), ...(pick ? [pick.player_id] : []), ...(plan ? [plan.player_id] : [])])];
-  const playersRes = ids.length ? await supabase.from("players").select("*").in("id", ids) : { data: [], error: null };
+  // game_predictions (spec L3a §3) : ids des matchs connus seulement après gamesRes, donc
+  // requête séparée ici, comme playersRes ci-dessous.
+  const [playersRes, predsRes] = await Promise.all([
+    ids.length ? supabase.from("players").select("*").in("id", ids) : Promise.resolve({ data: [], error: null }),
+    db && games.length ? db.from("game_predictions").select("game_id, home_win_prob").in("game_id", games.map((g) => g.id)) : Promise.resolve({ data: [], error: null }),
+  ]);
   const players = new Map(((playersRes.data || []) as Player[]).map((p) => [p.id, p]));
+  const predictions = Object.fromEntries(
+    ((predsRes.data || []) as { game_id: string; home_win_prob: number }[]).map((p) => [p.game_id, Number(p.home_win_prob)]),
+  );
 
   const recsWithPlayersBase = recs
     .map((r) => {
@@ -136,7 +144,7 @@ async function getData() {
   const dataError = [nightRes, gamesRes, recsRes, pickRes, playersRes, planRes].some((r) => r.error) || !!matchupError;
 
   return {
-    deck, night, games, recsWithPlayers, pick, dataError, plan,
+    deck, night, games, recsWithPlayers, pick, dataError, plan, predictions,
     pickPlayer: pick ? players.get(pick.player_id) ?? null : null,
     planPlayer: plan ? players.get(plan.player_id) ?? null : null,
     sync: (syncRes.data?.[0] || null) as SyncLog | null,
@@ -150,7 +158,7 @@ export default async function TonightPage() {
     return <PublicTonight deck={deck} games={games} dataError={dataError} />;
   }
 
-  const { deck, night, games, recsWithPlayers, pick, pickPlayer, plan, planPlayer, sync, dataError } = await getData();
+  const { deck, night, games, recsWithPlayers, pick, pickPlayer, plan, planPlayer, sync, dataError, predictions } = await getData();
   const state = homeState({ hasNight: !!night && night.n_eligible_games > 0, recCount: recsWithPlayers.length, hasPick: !!pick });
   const top3 = recsWithPlayers.slice(0, 3);
   const month = Number(deck.slice(5, 7));
@@ -212,7 +220,7 @@ export default async function TonightPage() {
       <SyncStatus sync={sync} />
 
       <div className="mt-3 px-3">
-        <GamesCollapsible games={games} />
+        <GamesCollapsible games={games} predictions={predictions} />
       </div>
 
       <section id="top-3" className="mt-6 px-3">
