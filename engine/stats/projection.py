@@ -10,6 +10,7 @@ from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import date
 
+from engine.stats.blowout import STARTER_MINUTES, BlowoutModel, factor
 from engine.stats.profile import PlayerProfile
 
 HOME_FACTOR = 1.02
@@ -23,12 +24,19 @@ class GameContext:
     is_home: bool
     rest_days: int | None
     opp_factor: float
+    expected_margin: float | None = None   # écart attendu, du point de vue de l'équipe du joueur
 
 
-def project(profile: PlayerProfile, ctx: GameContext) -> float:
+def project(profile: PlayerProfile, ctx: GameContext, blowout: BlowoutModel | None = None) -> float:
+    """`blowout` (facteur « écart de force », spec L3a §2) : appliqué
+    seulement s'il est fourni ET que l'écart attendu est connu ; sinon la
+    projection est exactement celle d'avant L3a."""
     terrain = HOME_FACTOR if ctx.is_home else AWAY_FACTOR
     fatigue = B2B_FACTOR if ctx.rest_days == 0 else 1.0
-    return profile.base * ctx.opp_factor * terrain * fatigue
+    value = profile.base * ctx.opp_factor * terrain * fatigue
+    if blowout is not None and ctx.expected_margin is not None:
+        value *= factor(blowout, ctx.expected_margin, profile.exp_minutes >= STARTER_MINUTES)
+    return value
 
 
 def rest_days(team: str, night: date, team_dates: dict[str, list[date]]) -> int | None:

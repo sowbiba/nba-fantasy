@@ -340,3 +340,51 @@ def test_soiree_pickee_hors_mois_x2_exclue():
                        nights=[_night(today), _night(today + timedelta(days=3))],
                        games=[_game("g1", today, "DEN", "LAL"), _game("g2", today + timedelta(days=3), "DEN", "WAS")]))
     assert today not in d.plan
+
+
+# --- Facteur « écart de force » (L3a §2) -----------------------------------
+
+from engine.stats.blowout import BlowoutModel  # noqa: E402
+from engine.strategy.config import BLOWOUT_ENABLED  # noqa: E402
+
+BLOWOUT = BlowoutModel(starter_slope=0.01, starter_threshold=5.0, bench_slope=0.012, bench_threshold=5.0)
+
+
+def _tonight(decision):
+    return {r.cell.player_id: r.cell for r in decision.recommendations}
+
+
+def test_blowout_desactive_par_defaut():
+    assert BLOWOUT_ENABLED is False
+
+
+@pytest.mark.parametrize("over", [
+    {},
+    {"profiles": {1: _prof(1), 2: _prof(2, eff=1.2), 3: _prof(3, eff=1.0, minutes=18.0)}},
+    {"picks": [PickRow(1, 1, TODAY + timedelta(days=20), "regular", "2026-27", False)]},
+])
+def test_blowout_absent_decision_strictement_identique(over):
+    """Non-régression : sans modèle, des écarts attendus présents dans les
+    entrées ne changent rien (projections, contextes, valeurs, plan)."""
+    plain = decide(_inputs(**over))
+    with_margins = decide(_inputs(expected_margins={"g1": 25.0, "g2": -25.0}, **over))
+    assert with_margins == plain
+    assert all(r.cell.ctx.expected_margin is None for r in plain.recommendations)
+
+
+def test_blowout_active_titulaire_plus_bas_remplacant_plus_haut():
+    profiles = {1: _prof(1), 2: _prof(2, eff=1.2), 3: _prof(3, eff=1.0, minutes=18.0)}
+    margins = {"g1": 15.0, "g2": 0.0}   # DEN (domicile) favori de 15 pts ce soir
+    plain = _tonight(decide(_inputs(profiles=profiles)))
+    blow = _tonight(decide(_inputs(profiles=profiles, expected_margins=margins), blowout=BLOWOUT))
+    assert blow[1].ctx.expected_margin == 15.0            # point de vue de DEN
+    assert blow[2].ctx.expected_margin == -15.0           # point de vue de LAL
+    assert blow[1].projection == pytest.approx(plain[1].projection * (1 - 0.01 * 10))
+    assert blow[2].projection == pytest.approx(plain[2].projection * (1 - 0.01 * 10))
+    assert blow[3].projection == pytest.approx(plain[3].projection * (1 + 0.012 * 10))
+
+
+def test_blowout_active_match_sans_ecart_connu_inchange():
+    plain = _tonight(decide(_inputs()))
+    blow = _tonight(decide(_inputs(), blowout=BLOWOUT))   # aucun écart attendu dans les entrées
+    assert {pid: c.projection for pid, c in blow.items()} == {pid: c.projection for pid, c in plain.items()}

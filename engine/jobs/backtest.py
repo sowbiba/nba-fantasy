@@ -37,6 +37,7 @@ INJURY_MODES = ("none", "dnp_oracle")
 DEFAULT_WINDOW = (2, 4)   # février → avril : fenêtre par défaut (voir docstring module)
 TTFL_NIGHT_STDDEV = 15.0   # écart-type approximatif d'un score TTFL sur une soirée (bruit, M-2)
 SEED_DAYS = COOLDOWN_DAYS   # amorce des simulations avec les vrais picks des 30 jours avant `start`
+BLOWOUT_LABEL = "best_available + écart de force"   # facteur L3a §2, candidat à l'activation
 
 
 def _as_date(v) -> date:
@@ -119,9 +120,12 @@ class Row:
     result: BacktestResult
 
 
-def run(data: SeasonData, start: date, end: date, decays: list[float] | None = None) -> dict:
+def run(data: SeasonData, start: date, end: date, decays: list[float] | None = None,
+        blowout: bool = False) -> dict:
     """Calcule toutes les lignes du rapport (lecture seule, aucun accès
-    réseau/base — `data` est déjà chargée)."""
+    réseau/base — `data` est déjà chargée). `blowout` : ajoute la ligne
+    « best_available + écart de force » (facteur L3a §2) dans les deux modes
+    de blessures (activé par défaut en ligne de commande)."""
     decays = list(decays or [])
     regular_dates = _regular_dates(data, start, end)
     seed_picks = _seed_picks(data, start)
@@ -144,6 +148,12 @@ def run(data: SeasonData, start: date, end: date, decays: list[float] | None = N
                     res = _only(simulate(data, start, end, strategy, injury_mode=mode, decay=decay,
                                          seed_picks=seed_picks), regular_dates)
                     rows.append(Row(f"plan (decay={decay})", mode, res))
+
+    if blowout:
+        for mode in INJURY_MODES:
+            res = _only(simulate(data, start, end, "best_available", injury_mode=mode, seed_picks=seed_picks,
+                                 blowout=True), regular_dates)
+            rows.append(Row(BLOWOUT_LABEL, mode, res))
 
     diverging = _diverging_nights(official, logs_based)
 
@@ -276,6 +286,16 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
             avg = by_mode[(strategy_label, mode)].result.average
             lines.append(f"  - {strategy_label} / {mode} : {avg - ref:+.2f}")
 
+    if any(r.label == BLOWOUT_LABEL for r in rows):
+        diffs_blowout = {mode: by_mode[(BLOWOUT_LABEL, mode)].result.average
+                         - by_mode[("best_available", mode)].result.average for mode in INJURY_MODES}
+        beats = all(diffs_blowout[m] > 0 for m in INJURY_MODES)
+        lines.append("- Facteur « écart de force » (règle d'activation de `BLOWOUT_ENABLED` : gagner dans les "
+                     "deux modes) : " + ("bat" if beats else "ne bat pas")
+                     + " best_available dans les deux modes :")
+        for mode in INJURY_MODES:
+            lines.append(f"  - mode {mode} : {BLOWOUT_LABEL} − best_available = {diffs_blowout[mode]:+.2f}")
+
     for decay in decays:
         lines.append(f"- decay={decay} (plan, diagnostic, hors règle d'activation) :")
         for mode in INJURY_MODES:
@@ -293,6 +313,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--from", dest="start", required=True, help="AAAA-MM-JJ")
     parser.add_argument("--to", dest="end", required=True, help="AAAA-MM-JJ")
     parser.add_argument("--decay", default=None, help="liste séparée par des virgules, ex: 0.97,0.985,1.0")
+    parser.add_argument("--no-blowout", dest="blowout", action="store_false",
+                        help="ne pas simuler la ligne « best_available + écart de force »")
     parser.add_argument("--out", default=None, help="chemin du rapport Markdown (défaut : docs/backtest/<saison>-sr.md)")
     return parser.parse_args(argv)
 
@@ -308,7 +330,7 @@ def main(argv: list[str] | None = None) -> None:
     repo = SupabaseRepo.from_env()
     data = load_season(repo, args.season)
 
-    result = run(data, start, end, decays)
+    result = run(data, start, end, decays, blowout=args.blowout)
     report = render_report(args.season, start, end, decays, result)
 
     out.parent.mkdir(parents=True, exist_ok=True)

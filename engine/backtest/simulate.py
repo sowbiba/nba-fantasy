@@ -111,14 +111,20 @@ def _players_at(data: SeasonData, d: date, injury_mode: str) -> dict[int, dict]:
 
 
 def simulate(data: SeasonData, start: date, end: date, strategy: str, injury_mode: str = "none",
-             decay: float | None = None, seed_picks: Iterable[PickRow] = ()) -> BacktestResult:
+             decay: float | None = None, seed_picks: Iterable[PickRow] = (),
+             blowout: bool = False) -> BacktestResult:
     """`seed_picks` (optionnel, backtest uniquement) : picks RÉELS de
     l'utilisateur antérieurs à `start` (typiquement les 30 jours qui
     précèdent), pour que la simulation démarre sous les mêmes contraintes
     que l'utilisateur — cooldown R3 (dans les deux sens, comme
     `is_available`) et x2 déjà posé ce mois-ci (R10 : un seul x2/mois). Ils
     ne sont jamais notés ni renvoyés dans `results` : seules les soirées de
-    `[start, end]` comptent."""
+    `[start, end]` comptent.
+
+    `blowout` : active le facteur « écart de force » (L3a §2) pour cette
+    simulation, indépendamment de `BLOWOUT_ENABLED` : notes Elo d'avant D
+    (les scores de D, présents dans `data.games`, sont exclus par
+    `ratings_before`) et calibration sur les logs/matchs d'avant D."""
     if strategy not in STRATEGIES:
         raise ValueError(f"stratégie inconnue : {strategy}")
     if injury_mode not in INJURY_MODES:
@@ -149,8 +155,10 @@ def simulate(data: SeasonData, start: date, end: date, strategy: str, injury_mod
             second_chances=[],
             series_rows=[],
             nights=eligible_nights(data, d, horizon_end),
+            blowout=blowout,
         )
-        decision = decide(inputs, tonight_source="plan" if strategy == "plan" else "best_available", decay=decay)
+        decision = decide(inputs, tonight_source="plan" if strategy == "plan" else "best_available", decay=decay,
+                          blowout=inputs.blowout_model)
 
         if not decision.recommendations:
             results.append(NightResult(d, None, False, 0))
@@ -166,7 +174,7 @@ def simulate(data: SeasonData, start: date, end: date, strategy: str, injury_mod
             # décision pour ce soir.
             tonight_pick = PickRow(len(history) + 1, pid, d, night.mode, data.season, False)
             replan = decide(replace(inputs, picks=[*inputs.picks, tonight_pick]),
-                            tonight_source="best_available", decay=decay)
+                            tonight_source="best_available", decay=decay, blowout=inputs.blowout_model)
             entry = replan.plan.get(d)
             is_x2 = (entry is not None and entry.cell.player_id == pid and entry.is_x2
                      and _x2_allowed(night.mode, d, x2_used))

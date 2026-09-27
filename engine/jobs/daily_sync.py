@@ -161,7 +161,7 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime) -> R
         season=season, prior=prior, picks=picks, second_chances=second_chances,
         series_rows=series_rows, nights=nights,
     )
-    decision = decide(decision_inputs)
+    decision = decide(decision_inputs, blowout=decision_inputs.blowout_model)   # None sauf BLOWOUT_ENABLED
 
     if decision.tonight is not None:
         rows = []

@@ -202,3 +202,20 @@ def test_le_repo_lecture_seule_leve_sur_toute_ecriture():
         readonly.upsert_players([])
     with pytest.raises(AssertionError):
         readonly.start_log("backtest")
+
+
+def test_run_blowout_ajoute_la_ligne_ecart_de_force_dans_les_deux_modes():
+    from engine.jobs.backtest import BLOWOUT_LABEL
+    data = _data()
+    result = run(data, NIGHTS[0], NIGHTS[-1], blowout=True)
+    labels = [(r.label, r.mode) for r in result["rows"]]
+    for mode in INJURY_MODES:
+        assert (BLOWOUT_LABEL, mode) in labels
+    assert len(result["rows"]) == 8 + 2
+    report = render_report(SEASON, NIGHTS[0], NIGHTS[-1], [], result)
+    for mode in INJURY_MODES:
+        assert f"mode {mode} : {BLOWOUT_LABEL} − best_available = " in report
+    # Sans l'option (défaut de `run`), aucune ligne ni conclusion d'écart de force.
+    plain = run(data, NIGHTS[0], NIGHTS[-1])
+    assert all(r.label != BLOWOUT_LABEL for r in plain["rows"])
+    assert BLOWOUT_LABEL not in render_report(SEASON, NIGHTS[0], NIGHTS[-1], [], plain)
