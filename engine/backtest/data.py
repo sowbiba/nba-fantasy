@@ -16,7 +16,7 @@ from datetime import date
 from functools import cached_property
 
 from engine.rules.calendar import Night, build_nights
-from engine.rules.game_types import previous_season
+from engine.rules.game_types import is_eligible, previous_season
 from engine.stats.profile import GameLog
 
 
@@ -89,7 +89,9 @@ def roster_before(data: SeasonData, d: date, window_days: int = 30) -> dict[int,
     """Joueurs actifs vus avant d : ayant un log dans la saison courante (ou
     la précédente pour le début de saison), avec `team` = team_before et
     `injury_status` = None."""
-    game_dates = [_as_date(g["date"]) for g in data.games]
+    # Ancre du début de saison = premier match ÉLIGIBLE (R11) : la présaison
+    # ne doit pas raccourcir la fenêtre où la saison précédente sert de repli.
+    game_dates = [_as_date(g["date"]) for g in data.games if is_eligible(g.get("game_type", "unknown"))]
     season_start = min(game_dates) if game_dates else d
     early_season = (d - season_start).days < window_days
 

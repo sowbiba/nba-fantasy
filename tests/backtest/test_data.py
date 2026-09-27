@@ -194,3 +194,20 @@ def test_load_season_charge_et_assemble_les_donnees():
     assert all(isinstance(l, GameLog) for l in data.logs)
     assert data.picks == picks
     assert data.second_chances == second_chances
+
+
+def test_roster_before_ancre_le_debut_de_saison_sur_le_premier_match_eligible():
+    # Présaison le 25/09, premier match de SR le 21/10, D = 28/10 : 7 jours
+    # après le vrai début (début de saison) et non 33 (ancre sur la présaison).
+    games = [
+        _game("g0", date(2026, 9, 25), "BOS", "LAL", game_type="preseason"),
+        _game("g1", date(2026, 10, 21), "BOS", "LAL"),
+    ]
+    logs = [
+        _log(1, date(2026, 3, 1), "BOS", season=PRIOR),   # seulement la saison passée avant D
+        _log(1, date(2026, 11, 2), "BOS"),                # log de la saison, après D
+    ]
+    data = _season_data(logs, games)
+    roster = roster_before(data, date(2026, 10, 28))
+    assert 1 in roster
+    assert roster[1]["team"] == "BOS"
