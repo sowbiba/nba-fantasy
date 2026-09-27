@@ -5,10 +5,14 @@ avant D (`logs_before`, `roster_before`), décide avec l'historique de picks
 SIMULÉS de la stratégie (cooldown R3, x2 déjà posés), puis le pick est noté
 avec le vrai résultat du soir (`score_on`) : DNP → 0 et cooldown consommé
 (R7), x2 doublant le score même négatif et perdu sur DNP (R10). La moyenne
-compte chaque soirée éligible, avec ou sans pick (R14).
+compte chaque soirée éligible, avec ou sans pick (R14). `seed_picks` amorce
+cet historique simulé avec les vrais picks de l'utilisateur antérieurs à la
+fenêtre, pour démarrer sous les mêmes contraintes (cooldown, x2 du mois) —
+voir `simulate`.
 """
 from dataclasses import dataclass
 from datetime import date, timedelta
+from typing import Iterable
 
 from engine.backtest.data import (
     SeasonData,
@@ -103,15 +107,22 @@ def _players_at(data: SeasonData, d: date, injury_mode: str) -> dict[int, dict]:
 
 
 def simulate(data: SeasonData, start: date, end: date, strategy: str, injury_mode: str = "none",
-             decay: float | None = None) -> BacktestResult:
+             decay: float | None = None, seed_picks: Iterable[PickRow] = ()) -> BacktestResult:
+    """`seed_picks` (optionnel, backtest uniquement) : picks RÉELS de
+    l'utilisateur antérieurs à `start` (typiquement les 30 jours qui
+    précèdent), pour que la simulation démarre sous les mêmes contraintes
+    que l'utilisateur — cooldown R3 (dans les deux sens, comme
+    `is_available`) et x2 déjà posé ce mois-ci (R10 : un seul x2/mois). Ils
+    ne sont jamais notés ni renvoyés dans `results` : seules les soirées de
+    `[start, end]` comptent."""
     if strategy not in STRATEGIES:
         raise ValueError(f"stratégie inconnue : {strategy}")
     if injury_mode not in INJURY_MODES:
         raise ValueError(f"mode blessures inconnu : {injury_mode}")
 
     last_of_month = _last_regular_night_of_month(data)
-    history: list[PickRow] = []          # picks simulés (jamais les vrais picks de l'utilisateur)
-    x2_used: set[tuple[int, int]] = set()
+    history: list[PickRow] = list(seed_picks)   # amorcé par les vrais picks pré-fenêtre, puis picks simulés
+    x2_used: set[tuple[int, int]] = {_month(p.date) for p in history if p.is_x2}
     results: list[NightResult] = []
 
     for night in eligible_nights(data, start, end):

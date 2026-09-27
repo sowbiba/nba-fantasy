@@ -144,6 +144,35 @@ def test_le_job_ne_lit_que_le_repo_lecture_seule_et_n_ecrit_jamais(monkeypatch, 
     assert "decay=0.97" in report   # parsing de --decay (liste séparée par virgules)
 
 
+def test_run_amorce_les_simulations_avec_les_vrais_picks_pre_fenetre():
+    # Un vrai pick posé 10 jours avant le début de la fenêtre, sur le
+    # meilleur joueur (1), doit le bloquer (R3) pour toute la fenêtre : les
+    # simulations (best_available, plan) ne doivent jamais le choisir,
+    # contrairement à la saison de base où il est pické soir 1.
+    repo = _season_repo()
+    seed_date = NIGHTS[0] - timedelta(days=10)
+    repo.picks.append({"id": 100, "player_id": 1, "game_id": f"g_1_{seed_date.isoformat()}",
+                       "date": seed_date.isoformat(), "mode": "regular", "season": SEASON,
+                       "actual_score": BASE[1], "is_x2": False})
+    from engine.backtest.data import load_season
+    data = load_season(repo, SEASON)
+
+    result = run(data, NIGHTS[0], NIGHTS[-1])
+    by = {(r.label, r.mode): r for r in result["rows"]}
+    for strategy in STRATEGIES:
+        label = strategy if strategy != "plan" else f"plan (decay={FUTURE_DECAY}, défaut)"
+        for mode in INJURY_MODES:
+            assert all(n.player_id != 1 for n in by[(label, mode)].result.nights)
+    # Le pick d'amorçage (10 jours avant la fenêtre) n'apparaît dans aucun résultat.
+    for row in result["rows"]:
+        assert seed_date not in {n.night for n in row.result.nights}
+
+    # Sans le seed (saison de base), le joueur 1 est bien choisi soir 1.
+    baseline = run(_data(), NIGHTS[0], NIGHTS[-1])
+    baseline_by = {(r.label, r.mode): r for r in baseline["rows"]}
+    assert baseline_by[("best_available", "none")].result.nights[0].player_id == 1
+
+
 def test_le_repo_lecture_seule_leve_sur_toute_ecriture():
     readonly = ReadOnlyRepo(_season_repo())
     with pytest.raises(AssertionError):

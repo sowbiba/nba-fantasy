@@ -14,7 +14,7 @@ restreinte à la saison régulière (R14, pas de x2 en playoffs).
 """
 import argparse
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from engine.backtest.data import SeasonData, eligible_nights, load_season
@@ -25,12 +25,14 @@ from engine.backtest.simulate import (
     simulate,
     user_result,
 )
+from engine.rules.availability import COOLDOWN_DAYS, PickRow
 from engine.rules.scoring import night_points
 from engine.strategy.value import FUTURE_DECAY, X2_MONTHS
 
 STRATEGIES = ("best_available", "plan")
 INJURY_MODES = ("none", "dnp_oracle")
 DEFAULT_WINDOW = (2, 4)   # février → avril : fenêtre par défaut (voir docstring module)
+SEED_DAYS = COOLDOWN_DAYS   # amorce des simulations avec les vrais picks des 30 jours avant `start`
 
 
 def _as_date(v) -> date:
@@ -53,7 +55,11 @@ def _only(result: BacktestResult, dates: set[date]) -> BacktestResult:
 def _official_user_result(data: SeasonData, start: date, end: date) -> BacktestResult:
     """Vrais picks de l'utilisateur, notés avec `picks.actual_score` (ce que
     l'application a réellement enregistré), pas avec les logs — R10/R14 : x2
-    double même un score négatif, soirée sans pick (ou non scorée) = 0."""
+    double même un score négatif, soirée sans pick (ou non scorée) = 0.
+    `actual_score is None` (pick non encore scoré) compte 0 comme une soirée
+    sans pick : sans conséquence sur les fenêtres de ce job, qui portent sur
+    une saison déjà entièrement écoulée (`score_picks`, dans `daily_sync`,
+    aurait déjà scoré tout pick dont le match est réglé)."""
     by_date: dict[date, dict] = {}
     for p in data.picks:
         d = _as_date(p["date"])
@@ -72,6 +78,23 @@ def _official_user_result(data: SeasonData, start: date, end: date) -> BacktestR
         results.append(NightResult(night.date, int(pid) if pid is not None else None,
                                    bool(pick.get("is_x2")), points if points is not None else 0))
     return BacktestResult("user_officiel", "n/a", results)
+
+
+def _seed_picks(data: SeasonData, start: date) -> list[PickRow]:
+    """Vrais picks de l'utilisateur dans les `SEED_DAYS` jours avant `start` :
+    amorcent l'historique de chaque simulation pour qu'elle démarre sous les
+    mêmes contraintes que l'utilisateur (cooldown R3 dans les deux sens, x2
+    déjà posé ce mois-ci, R10). Jamais notés, jamais dans les résultats —
+    seul l'historique de picks simulé les voit."""
+    window_start = start - timedelta(days=SEED_DAYS)
+    seeds = []
+    for p in data.picks:
+        d = _as_date(p["date"])
+        if window_start <= d < start:
+            seeds.append(PickRow(int(p.get("id") or 0), int(p["player_id"]), d,
+                                 p.get("mode") or "regular", p.get("season") or data.season,
+                                 bool(p.get("is_x2"))))
+    return seeds
 
 
 def _season_bounds(data: SeasonData) -> tuple[date, date]:
@@ -97,6 +120,7 @@ def run(data: SeasonData, start: date, end: date, decays: list[float] | None = N
     réseau/base — `data` est déjà chargée)."""
     decays = list(decays or [])
     regular_dates = _regular_dates(data, start, end)
+    seed_picks = _seed_picks(data, start)
 
     official = _only(_official_user_result(data, start, end), regular_dates)
     logs_based = _only(user_result(data, start, end), regular_dates)
@@ -106,13 +130,15 @@ def run(data: SeasonData, start: date, end: date, decays: list[float] | None = N
 
     for strategy in STRATEGIES:
         for mode in INJURY_MODES:
-            res = _only(simulate(data, start, end, strategy, injury_mode=mode), regular_dates)
+            res = _only(simulate(data, start, end, strategy, injury_mode=mode, seed_picks=seed_picks),
+                       regular_dates)
             label = strategy if strategy != "plan" else f"plan (decay={FUTURE_DECAY}, défaut)"
             rows.append(Row(label, mode, res))
         if strategy == "plan":
             for decay in decays:
                 for mode in INJURY_MODES:
-                    res = _only(simulate(data, start, end, strategy, injury_mode=mode, decay=decay), regular_dates)
+                    res = _only(simulate(data, start, end, strategy, injury_mode=mode, decay=decay,
+                                         seed_picks=seed_picks), regular_dates)
                     rows.append(Row(f"plan (decay={decay})", mode, res))
 
     diverging = _diverging_nights(official, logs_based)
@@ -189,6 +215,11 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
                  "équitable est entre ces deux bornes, pas contre l'une des deux isolément.")
     lines.append("- Fenêtre février-avril par défaut : la saison 2024-25 n'est pas chargée en base, il y a "
                  "donc peu d'historique de profils avant février de la saison en cours.")
+    lines.append(f"- Chaque simulation démarre amorcée par mes vrais picks des {SEED_DAYS} jours avant le "
+                 "début de la fenêtre (cooldown R3 et x2 du mois en cours, R10) : la comparaison démarre "
+                 "sous les mêmes contraintes que moi. Au-delà, l'historique simulé de chaque stratégie "
+                 "diverge du mien au fil des soirées (chacune fait ses propres picks) : c'est voulu, "
+                 "c'est ce qu'on compare.")
     if data["x2_truncated_month"] is not None:
         y, m = data["x2_truncated_month"]
         lines.append(f"- La fenêtre se termine avant la fin du mois {m:02d}/{y} (mois x2) : asymétrie en "

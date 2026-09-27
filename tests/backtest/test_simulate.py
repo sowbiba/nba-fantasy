@@ -6,7 +6,7 @@ import pytest
 import engine.backtest.simulate as sim
 from engine.backtest.data import SeasonData
 from engine.backtest.simulate import BacktestResult, NightResult, simulate, user_result
-from engine.rules.availability import COOLDOWN_DAYS
+from engine.rules.availability import COOLDOWN_DAYS, PickRow
 from engine.stats.profile import GameLog
 
 SEASON = "2026-27"
@@ -179,3 +179,46 @@ def test_strategie_ou_mode_inconnu():
         simulate(data, SIX_NIGHTS[0], SIX_NIGHTS[-1], "user")
     with pytest.raises(ValueError):
         simulate(data, SIX_NIGHTS[0], SIX_NIGHTS[-1], "best_available", injury_mode="oracle")
+
+
+def test_seed_picks_amorce_le_cooldown_avant_le_debut_de_la_fenetre():
+    # Un vrai pick posé 10 jours avant le début de la fenêtre bloque son
+    # joueur jusqu'à J+30 (R3, dans les deux sens comme `is_available`) :
+    # le joueur 1 (le meilleur, normalement pické soir 1) doit être exclu de
+    # toute la fenêtre (6 soirées, largement < 30 jours après le seed).
+    data = _season(SIX_NIGHTS)
+    seed_date = SIX_NIGHTS[0] - timedelta(days=10)
+    seed = [PickRow(id=999, player_id=1, date=seed_date, mode="regular", season=SEASON, is_x2=False)]
+
+    seeded = simulate(data, SIX_NIGHTS[0], SIX_NIGHTS[-1], "best_available", seed_picks=seed)
+    assert all(n.player_id != 1 for n in seeded.nights)
+    assert seeded.nights[0].player_id == 2   # le meilleur restant, disponible
+
+    # Sans seed, le joueur 1 est bien pické soir 1 (comportement existant).
+    naive = simulate(data, SIX_NIGHTS[0], SIX_NIGHTS[-1], "best_available")
+    assert naive.nights[0].player_id == 1
+
+    # Le pick d'amorçage n'apparaît jamais dans les résultats (pas de soirée
+    # au 10 novembre, pas de points pour le joueur 1 ce jour-là).
+    assert all(n.night in SIX_NIGHTS for n in seeded.nights)
+    assert seed_date not in {n.night for n in seeded.nights}
+
+
+def test_seed_picks_x2_du_mois_deja_pose_empeche_un_second_x2():
+    # x2 réel posé début novembre (avant la fenêtre) : le mois est déjà
+    # servi, ni best_available (référence naïve) ni plan ne doivent poser un
+    # second x2 en novembre à l'intérieur de la fenêtre.
+    nights = [date(2026, 11, 29), date(2026, 11, 30), date(2026, 12, 1)]
+    data = _season(nights)
+    seed = [PickRow(id=998, player_id=4, date=date(2026, 11, 5), mode="regular", season=SEASON, is_x2=True)]
+
+    naive = simulate(data, nights[0], nights[-1], "best_available", seed_picks=seed)
+    assert not any(n.is_x2 for n in naive.nights if n.night.month == 11)
+    assert any(n.is_x2 for n in naive.nights if n.night.month == 12)   # décembre : mois neuf, pas amorcé
+
+    plan = simulate(data, nights[0], nights[-1], "plan", seed_picks=seed)
+    assert not any(n.is_x2 for n in plan.nights if n.night.month == 11)
+
+    # Sans le seed, novembre pose bien son propre x2 (comportement existant).
+    without_seed = simulate(data, nights[0], nights[-1], "best_available")
+    assert any(n.is_x2 for n in without_seed.nights if n.night.month == 11)
