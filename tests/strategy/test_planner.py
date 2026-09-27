@@ -184,3 +184,37 @@ def test_temps_de_resolution_realiste():
     elapsed = time.perf_counter() - t0
     assert sum(e.is_x2 for e in plan.values()) in (1, 2)
     assert elapsed < 5.0
+
+
+# --- I-1 : limite de temps, solution réalisable acceptée ----------------------
+
+class _FakeRes:
+    def __init__(self, status, x, message="fake"):
+        self.status, self.x, self.message = status, x, message
+
+
+def test_milp_a_une_limite_de_temps(monkeypatch):
+    seen = {}
+    real = planner_mod.milp
+
+    def spy(*args, **kwargs):
+        seen.update(kwargs.get("options") or {})
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(planner_mod, "milp", spy)
+    solve([_cell(1, 0, 10.0)], [D0])
+    assert seen["time_limit"] == planner_mod.MILP_TIME_LIMIT_S
+
+
+def test_statut_1_avec_solution_realisable_accepte(monkeypatch):
+    # Limite de temps atteinte (statut 1) mais une solution réalisable existe :
+    # on la garde plutôt que d'échouer.
+    monkeypatch.setattr(planner_mod, "milp", lambda *a, **k: _FakeRes(1, np.array([0.0, 1.0])))
+    plan = solve([_cell(1, 0, 10.0), _cell(2, 0, 5.0)], [D0])
+    assert plan[D0].cell.player_id == 2
+
+
+def test_statut_1_sans_solution_leve(monkeypatch):
+    monkeypatch.setattr(planner_mod, "milp", lambda *a, **k: _FakeRes(1, None))
+    with pytest.raises(RuntimeError):
+        solve([_cell(1, 0, 10.0)], [D0])

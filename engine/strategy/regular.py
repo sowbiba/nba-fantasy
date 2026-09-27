@@ -7,6 +7,7 @@ Les règles de disponibilité viennent de engine.rules : en PO, le même
 calcul applique automatiquement le pick-and-drop et les éliminations (la
 stratégie PO dédiée arrive en L3).
 """
+import logging
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
@@ -21,6 +22,8 @@ from engine.stats.team_defense import opp_factor
 from engine.strategy.config import TONIGHT_SOURCE
 from engine.strategy.planner import Cell, PlanEntry, solve
 from engine.strategy.value import X2_MONTHS, future_value, lock_value, tonight_value, x2_gain
+
+log = logging.getLogger(__name__)
 
 HORIZON_DAYS = 30
 MIN_EXP_MINUTES = 15.0
@@ -189,10 +192,16 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
     fixed = {p.date for p in inputs.picks}
     plan_nights = sorted(d for d in nights if d not in fixed)
     plan_set = set(plan_nights)
-    plan = solve([c for c in planner_cells if c.night in plan_set], plan_nights,
-                 required={today} if today in plan_set else frozenset(),
-                 x2_months=_x2_months(inputs, nights),
-                 x2_nights={d for d in plan_nights if nights[d].mode == "regular"})
+    try:
+        plan = solve([c for c in planner_cells if c.night in plan_set], plan_nights,
+                     required={today} if today in plan_set else frozenset(),
+                     x2_months=_x2_months(inputs, nights),
+                     x2_nights={d for d in plan_nights if nights[d].mode == "regular"})
+    except RuntimeError:
+        # Le plan est indicatif : son échec ne doit jamais priver la soirée
+        # de ses recommandations (écrites par daily_sync juste après).
+        log.exception("planificateur en échec : plan vide, recommandations conservées")
+        plan = {}
 
     tonight = today if today in nights else None
     recommendations: list[Recommendation] = []

@@ -26,6 +26,7 @@ from engine.stats.projection import GameContext
 log = logging.getLogger(__name__)
 
 TOP_PER_NIGHT = 40          # candidats gardés par soirée (modèle gérable)
+MILP_TIME_LIMIT_S = 20      # au-delà, on garde la meilleure solution trouvée (statut 1)
 
 
 @dataclass(frozen=True)
@@ -108,8 +109,14 @@ def _solve_milp(kept: list[Cell], required: set[date], x2_months: dict[tuple[int
 
     a = csr_array((vals, (r_idx, c_idx)), shape=(len(lo), n + m))
     res = milp(c=obj, constraints=LinearConstraint(a, lo, hi), integrality=np.ones(n + m),
-               bounds=Bounds(0, 1), options={"mip_rel_gap": 0})
+               bounds=Bounds(0, 1), options={"mip_rel_gap": 0, "time_limit": MILP_TIME_LIMIT_S})
     return res, x2_idx
+
+
+def _has_solution(res) -> bool:
+    """Statut 0 = optimum ; statut 1 = limite de temps/itérations atteinte,
+    acceptable si le solveur a trouvé une solution réalisable (`x`)."""
+    return res.status in (0, 1) and res.x is not None
 
 
 def solve(
@@ -127,18 +134,20 @@ def solve(
     `x2_nights` (optionnel) restreint le x2 à ces soirées (R10 : saison
     régulière seulement) ; None = toutes les soirées des mois listés.
     Si le modèle est infaisable à cause des mois forcés, il est relancé une
-    fois sans forcer (journalisé)."""
+    fois sans forcer (journalisé). Temps limité (MILP_TIME_LIMIT_S) : la
+    meilleure solution réalisable trouvée est alors retenue. Lève
+    RuntimeError s'il n'y a aucune solution (à rattraper par l'appelant)."""
     x2_months = dict(x2_months or {})
     kept = _kept_cells(cells, nights)
     if not kept:
         return {}
     req = set(required)
     res, x2_idx = _solve_milp(kept, req, x2_months, x2_nights)
-    if (res.status != 0 or res.x is None) and any(x2_months.values()):
+    if not _has_solution(res) and any(x2_months.values()):
         log.warning("planificateur : x2 forcé infaisable (%s), relance sans forcer", res.message)
         x2_months = dict.fromkeys(x2_months, False)
         res, x2_idx = _solve_milp(kept, req, x2_months, x2_nights)
-    if res.status != 0 or res.x is None:
+    if not _has_solution(res):
         raise RuntimeError(f"planificateur : pas de solution ({res.message})")
     n = len(kept)
     doubled = {i for j, i in enumerate(x2_idx) if res.x[n + j] > 0.5}

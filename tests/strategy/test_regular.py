@@ -263,3 +263,19 @@ def test_x2_jamais_sur_une_soiree_de_playoffs():
                        games=[_game("g1", today, "DEN", "LAL"), _game("g2", po, "DEN", "WAS", "playoffs")]))
     assert d.plan[today].is_x2
     assert po not in d.plan or not d.plan[po].is_x2
+
+
+# --- I-1 : un échec du planificateur ne prive pas la soirée de ses recos -------
+
+def test_echec_du_planificateur_garde_les_recommandations(monkeypatch, caplog):
+    import engine.strategy.regular as regular_mod
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("planificateur : pas de solution (test)")
+
+    monkeypatch.setattr(regular_mod, "solve", boom)
+    with caplog.at_level("ERROR", logger=regular_mod.__name__):
+        d = decide(_inputs())
+    assert d.plan == {}
+    assert [r.cell.player_id for r in d.recommendations] == [1, 2]
+    assert "planificateur en échec" in caplog.text
