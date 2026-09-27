@@ -23,6 +23,7 @@ from engine.backtest.data import (
     score_on,
 )
 from engine.rules.availability import PickRow
+from engine.stats.elo import EloParams
 from engine.strategy.inputs import build_decision_inputs
 from engine.strategy.regular import decide
 from engine.strategy.value import X2_MONTHS
@@ -112,7 +113,7 @@ def _players_at(data: SeasonData, d: date, injury_mode: str) -> dict[int, dict]:
 
 def simulate(data: SeasonData, start: date, end: date, strategy: str, injury_mode: str = "none",
              decay: float | None = None, seed_picks: Iterable[PickRow] = (),
-             blowout: bool = False) -> BacktestResult:
+             blowout: bool = False, elo_params: EloParams | None = None) -> BacktestResult:
     """`seed_picks` (optionnel, backtest uniquement) : picks RÉELS de
     l'utilisateur antérieurs à `start` (typiquement les 30 jours qui
     précèdent), pour que la simulation démarre sous les mêmes contraintes
@@ -124,11 +125,17 @@ def simulate(data: SeasonData, start: date, end: date, strategy: str, injury_mod
     `blowout` : active le facteur « écart de force » (L3a §2) pour cette
     simulation, indépendamment de `BLOWOUT_ENABLED` : notes Elo d'avant D
     (les scores de D, présents dans `data.games`, sont exclus par
-    `ratings_before`) et calibration sur les logs/matchs d'avant D."""
+    `ratings_before`) et calibration sur les logs/matchs d'avant D.
+    `elo_params` (optionnel, `None` → `EloParams()` par défaut, résolu une
+    seule fois ici plutôt que de laisser `build_decision_inputs` retomber
+    sur son propre défaut à chaque soirée) : mêmes paramètres Elo utilisés
+    pour tout `[start, end]` (report final L3a, Important 3 — le rapport de
+    backtest doit pouvoir dire avec quels paramètres il a tourné)."""
     if strategy not in STRATEGIES:
         raise ValueError(f"stratégie inconnue : {strategy}")
     if injury_mode not in INJURY_MODES:
         raise ValueError(f"mode blessures inconnu : {injury_mode}")
+    elo_params = elo_params if elo_params is not None else EloParams()
 
     last_of_month = _last_regular_night_of_month(data)
     history: list[PickRow] = list(seed_picks)   # amorcé par les vrais picks pré-fenêtre, puis picks simulés
@@ -156,6 +163,7 @@ def simulate(data: SeasonData, start: date, end: date, strategy: str, injury_mod
             series_rows=[],
             nights=eligible_nights(data, d, horizon_end),
             blowout=blowout,
+            elo_params=elo_params,
         )
         decision = decide(inputs, tonight_source="plan" if strategy == "plan" else "best_available", decay=decay,
                           blowout=inputs.blowout_model)
