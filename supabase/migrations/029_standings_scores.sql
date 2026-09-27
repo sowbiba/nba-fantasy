@@ -1,9 +1,11 @@
 -- 029 — Classement : ignorer un match `final` aux scores nuls (revue finale
 -- mode public, M1). Un match `status = 'final'` avec `home_score`/
 -- `away_score` null (glitch de données) donnait `won = null` dans 027 :
--- exclu du V/D mais compté dans le rang des 10 derniers (rn), et pouvait
--- produire une série (streak) fantôme. Même vue que 027, colonnes et
--- grants inchangés, seule la clause `where` de `results` est complétée.
+-- exclu du V/D (comptent dans wins/losses), mais sa ligne occupait quand
+-- même un rang dans la fenêtre des 10 derniers (rn), ce qui décalait
+-- last10_wins/last10_losses d'un match de trop quand ce match nul tombait
+-- dans les 10 plus récents. Même vue que 027, colonnes et grants
+-- inchangés, seule la clause `where` de `results` est complétée.
 -- Idempotente.
 
 create or replace view standings with (security_invoker = true) as
