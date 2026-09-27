@@ -25,7 +25,8 @@ class SeasonData:
     season: str
     prior: str
     players: dict[int, dict]      # id -> {id, name, position} (équipe NON fiable : effectifs actuels)
-    games: list[dict]             # games de la saison (id, date, home_team, away_team, game_type, tip_off, status)
+    games: list[dict]             # games de la saison (id, date, home_team, away_team, game_type, tip_off,
+                                  # status, home_score, away_score)
     logs: list[GameLog]           # saison + saison précédente
     picks: list[dict]             # vrais picks de l'utilisateur (date, player_id, actual_score, is_x2, mode)
     second_chances: list[dict]

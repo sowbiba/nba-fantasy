@@ -172,8 +172,16 @@ def run(data: SeasonData, season: str, from_date: date | None = None) -> dict:
 
     best = min(rows, key=lambda r: r.log_loss) if rows else None
     no_injury_rows = [r for r in rows if r.elo_per_share == 0.0]
+    injury_rows = [r for r in rows if r.elo_per_share > 0.0]
     best_no_injury = min(no_injury_rows, key=lambda r: r.log_loss) if no_injury_rows else None
-    injury_gain = (best_no_injury.log_loss - best.log_loss) if best and best_no_injury else 0.0
+    # « Apport de la correction blessures » = meilleur jeu AVEC correction
+    # (elo_per_share > 0) contre le meilleur jeu SANS (elo_per_share = 0) —
+    # littéralement la comparaison du brief, pas le minimum global (qui
+    # inclurait elo_per_share = 0 et masquerait un apport négatif derrière un
+    # gain à zéro).
+    best_with_injury = min(injury_rows, key=lambda r: r.log_loss) if injury_rows else None
+    injury_gain = (best_no_injury.log_loss - best_with_injury.log_loss) \
+        if best_no_injury and best_with_injury else 0.0
 
     return {
         "from_date": from_date,
@@ -184,6 +192,7 @@ def run(data: SeasonData, season: str, from_date: date | None = None) -> dict:
         "rows": rows,
         "best": best,
         "best_no_injury": best_no_injury,
+        "best_with_injury": best_with_injury,
         "injury_gain": injury_gain,
     }
 
@@ -216,15 +225,20 @@ def render_report(season: str, result: dict) -> str:
 
     lines += ["## Apport de la correction blessures", ""]
     best_no_injury = result["best_no_injury"]
-    if best is not None and best_no_injury is not None:
-        lines.append(f"Meilleur jeu avec correction (elo_per_share > 0 possible) : perte logarithmique = "
-                     f"{best.log_loss:.4f}. Meilleur jeu à elo_per_share = 0 (correction désactivée) : "
-                     f"k = {best_no_injury.k:g}, home_advantage = {best_no_injury.home_advantage:g} → "
-                     f"perte logarithmique = {best_no_injury.log_loss:.4f}.")
+    best_with_injury = result["best_with_injury"]
+    if best_no_injury is not None and best_with_injury is not None:
+        lines.append(f"Meilleur jeu avec correction (elo_per_share > 0) : k = {best_with_injury.k:g}, "
+                     f"home_advantage = {best_with_injury.home_advantage:g}, "
+                     f"elo_per_share = {best_with_injury.elo_per_share:g} → perte logarithmique = "
+                     f"{best_with_injury.log_loss:.4f}. Meilleur jeu à elo_per_share = 0 (correction "
+                     f"désactivée) : k = {best_no_injury.k:g}, home_advantage = "
+                     f"{best_no_injury.home_advantage:g} → perte logarithmique = "
+                     f"{best_no_injury.log_loss:.4f}.")
         gain = result["injury_gain"]
-        if best.elo_per_share > 0 and gain > 0:
+        if gain > 0:
             lines.append(f"Gain de la correction : {gain:+.4f} en perte logarithmique — la correction "
-                         "blessures améliore la prédiction, à activer dans `EloParams` par défaut.")
+                         "blessures améliore la prédiction, à activer dans `EloParams` par défaut "
+                         f"(elo_per_share = {best_with_injury.elo_per_share:g}).")
         else:
             lines.append(f"Écart : {gain:+.4f} en perte logarithmique — la correction blessures "
                          "n'améliore pas la prédiction sur cette fenêtre, à laisser désactivée "

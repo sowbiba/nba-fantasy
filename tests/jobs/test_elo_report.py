@@ -123,7 +123,13 @@ def test_run_meilleure_ligne_coherente_avec_le_tableau():
     no_injury_rows = [r for r in rows if r.elo_per_share == 0.0]
     assert all(best_no_injury.log_loss <= r.log_loss for r in no_injury_rows)
 
-    assert result["injury_gain"] == pytest.approx(best_no_injury.log_loss - best.log_loss)
+    best_with_injury = result["best_with_injury"]
+    assert best_with_injury is not None
+    assert best_with_injury.elo_per_share > 0.0
+    injury_rows = [r for r in rows if r.elo_per_share > 0.0]
+    assert all(best_with_injury.log_loss <= r.log_loss for r in injury_rows)
+
+    assert result["injury_gain"] == pytest.approx(best_no_injury.log_loss - best_with_injury.log_loss)
 
 
 def test_run_la_correction_blessures_gagne_sur_cette_saison_synthetique():
@@ -133,9 +139,10 @@ def test_run_la_correction_blessures_gagne_sur_cette_saison_synthetique():
     prédit à tort la victoire sur les matchs vedette-absente."""
     data = _data()
     result = run(data, SEASON)
-    assert result["best"].elo_per_share > 0.0
+    assert result["best"].elo_per_share > 0.0   # le minimum global choisit une correction active
+    assert result["best_with_injury"].elo_per_share > 0.0
     assert result["injury_gain"] > 0.0
-    assert result["best"].log_loss < result["best_no_injury"].log_loss
+    assert result["best_with_injury"].log_loss < result["best_no_injury"].log_loss
 
 
 def test_run_reference_naive_calculee_sur_la_fenetre():
