@@ -38,7 +38,10 @@ export default async function PicksPage() {
     team: p.players?.team ?? "", actual_score: p.actual_score, is_x2: p.is_x2, second_chance: scByPick.get(p.id) ?? null,
   }));
   const pickedDates = new Set(rows.map((r) => r.date));
-  const noPickRows: HistoryRow[] = ((pastNightsRes.data || []) as { date: string }[])
+  // M1 (final review) : si la requête picks a échoué, ne pas synthétiser de
+  // lignes "Aucun pick" — on ne sait pas quelles soirées ont réellement un
+  // pick, et "Corriger" y remplacerait un vrai pick par un nouveau.
+  const noPickRows: HistoryRow[] = picksRes.error ? [] : ((pastNightsRes.data || []) as { date: string }[])
     .filter((n) => !pickedDates.has(n.date))
     .map((n) => ({ id: null, date: n.date, player_id: null, player_name: null, team: "", actual_score: null, is_x2: false, second_chance: null }));
   const allRows = [...rows, ...noPickRows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
