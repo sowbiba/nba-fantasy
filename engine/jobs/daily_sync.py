@@ -18,13 +18,15 @@ from engine.rules.availability import PickRow, SecondChance
 from engine.rules.calendar import PARIS, build_nights
 from engine.rules.game_types import previous_season, season_for_date
 from engine.stats.aggregates import player_aggregates
+from engine.stats.elo import EloParams, is_countable, predict, ratings_before
 from engine.stats.profile import GameLog
-from engine.strategy.inputs import build_decision_inputs
+from engine.strategy.inputs import absent_shares, build_decision_inputs
 from engine.strategy.regular import HORIZON_DAYS, decide
 
 SCHEDULE_PAST_DAYS = 5
 SCHEDULE_AHEAD_DAYS = 35
 PLAN_RETENTION = timedelta(days=7)
+PREDICTION_WINDOW_DAYS = 14   # matchs à venir couverts par game_predictions (spec L3a §3)
 IDENTITY = ("id", "name", "team", "position")
 
 
@@ -90,6 +92,40 @@ def score_picks(repo, season: str, today: date) -> None:
             repo.set_pick_score(p["id"], 0)   # R7 : ne pas avoir joué = 0
 
 
+def team_elo_rows(season_games: list[dict], today: date, ratings: dict[str, float], now: datetime) -> list[dict]:
+    """Lignes `team_elo` : note de chaque équipe vue par `ratings` (déjà
+    calculées après tous les matchs terminés jusqu'à `today` inclus), et le
+    nombre de matchs comptables jusqu'à `today` inclus (mêmes règles que
+    `ratings_before` : `is_countable`, date < today + 1 jour)."""
+    cutoff = today + timedelta(days=1)
+    games_played: dict[str, int] = defaultdict(int)
+    for g in season_games:
+        if is_countable(g) and _d(g["date"]) < cutoff:
+            games_played[g["home_team"]] += 1
+            games_played[g["away_team"]] += 1
+    return [{"team": team, "rating": round(rating, 2), "games": games_played.get(team, 0),
+             "updated_at": now.isoformat()} for team, rating in ratings.items()]
+
+
+def game_prediction_rows(window: list[dict], today: date, ratings: dict[str, float],
+                         absent: dict[str, float], p: EloParams, now: datetime) -> list[dict]:
+    """Lignes `game_predictions` pour les matchs à venir non terminés de la
+    fenêtre `today` → `today + PREDICTION_WINDOW_DAYS` jours, avec la
+    correction blessures des statuts ACTUELS (`absent`, calculée une seule
+    fois pour toute la fenêtre : c'est la meilleure information disponible
+    au moment de la synchro, même si elle ne dit presque rien d'un match
+    dans 10 jours — spec L3a §3)."""
+    horizon = today + timedelta(days=PREDICTION_WINDOW_DAYS)
+    upcoming = [g for g in window if g.get("status") != "final" and today <= _d(g["date"]) <= horizon]
+    rows = []
+    for g in upcoming:
+        pred = predict(g, ratings, absent, p)
+        rows.append({"game_id": pred.game_id, "home_rating": round(pred.home_rating, 2),
+                     "away_rating": round(pred.away_rating, 2), "home_win_prob": round(pred.home_win_prob, 4),
+                     "expected_margin": round(pred.expected_margin, 2), "updated_at": now.isoformat()})
+    return rows
+
+
 def _apply_injuries(repo, injuries: dict[str, list[dict]]) -> None:
     players = repo.load_players()
     by_team: dict[str, list[dict]] = defaultdict(list)
@@ -146,6 +182,17 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime) -> R
     result.players_updated = len(aggregate_rows)
 
     window = repo.load_games_between(today - timedelta(days=SCHEDULE_PAST_DAYS), today + timedelta(days=SCHEDULE_AHEAD_DAYS))
+
+    elo_params = EloParams()
+    ratings = ratings_before(season_games, today + timedelta(days=1), elo_params)
+    team_rows = team_elo_rows(season_games, today, ratings, now)
+    if team_rows:
+        repo.upsert_team_elo(team_rows)
+    absent = absent_shares(today=today, players=players, logs=all_logs)
+    pred_rows = game_prediction_rows(window, today, ratings, absent, elo_params, now)
+    if pred_rows:
+        repo.upsert_game_predictions(pred_rows)
+
     series_rows = repo.load_series(season)
     nights = [n for n in build_nights([g for g in window if _d(g["date"]) >= today], series_rows)]
     repo.replace_nights(today, [{"date": n.date.isoformat(), "season": n.season, "mode": n.mode,

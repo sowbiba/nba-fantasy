@@ -2,7 +2,8 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from engine.jobs.daily_sync import apply_scoreboard, run
+from engine.jobs.daily_sync import apply_scoreboard, game_prediction_rows, run, team_elo_rows
+from engine.stats.elo import EloParams
 from tests.jobs.fakes import FakeRepo
 
 TODAY = date(2026, 11, 2)
@@ -182,6 +183,71 @@ def test_daily_sync_ecrit_le_x2_du_plan():
     repo = _base_repo()
     run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
     assert [(r["night"], r["is_x2"]) for r in repo.plan] == [(TODAY.isoformat(), True)]
+
+
+def test_daily_sync_ecrit_l_elo_des_equipes():
+    repo = _base_repo()
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
+    # Seul "0022600011" (BOS-DEN, hier) a un score connu (via le scoreboard
+    # ESPN de ce run) : "0022600010" (DEN-LAL, il y a 2 jours) n'en a jamais
+    # reçu dans cette fixture, donc n'est pas comptable par l'Elo — LAL n'a
+    # encore aucune ligne `team_elo`.
+    assert set(repo.team_elo) == {"DEN", "BOS"}
+    assert repo.team_elo["DEN"]["games"] == 1
+    assert repo.team_elo["BOS"]["games"] == 1
+    for row in repo.team_elo.values():
+        assert row["updated_at"] == NOW.isoformat()
+        assert isinstance(row["rating"], float)
+
+
+def test_daily_sync_ecrit_les_predictions_de_match_a_venir():
+    repo = _base_repo()
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
+    # Seul le match de ce soir (DEN-LAL, "scheduled") est dans la fenêtre à
+    # venir et non terminé : les matchs déjà "final" n'ont pas de prédiction.
+    assert set(repo.game_predictions) == {"0022600020"}
+    pred = repo.game_predictions["0022600020"]
+    assert 0.0 <= pred["home_win_prob"] <= 1.0
+    assert pred["updated_at"] == NOW.isoformat()
+
+
+def test_game_prediction_rows_hors_fenetre_ou_matchs_termines_ignores():
+    games = [
+        {"id": "past", "date": (TODAY - timedelta(days=1)).isoformat(), "home_team": "LAL",
+         "away_team": "DEN", "status": "final"},
+        {"id": "loin", "date": (TODAY + timedelta(days=20)).isoformat(), "home_team": "LAL",
+         "away_team": "DEN", "status": "scheduled"},
+        {"id": "ok", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled"},
+    ]
+    rows = game_prediction_rows(games, TODAY, {"LAL": 1500.0, "DEN": 1500.0}, {}, EloParams(), NOW)
+    assert [r["game_id"] for r in rows] == ["ok"]
+
+
+def test_game_prediction_rows_joueur_out_baisse_la_probabilite_de_son_equipe():
+    # Correction blessures activée (elo_per_share > 0) : la part d'absents de
+    # l'équipe à domicile (LAL) baisse sa note et donc sa probabilité de
+    # victoire, par rapport à la même situation sans correction.
+    game = {"id": "g1", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled"}
+    ratings = {"LAL": 1550.0, "DEN": 1550.0}
+    absent = {"LAL": 0.6}
+    rows_no_injury = game_prediction_rows([game], TODAY, ratings, absent, EloParams(elo_per_share=0.0), NOW)
+    rows_injury = game_prediction_rows([game], TODAY, ratings, absent, EloParams(elo_per_share=200.0), NOW)
+    assert rows_no_injury[0]["home_win_prob"] > rows_injury[0]["home_win_prob"]
+    assert 0.0 <= rows_injury[0]["home_win_prob"] <= 1.0
+
+
+def test_team_elo_rows_note_arrondie_et_compte_les_matchs_comptables():
+    games = [
+        {"id": "1", "date": (TODAY - timedelta(days=2)).isoformat(), "home_team": "LAL", "away_team": "DEN",
+         "status": "final", "home_score": 100, "away_score": 90, "game_type": "regular", "season": "2026-27"},
+        {"id": "2", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled",
+         "game_type": "regular", "season": "2026-27"},
+    ]
+    ratings = {"LAL": 1512.345, "DEN": 1487.655}
+    rows = team_elo_rows(games, TODAY, ratings, NOW)
+    by_team = {r["team"]: r for r in rows}
+    assert by_team["LAL"]["games"] == 1 and by_team["DEN"]["games"] == 1   # le match du soir ne compte pas encore
+    assert by_team["LAL"]["rating"] == round(1512.345, 2)
 
 
 def test_daily_sync_pas_de_x2_si_le_mois_est_deja_servi():

@@ -40,6 +40,14 @@ NIGHT_MODES = {"regular", "playoffs"}
 PLAN_ALLOWED = {"generated_at", "night", "player_id", "is_x2", "projection", "p_play", "value", "explanation"}
 PLAN_NOT_NULL = {"generated_at", "night", "player_id", "is_x2", "projection", "p_play", "value"}
 
+TEAM_ELO_ALLOWED = {"team", "rating", "games", "updated_at"}
+TEAM_ELO_NOT_NULL = {"team", "rating", "games"}
+
+GAME_PREDICTIONS_ALLOWED = {
+    "game_id", "home_rating", "away_rating", "home_win_prob", "expected_margin", "updated_at",
+}
+GAME_PREDICTIONS_NOT_NULL = {"game_id", "home_rating", "away_rating", "home_win_prob", "expected_margin"}
+
 MATCHUPS_ALLOWED = {
     "game_id", "off_player_id", "def_player_id", "off_team", "def_team", "series_id",
     "off_player_name", "def_player_name", "matchup_seconds", "partial_possessions", "player_points",
@@ -74,6 +82,8 @@ class FakeRepo:
         self.plan = []
         self.matchups = []
         self.inactive = set()
+        self.team_elo = {}
+        self.game_predictions = {}
 
     # lectures
     def load_players(self):
@@ -125,6 +135,19 @@ class FakeRepo:
             assert not missing, f"FK game_logs.player_id violée : {r['player_id']}"
             g = self.games[r["game_id"]]
             self.logs[(r["player_id"], r["game_id"])] = {**r, "season": g["season"]}
+
+    def upsert_team_elo(self, rows):
+        _validate(rows, TEAM_ELO_ALLOWED, TEAM_ELO_NOT_NULL, "team_elo")
+        for r in rows:
+            self.team_elo[r["team"]] = {**self.team_elo.get(r["team"], {}), **r}
+
+    def upsert_game_predictions(self, rows):
+        _validate(rows, GAME_PREDICTIONS_ALLOWED, GAME_PREDICTIONS_NOT_NULL, "game_predictions")
+        for r in rows:
+            assert r["game_id"] in self.games, f"FK game_predictions.game_id violée : {r['game_id']}"
+            prob = r["home_win_prob"]
+            assert 0.0 <= prob <= 1.0, f"game_predictions : home_win_prob hors [0,1] : {prob}"
+            self.game_predictions[r["game_id"]] = {**self.game_predictions.get(r["game_id"], {}), **r}
 
     def upsert_matchups_raw(self, rows):
         _validate(rows, MATCHUPS_ALLOWED, MATCHUPS_NOT_NULL, "box_score_matchups_raw")

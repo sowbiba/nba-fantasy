@@ -97,6 +97,12 @@ class SupabaseRepo:
     def upsert_matchups_raw(self, rows: list[dict]) -> None:
         self._upsert("box_score_matchups_raw", rows, "game_id,off_player_id,def_player_id")
 
+    def upsert_team_elo(self, rows: list[dict]) -> None:
+        self._upsert("team_elo", rows, "team")
+
+    def upsert_game_predictions(self, rows: list[dict]) -> None:
+        self._upsert("game_predictions", rows, "game_id")
+
     def set_inactive(self, player_ids: Iterable[int]) -> None:
         ids = sorted(set(player_ids))
         for i in range(0, len(ids), 100):
