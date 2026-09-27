@@ -104,6 +104,9 @@ class SupabaseRepo:
     def set_pick_score(self, pick_id: int, score: int) -> None:
         self.c.table("picks").update({"actual_score": score}).eq("id", pick_id).execute()
 
+    def upsert_nights(self, rows: list[dict]) -> None:
+        self._upsert("nights", rows, "date")
+
     def replace_nights(self, start: date, rows: list[dict]) -> None:
         # Upsert d'abord, purge des soirées obsolètes ensuite : un échec de
         # l'écriture ne doit jamais laisser la soirée du jour sans ligne
