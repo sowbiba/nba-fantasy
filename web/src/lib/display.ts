@@ -43,15 +43,30 @@ export function isClosed(closingAt: string | null | undefined, now: Date = new D
   return now.getTime() >= new Date(closingAt).getTime();
 }
 
-/** Suggestion du x2 (plan indicatif, 30j) : le plan reste une aide, le pick "meilleur dispo"
- *  du soir ne change pas. "pose" = le plan suggère de poser le x2 ce soir (mois autorisé, pas
- *  déjà posé) ; "deja" = c'est déjà fait ; null = rien à afficher (pas de suggestion, ou mois
- *  interdit). Miroir informatif de is_x2 (plan, migration 019/021) — la contrainte réelle
- *  (fenêtre 30j) reste en base (picks_x2_window, migration 021). */
-export function x2Hint(input: { planIsX2: boolean; hasPick: boolean; pickIsX2: boolean; x2Allowed: boolean }): "pose" | "deja" | null {
+/** Suggestion du x2 (plan indicatif) : le pick "meilleur dispo" du soir ne change pas.
+ *  Sans pick : "pose" = le plan suggère un x2 ce soir (sur son joueur).
+ *  Avec un pick : le moteur replanifie sur le pick de l'utilisateur, donc on ne suit la décision
+ *  du plan que si son joueur EST le pick ("pose_sur_pick", ou "deja" si le x2 est déjà posé) ;
+ *  sinon (plan d'une synchro antérieure au pick) rien à afficher. null aussi si pas de
+ *  suggestion ou mois interdit. Miroir informatif de is_x2 (plan, migrations 019/021) — la
+ *  contrainte réelle (un x2 par mois calendaire) reste en base (picks_x2_month, migration 021). */
+export type X2HintKind = "pose" | "pose_sur_pick" | "deja";
+
+export function x2Hint(input: {
+  planIsX2: boolean; planPlayerId: number | null; pickPlayerId: number | null; pickIsX2: boolean; x2Allowed: boolean;
+}): X2HintKind | null {
   if (!input.planIsX2 || !input.x2Allowed) return null;
-  if (input.hasPick && input.pickIsX2) return "deja";
-  return "pose";
+  if (input.pickPlayerId === null) return "pose";
+  if (input.planPlayerId !== input.pickPlayerId) return null;
+  return input.pickIsX2 ? "deja" : "pose_sur_pick";
+}
+
+/** Texte du bandeau x2 ; sans nom de joueur connu (joueur absent de `players`), la phrase
+ *  reste correcte sans le nom (jamais "undefined"). */
+export function x2HintText(kind: X2HintKind, planPlayerName?: string | null): string {
+  if (kind === "deja") return "x2 activé sur ton pick, comme le suggère le plan pour ce soir.";
+  if (kind === "pose_sur_pick") return "Le plan suggère le x2 ce soir sur ton pick : active-le ci-dessous.";
+  return planPlayerName ? `Le plan suggère un x2 ce soir (sur ${planPlayerName}).` : "Le plan suggère un x2 ce soir.";
 }
 
 export function homeState(s: { hasNight: boolean; recCount: number; hasPick: boolean }) {

@@ -8,7 +8,7 @@ import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import MyPickCard from "@/components/MyPickCard";
 import { deckDate, frLongDate, parisTime } from "@/lib/date";
-import { HARD_OUT_STATUSES, homeState, topDefender, x2Hint } from "@/lib/display";
+import { HARD_OUT_STATUSES, homeState, topDefender, x2Hint, x2HintText } from "@/lib/display";
 
 export const revalidate = 0;
 
@@ -91,10 +91,12 @@ export default async function TonightPage() {
   const top3 = recsWithPlayers.slice(0, 3);
   const month = Number(deck.slice(5, 7));
   const x2Allowed = (pick ? pick.mode === "regular" : night?.mode === "regular") && X2_MONTHS.has(month);
-  const hint = x2Hint({ planIsX2: !!plan?.is_x2, hasPick: !!pick, pickIsX2: pick?.is_x2 ?? false, x2Allowed });
-  // R10 (informatif) : le plan est indicatif — il suggère seulement le SOIR du x2, pas le joueur.
-  // Le pick du moment reste le meilleur dispo ; le x2 se pose sur CE pick, pas sur le joueur du plan.
-  const samePlayer = !pick || !planPlayer || pick.player_id === planPlayer.id;
+  // R10 (informatif) : avec un pick, le moteur replanifie sur ce pick ; on ne suit le plan
+  // que si son joueur est bien le pick (voir x2Hint).
+  const hint = x2Hint({
+    planIsX2: !!plan?.is_x2, planPlayerId: plan?.player_id ?? null, pickPlayerId: pick?.player_id ?? null,
+    pickIsX2: pick?.is_x2 ?? false, x2Allowed,
+  });
 
   return (
     <div className="animate-fade-in">
@@ -132,13 +134,7 @@ export default async function TonightPage() {
 
       {hint && (
         <div className="mx-3 mt-3 rounded-[var(--radius-card-sm)] border border-[color:var(--color-gold)]/40 bg-[color:var(--color-gold)]/10 px-3 py-2 text-xs text-[color:var(--color-gold)]">
-          {hint === "deja"
-            ? "x2 activé sur ton pick, comme le suggère le plan pour ce soir."
-            : !pick
-              ? `Le plan suggère le x2 ce soir (il le place sur ${planPlayer?.name}). Pose ton pick puis active-le.`
-              : samePlayer
-                ? "Le plan suggère ton x2 ce soir."
-                : `Le plan suggère le x2 ce soir (il le place sur ${planPlayer?.name}) — ça reste valable sur ton pick, active-le ci-dessous.`}
+          {x2HintText(hint, planPlayer?.name)}
         </div>
       )}
 

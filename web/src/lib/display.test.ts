@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeState, isClosed, pickPoints, recMeta, topDefender, x2Hint } from "./display";
+import { homeState, isClosed, pickPoints, recMeta, topDefender, x2Hint, x2HintText } from "./display";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -47,14 +47,37 @@ describe("isClosed", () => {
 });
 
 describe("x2Hint", () => {
-  it("le plan suggère le x2 ce soir, pas encore posé : pose", () =>
-    expect(x2Hint({ planIsX2: true, hasPick: true, pickIsX2: false, x2Allowed: true })).toBe("pose"));
-  it("le plan suggère le x2, déjà posé sur ce pick : deja", () =>
-    expect(x2Hint({ planIsX2: true, hasPick: true, pickIsX2: true, x2Allowed: true })).toBe("deja"));
+  const base = { planIsX2: true, planPlayerId: 7, pickPlayerId: null, pickIsX2: false, x2Allowed: true };
+  it("sans pick, le plan suggère le x2 ce soir : pose", () => expect(x2Hint(base)).toBe("pose"));
+  it("pick = joueur du plan, x2 pas encore posé : pose_sur_pick", () =>
+    expect(x2Hint({ ...base, pickPlayerId: 7 })).toBe("pose_sur_pick"));
+  it("pick = joueur du plan, x2 déjà posé : deja", () =>
+    expect(x2Hint({ ...base, pickPlayerId: 7, pickIsX2: true })).toBe("deja"));
+  it("pick ≠ joueur du plan (plan d'avant le pick) : rien à afficher", () => {
+    expect(x2Hint({ ...base, pickPlayerId: 8 })).toBeNull();
+    expect(x2Hint({ ...base, pickPlayerId: 8, pickIsX2: true })).toBeNull();
+  });
   it("mois interdit (x2Allowed false) : rien à afficher même si le plan suggère", () =>
-    expect(x2Hint({ planIsX2: true, hasPick: false, pickIsX2: false, x2Allowed: false })).toBeNull());
+    expect(x2Hint({ ...base, x2Allowed: false })).toBeNull());
   it("le plan ne suggère pas le x2 ce soir : rien à afficher", () =>
-    expect(x2Hint({ planIsX2: false, hasPick: true, pickIsX2: false, x2Allowed: true })).toBeNull());
+    expect(x2Hint({ ...base, planIsX2: false, pickPlayerId: 7 })).toBeNull());
+});
+
+describe("x2HintText", () => {
+  it("sans pick : nomme le joueur du plan", () =>
+    expect(x2HintText("pose", "Nikola Jokic")).toBe("Le plan suggère un x2 ce soir (sur Nikola Jokic)."));
+  it("nom manquant : phrase sans nom, jamais undefined", () => {
+    for (const name of [undefined, null, ""]) {
+      const text = x2HintText("pose", name);
+      expect(text).toBe("Le plan suggère un x2 ce soir.");
+      expect(text).not.toContain("undefined");
+    }
+  });
+  it("sur le pick : ne prétend rien d'autre que la décision du plan sur ce pick", () => {
+    expect(x2HintText("pose_sur_pick", "X")).toBe("Le plan suggère le x2 ce soir sur ton pick : active-le ci-dessous.");
+    expect(x2HintText("pose_sur_pick", "X")).not.toContain("reste valable");
+  });
+  it("déjà posé", () => expect(x2HintText("deja")).toBe("x2 activé sur ton pick, comme le suggère le plan pour ce soir."));
 });
 
 describe("homeState", () => {

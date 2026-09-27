@@ -47,7 +47,7 @@ export default function DeckNight(p: DeckNightProps) {
           </Link>{" "}
           <span className="text-[11px] text-[color:var(--color-text-mute)]">
             {p.pick.team}{p.pick.isX2 ? " · x2" : ""}
-            {p.suggestion?.isX2 && !p.pick.isX2 ? " · plan : x2 ce soir-là" : ""}
+            {p.suggestion?.isX2 && !p.pick.isX2 && p.suggestion.playerId === p.pick.playerId ? " · plan : x2 ce soir-là" : ""}
           </span>
           {p.pick.injury && HARD_OUT_STATUSES.has(p.pick.injury) && !closed && (
             <p className="text-xs text-[color:var(--color-crimson)]">⚠️ {p.pick.injury} : remplace-le avant la fermeture.</p>
