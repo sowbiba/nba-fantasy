@@ -5,6 +5,17 @@ export type Reminder = { kind: "no_pick_2h" | "no_pick_30m" | "injury"; key: str
 
 const H2 = 2 * 60 * 60 * 1000;
 const M30 = 30 * 60 * 1000;
+const INJURY_ALERT_START_MIN = 7 * 60; // 07:00 Paris (M3, revue finale)
+
+/** Minutes écoulées depuis 00:00 heure de Paris (DST-safe, via Intl). */
+function parisMinutesOfDay(d: Date): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d);
+  const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24;
+  const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return h * 60 + m;
+}
 
 export function dueReminders(input: {
   now: Date;
@@ -24,7 +35,7 @@ export function dueReminders(input: {
     if (kind && !sent.has(`${kind}|`)) {
       out.push({ kind, key: "", title: "Pas de pick ce soir", body: `Le deck ferme à ${at}.` });
     }
-  } else if (pick.injuryStatus && HARD_OUT_STATUSES.has(pick.injuryStatus)) {
+  } else if (pick.injuryStatus && HARD_OUT_STATUSES.has(pick.injuryStatus) && parisMinutesOfDay(now) >= INJURY_ALERT_START_MIN) {
     const key = `${pick.playerId}:${pick.injuryStatus}`;
     if (!sent.has(`injury|${key}`)) {
       out.push({ kind: "injury", key, title: `${pick.name} : ${pick.injuryStatus}`,

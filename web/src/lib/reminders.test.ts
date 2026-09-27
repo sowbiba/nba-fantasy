@@ -40,4 +40,24 @@ describe("dueReminders", () => {
     const pick = { playerId: 7, name: "Jokic", injuryStatus: "Questionable" };
     expect(dueReminders({ now: at("2026-10-21T10:00:00Z"), night, pick, sent: new Set() })).toEqual([]);
   });
+
+  // M3 (revue finale) : pas d'alerte blessure entre 00:00 et 07:00 Paris.
+  it("pas d'alerte blessure à 06:59 Paris (CEST, UTC+2)", () => {
+    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Out" };
+    expect(dueReminders({ now: at("2026-10-21T04:59:00Z"), night, pick, sent: new Set() })).toEqual([]);
+  });
+  it("alerte blessure dès 07:00 Paris (CEST, UTC+2)", () => {
+    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Out" };
+    expect(kinds(dueReminders({ now: at("2026-10-21T05:00:00Z"), night, pick, sent: new Set() }))).toEqual(["injury"]);
+  });
+  it("pas d'alerte blessure à 06:59 Paris (CET, UTC+1)", () => {
+    const winterNight = { date: "2026-12-15", closing_at: "2026-12-15T23:00:00Z" }; // 00:00 Paris le 16
+    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Out" };
+    expect(dueReminders({ now: at("2026-12-15T05:59:00Z"), night: winterNight, pick, sent: new Set() })).toEqual([]);
+  });
+  it("alerte blessure dès 07:00 Paris (CET, UTC+1)", () => {
+    const winterNight = { date: "2026-12-15", closing_at: "2026-12-15T23:00:00Z" };
+    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Out" };
+    expect(kinds(dueReminders({ now: at("2026-12-15T06:00:00Z"), night: winterNight, pick, sent: new Set() }))).toEqual(["injury"]);
+  });
 });
