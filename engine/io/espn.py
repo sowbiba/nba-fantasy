@@ -1,4 +1,5 @@
 """Fetch player injury statuses from ESPN unofficial API."""
+from datetime import date
 import httpx
 
 ESPN_TEAM_IDS = {
@@ -30,6 +31,49 @@ ESPN_NAME_TO_TRICODE = {
 
 # Also map ESPN team ID to tricode
 ESPN_ID_TO_TRICODE = {str(v): k for k, v in ESPN_TEAM_IDS.items()}
+
+SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+
+# Abréviations ESPN qui diffèrent des tricodes NBA de la table games.
+ESPN_ABBR_TO_TRICODE = {"GS": "GSW", "NY": "NYK", "SA": "SAS", "NO": "NOP", "UTAH": "UTA", "WSH": "WAS"}
+_SKIPPED_STATUSES = {"STATUS_POSTPONED", "STATUS_CANCELED", "STATUS_SUSPENDED"}
+
+
+def espn_tricode(abbr: str) -> str:
+    return ESPN_ABBR_TO_TRICODE.get(abbr, abbr)
+
+
+def parse_espn_scoreboard(payload: dict, game_date: date) -> list[dict]:
+    """Statuts et scores des matchs d'une journée NBA (date US). Les matchs
+    reportés ou annulés sont exclus : jamais marqués final."""
+    rows = []
+    for ev in payload.get("events", []):
+        status_type = ev.get("status", {}).get("type", {})
+        if status_type.get("name") in _SKIPPED_STATUSES:
+            continue
+        status = {"post": "final", "in": "live"}.get(status_type.get("state"), "scheduled")
+        teams = {c["homeAway"]: c for c in ev["competitions"][0]["competitors"]}
+        played = status != "scheduled"
+        rows.append({
+            "date": game_date.isoformat(),
+            "home_team": espn_tricode(teams["home"]["team"]["abbreviation"]),
+            "away_team": espn_tricode(teams["away"]["team"]["abbreviation"]),
+            "tip_off": ev.get("date"),
+            "status": status,
+            "home_score": int(teams["home"].get("score") or 0) if played else None,
+            "away_score": int(teams["away"].get("score") or 0) if played else None,
+        })
+    return rows
+
+
+def fetch_espn_scoreboard(game_date: date, guard=None) -> list[dict]:
+    def download():
+        resp = httpx.get(SCOREBOARD_URL, params={"dates": game_date.strftime("%Y%m%d")}, timeout=15)
+        resp.raise_for_status()
+        return resp.json()
+
+    payload = guard.call("espn", download) if guard is not None else download()
+    return parse_espn_scoreboard(payload, game_date)
 
 
 def fetch_all_injuries(guard=None, teams: list[str] | None = None) -> dict[str, list[dict]]:

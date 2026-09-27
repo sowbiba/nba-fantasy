@@ -105,9 +105,16 @@ class SupabaseRepo:
         self.c.table("picks").update({"actual_score": score}).eq("id", pick_id).execute()
 
     def replace_nights(self, start: date, rows: list[dict]) -> None:
-        self.c.table("nights").delete().gte("date", start.isoformat()).execute()
+        # Upsert d'abord, purge des soirées obsolètes ensuite : un échec de
+        # l'écriture ne doit jamais laisser la soirée du jour sans ligne
+        # `nights` (le guard de fermeture et les rappels en dépendent).
         if rows:
-            self.c.table("nights").insert(rows).execute()
+            self.c.table("nights").upsert(rows, on_conflict="date").execute()
+        kept = {r["date"] for r in rows}
+        q = self.c.table("nights").delete().gte("date", start.isoformat())
+        if kept:
+            q = q.not_.in_("date", list(kept))
+        q.execute()
 
     def replace_recommendations(self, night: date, rows: list[dict]) -> None:
         self.c.table("recommendations").delete().eq("date", night.isoformat()).execute()

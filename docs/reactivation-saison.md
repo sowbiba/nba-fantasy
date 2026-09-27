@@ -17,7 +17,7 @@
 3. **(prod)** Vérifier que `local_nightly` a chargé le calendrier (étape 2). Le calendrier est désormais chargé par le cron local depuis stats.nba.com : 
    Le calendrier est chargé sur une **fenêtre glissante** (J−5 à J+35, `SCHEDULE_PAST_DAYS` / `SCHEDULE_AHEAD_DAYS`), pas en entier : au 2026-09-27, `select game_type, count(*) from games where season='2026-27' group by 1` renvoyait 67 `preseason` + 92 `regular` (20/10 → 01/11).
    
-   Note : `cdn.nba.com` renvoie 403 depuis l'IP locale au 2026-09-26. Le cron local `local_nightly` s'appuie alors sur le calendrier chargé via stats.nba.com; les box scores sont rattrapés chaque nuit par LeagueGameLog (scores des picks à J+1 ou J+2).
+   Note : `cdn.nba.com` renvoie 403 depuis l'IP locale au 2026-09-26 et n'est plus utilisé (L2a). Le cron local `local_nightly` charge le calendrier via stats.nba.com ; les box scores sont rattrapés chaque nuit par LeagueGameLog (scores des picks à J+1 ou J+2). Les statuts de match et le direct passent par ESPN (`daily_sync`, route `/api/live-box-score/[gameId]`).
 
 4. **(prod)** Un passage de `daily_sync` depuis le PC : `./venv/bin/python -m engine.jobs.daily_sync`
    Vérifier :
@@ -26,7 +26,7 @@
 
 **Fait le 2026-09-27** : étapes 3-6 exécutées (calendrier, `daily_sync` local, workflow réactivé et run manuel OK, crontab `local_nightly` 23:50). 13 soirées créées (20/10 → 01/11), aucune de présaison. Reste : vérifier la finale NBA Cup (`0062600001`, 11/12) quand elle entrera dans la fenêtre, **début novembre**.
 
-Constat du 2026-09-27 : `cdn.nba.com` renvoie aussi 403 depuis GitHub Actions (calendrier et scoreboard). Le calendrier ne vient donc que du cron local (stats.nba.com) ; à vérifier avant le 20/10 : scores live et finalisation des matchs sans le scoreboard CDN.
+Constat du 2026-09-27 : `cdn.nba.com` renvoie aussi 403 depuis GitHub Actions (calendrier et scoreboard). Le calendrier ne vient donc que du cron local (stats.nba.com). Résolu par L2a : `daily_sync` (GitHub Actions) et le direct front (`/api/live-box-score/[gameId]`) utilisent désormais ESPN (`site.api.espn.com`) pour les statuts, scores et box scores — `cdn.nba.com` n'est plus appelé par aucun job ni par le front (le code de `engine/io/nba.py` reste dans le repo, mais n'est plus utilisé nulle part).
 
 ## Quelques jours avant le premier match (après L1c)
 

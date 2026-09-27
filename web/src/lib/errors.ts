@@ -26,6 +26,8 @@ export function pickErrorMessage(err: DbError): string {
       return UNAVAILABLE[message.split(":")[1]] ?? "Ce joueur n'est pas disponible ce soir-là.";
     }
     if (message.startsWith("night_not_eligible")) return "Cette soirée ne compte pas pour la TTFL (présaison, play-in…).";
+    if (message.startsWith("night_closed")) return "La soirée est fermée.";
+    if (message.startsWith("night_unknown")) return "Soirée inconnue : elle ne compte pas ou n'est pas encore en base.";
     if (message.startsWith("player_not_in_game")) return "Ce joueur ne joue pas ce match.";
     if (message.startsWith("date_mismatch")) return "La date ne correspond pas au match.";
     if (message.startsWith("game_not_found")) return "Match introuvable.";

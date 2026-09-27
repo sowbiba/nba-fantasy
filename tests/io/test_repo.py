@@ -20,6 +20,22 @@ def test_upsert_par_lots_de_500():
     ]
 
 
+def test_replace_nights_upsert_puis_supprime_les_obsoletes():
+    # M2 (final review) : upsert des nouvelles lignes d'abord, purge des
+    # soirées obsolètes ensuite — un échec de l'insert ne doit jamais laisser
+    # la soirée du jour sans ligne `nights`.
+    client = FakeClient()
+    SupabaseRepo(client).replace_nights(date(2026, 11, 10), [{"date": "2026-11-10"}])
+    assert [op[0] for op in client.ops] == ["upsert", "delete"]
+    assert client.ops[0] == ("upsert", "nights", 1, "date")
+
+
+def test_replace_nights_vide_supprime_seulement():
+    client = FakeClient()
+    SupabaseRepo(client).replace_nights(date(2026, 11, 10), [])
+    assert [op[0] for op in client.ops] == ["delete"]
+
+
 def test_replace_recommendations_supprime_puis_insere():
     client = FakeClient()
     SupabaseRepo(client).replace_recommendations(date(2026, 11, 10), [{"player_id": 1}])

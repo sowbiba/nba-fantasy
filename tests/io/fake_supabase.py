@@ -23,6 +23,10 @@ class _Query:
     def in_(self, *a):
         return self
 
+    @property
+    def not_(self):
+        return self
+
     def gte(self, *a):
         return self
 

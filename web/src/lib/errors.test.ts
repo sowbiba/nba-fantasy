@@ -26,6 +26,11 @@ describe("pickErrorMessage", () => {
     expect(pickErrorMessage({ code: "23514", message: 'new row violates check constraint "picks_x2_window"' }))
       .toBe("Le x2 n'existe qu'en saison régulière, de novembre à avril.");
   });
+  it("fermeture et soirée inconnue", () => {
+    expect(pickErrorMessage({ code: "P0001", message: "night_closed" })).toBe("La soirée est fermée.");
+    expect(pickErrorMessage({ code: "P0001", message: "night_unknown" }))
+      .toBe("Soirée inconnue : elle ne compte pas ou n'est pas encore en base.");
+  });
   it("défaut sans fuite du message brut", () => {
     expect(pickErrorMessage({ code: "XX000", message: "internal" })).toBe("Échec de l'enregistrement — réessaie.");
     expect(pickErrorMessage(null)).toBe("Échec de l'enregistrement — réessaie.");

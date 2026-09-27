@@ -26,16 +26,24 @@ export default function PickControls({
 }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirmingNight, setConfirmingNight] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pendingNight, setPendingNight] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
   const book = (n: CalendarNight) => {
     setMsg(null);
     setConfirmingNight(null);
+    setPendingNight(n.night);
     startTransition(async () => {
-      const res = await savePick({ date: n.night, playerId, gameId: n.game_id });
-      setMsg(res.ok
-        ? { ok: true, text: n.night === today ? "Pické pour ce soir." : `Réservé pour le ${frDayMonth(n.night)}.` }
-        : { ok: false, text: res.error });
+      try {
+        const res = await savePick({ date: n.night, playerId, gameId: n.game_id });
+        setMsg(res.ok
+          ? { ok: true, text: n.night === today ? "Pické pour ce soir." : `Réservé pour le ${frDayMonth(n.night)}.` }
+          : { ok: false, text: res.error });
+      } catch (e) {
+        setMsg({ ok: false, text: e instanceof Error ? e.message : "Échec de la réservation." });
+      } finally {
+        setPendingNight(null);
+      }
     });
   };
 
@@ -81,7 +89,7 @@ export default function PickControls({
               <div className={`text-[11px] ${n.ok && !isOwnPick && injured ? "text-[color:var(--color-crimson)]" : isOwnPick || n.ok ? "text-[color:var(--color-emerald)]" : "text-[color:var(--color-text-mute)]"}`}>{status}</div>
             </div>
             {(bookable || canReplace) && (
-              <button onClick={() => onBookableClick(n, canReplace ? existing : undefined)} disabled={pending}
+              <button onClick={() => onBookableClick(n, canReplace ? existing : undefined)} disabled={pendingNight === n.night}
                       className="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-[color:var(--color-flame)] disabled:opacity-50">
                 {canReplace
                   ? (confirmingNight === n.night ? "Confirmer" : `Remplacer ${existing!.name}`)

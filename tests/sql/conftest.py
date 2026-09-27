@@ -30,7 +30,22 @@ def _assert_local(url: str) -> None:
         )
 
 
+def ensure_supabase_roles(conn) -> None:
+    """Les migrations révoquent/accordent des privilèges aux rôles Supabase
+    (anon, authenticated, service_role) qui n'existent pas dans une Postgres
+    jetable. Créés en NOLOGIN pour que les revoke/grant s'appliquent sans
+    changer la migration elle-même (qui doit rester inchangée en prod)."""
+    for role in ("anon", "authenticated", "service_role"):
+        conn.execute(
+            "do $$ begin "
+            f"if not exists (select 1 from pg_roles where rolname = '{role}') then "
+            f"create role {role} nologin; "
+            "end if; end $$;"
+        )
+
+
 def apply_migrations(conn) -> None:
+    ensure_supabase_roles(conn)
     for path in MIGRATIONS:
         conn.execute(path.read_text())
 

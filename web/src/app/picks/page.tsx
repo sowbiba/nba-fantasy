@@ -17,13 +17,17 @@ export default async function PicksPage() {
   const { data: userData } = await auth.auth.getUser();
   const signedIn = isOwnerEmail(userData.user?.email, process.env.OWNER_EMAIL);
 
-  const [statsRes, picksRes, scRes, nightRes] = await Promise.all([
+  const [statsRes, picksRes, scRes, nightRes, pastNightsRes] = await Promise.all([
     supabase.rpc("period_stats", { p_season: season, p_mode: "regular", p_until: today }),
     supabase.from("picks").select("id, date, player_id, actual_score, is_x2, players(name, team)").eq("season", season).order("date", { ascending: false }),
     // Filtré par saison courante (jointure sur picks.season) : second_chances n'a pas sa propre colonne season (migration 018).
     supabase.from("second_chances").select("pick_id, bought_on, expires_on, picks!inner(season)").eq("picks.season", season),
     supabase.from("nights").select("closing_at").eq("date", today).maybeSingle(),
+    // Soirées passées éligibles de la saison, pour proposer la correction même sans pick (tâche 5).
+    supabase.from("nights").select("date").eq("season", season).lt("date", today)
+      .eq("is_phantom", false).gt("n_eligible_games", 0).order("date", { ascending: false }),
   ]);
+  const dataError = [statsRes, picksRes, scRes, nightRes, pastNightsRes].some((r) => r.error);
   const stats = ((statsRes.data || [])[0] ?? null) as Stats | null;
   const scByPick = new Map(((scRes.data || []) as { pick_id: number; bought_on: string; expires_on: string }[])
     .map((s) => [s.pick_id, { bought_on: s.bought_on, expires_on: s.expires_on }]));
@@ -33,6 +37,14 @@ export default async function PicksPage() {
     id: p.id, date: p.date, player_id: p.player_id, player_name: p.players?.name ?? `#${p.player_id}`,
     team: p.players?.team ?? "", actual_score: p.actual_score, is_x2: p.is_x2, second_chance: scByPick.get(p.id) ?? null,
   }));
+  const pickedDates = new Set(rows.map((r) => r.date));
+  // M1 (final review) : si la requête picks a échoué, ne pas synthétiser de
+  // lignes "Aucun pick" — on ne sait pas quelles soirées ont réellement un
+  // pick, et "Corriger" y remplacerait un vrai pick par un nouveau.
+  const noPickRows: HistoryRow[] = picksRes.error ? [] : ((pastNightsRes.data || []) as { date: string }[])
+    .filter((n) => !pickedDates.has(n.date))
+    .map((n) => ({ id: null, date: n.date, player_id: null, player_name: null, team: "", actual_score: null, is_x2: false, second_chance: null }));
+  const allRows = [...rows, ...noPickRows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   return (
     <div className="px-4 py-5 animate-fade-in">
@@ -40,11 +52,22 @@ export default async function PicksPage() {
         <h1 className="font-display text-4xl leading-none tracking-wide text-white">
           MES <span className="flame-text">PICKS</span>
         </h1>
-        {signedIn ? <SignOutButton /> : (
+        {signedIn ? (
+          <div className="flex items-center gap-3">
+            <Link href="/rappels" className="text-xs underline text-[color:var(--color-text-soft)]">Rappels</Link>
+            <SignOutButton />
+          </div>
+        ) : (
           <Link href="/connexion" className="text-xs underline text-[color:var(--color-text-soft)]">Connexion</Link>
         )}
       </div>
       <p className="text-[11px] text-[color:var(--color-text-mute)] mt-1 uppercase tracking-[0.18em]">Saison {season}</p>
+
+      {dataError && (
+        <p role="alert" className="mt-3 rounded-[var(--radius-card-sm)] border border-[color:var(--color-crimson)]/40 bg-[color:var(--color-crimson)]/10 px-3 py-2 text-sm text-[color:var(--color-crimson)]">
+          Données indisponibles pour le moment, réessaie dans quelques minutes.
+        </p>
+      )}
 
       <div className="grid grid-cols-3 gap-2 mt-4">
         {[
@@ -63,7 +86,7 @@ export default async function PicksPage() {
       </p>
 
       <div className="mt-5">
-        <PicksHistory rows={rows} today={today} todayClosingAt={todayClosingAt} />
+        <PicksHistory rows={allRows} today={today} todayClosingAt={todayClosingAt} />
       </div>
     </div>
   );

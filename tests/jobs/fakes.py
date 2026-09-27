@@ -157,30 +157,6 @@ class FakeRepo:
         self.plan = list(rows)
 
 
-class FakeNbaSource:
-    def __init__(self, schedule=(), scoreboard=(), box_scores=None, fail=False):
-        self._schedule = list(schedule)
-        self._scoreboard = list(scoreboard)
-        self._box = box_scores or {}
-        self.fail = fail
-
-    def _maybe_fail(self):
-        if self.fail:
-            raise ConnectionError("NBA indisponible")
-
-    def schedule(self, start, end):
-        self._maybe_fail()
-        return [g for g in self._schedule if start <= _d(g["date"]) <= end]
-
-    def scoreboard(self, today):
-        self._maybe_fail()
-        return list(self._scoreboard)
-
-    def box_score(self, game_id, game_date):
-        self._maybe_fail()
-        return list(self._box.get(game_id, []))
-
-
 class FakeStatsSource:
     def __init__(self, rosters=None, game_logs=None, matchups=None, fail_teams=(), schedule=None):
         self._rosters = rosters or {}

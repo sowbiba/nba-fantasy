@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/auth";
-import { addDays, deckDate } from "@/lib/date";
+import { addDays, deckDate, seasonForDate } from "@/lib/date";
 import { pickErrorMessage } from "@/lib/errors";
 import { isClosed } from "@/lib/display";
 import { adminClient } from "@/lib/supabase/admin";
 import { createAuthClient } from "@/lib/supabase/server";
+import { notifyAll } from "@/lib/notify";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -154,6 +155,93 @@ export async function setWatchlist(input: { playerId: number; priority: 1 | 2 | 
     : await db.from("player_watchlist").upsert({ player_id: input.playerId, priority: input.priority });
   if (error) return { ok: false, error: "Échec de la mise à jour des favoris." };
   revalidatePath(`/player/${input.playerId}`);
+  return { ok: true };
+}
+
+/** Correction d'une soirée passée de la saison (synchro TrashTalk oubliée) :
+ *  lève la fermeture en base (correct_pick), jamais le cooldown. */
+export async function correctPick(input: { date: string; playerId: number | null }): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  const today = deckDate();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || input.date >= today) {
+    return { ok: false, error: "Seules les soirées passées se corrigent ici." };
+  }
+  if (seasonForDate(input.date) !== seasonForDate(today)) {
+    return { ok: false, error: "Seules les soirées de la saison en cours se corrigent." };
+  }
+  const admin = getAdmin();
+  if ("err" in admin) return admin.err;
+  const { db } = admin;
+  const { error } = await db.rpc("correct_pick", { p_date: input.date, p_player_id: input.playerId });
+  if (error) return { ok: false, error: pickErrorMessage(error) };
+  refresh(input.playerId ?? undefined);
+  return { ok: true };
+}
+
+/** Effectif actuel (players.active) des équipes qui jouent un match éligible
+ *  ce soir-là, pour choisir le joueur à corriger. Limite connue et acceptée :
+ *  un joueur transféré depuis se corrige en base à la demande. */
+export async function playersForNight(date: string): Promise<{ id: number; name: string; team: string }[]> {
+  if (await owner()) return [];
+  const admin = getAdmin();
+  if ("err" in admin) return [];
+  const { db } = admin;
+  const { data: games } = await db.from("games").select("home_team, away_team")
+    .eq("date", date).in("game_type", ["regular", "cup_final", "playoffs"]);
+  const teams = [...new Set((games ?? []).flatMap((g) => [g.home_team, g.away_team]))];
+  if (!teams.length) return [];
+  const { data } = await db.from("players").select("id, name, team")
+    .in("team", teams).eq("active", true).order("name");
+  return data ?? [];
+}
+
+/** Abonnement Web Push (tâche 7) : upsert sur endpoint, pour permettre un
+ *  ré-abonnement (ex. clé renouvelée) sans doublon. */
+export async function subscribePush(sub: { endpoint: string; keys: { p256dh: string; auth: string } }): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
+    return { ok: false, error: "Abonnement invalide." };
+  }
+  const admin = getAdmin();
+  if ("err" in admin) return admin.err;
+  const { db } = admin;
+  const { error } = await db.from("push_subscriptions")
+    .upsert({ endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth }, { onConflict: "endpoint" });
+  if (error) return { ok: false, error: "Échec de l'abonnement aux rappels." };
+  return { ok: true };
+}
+
+export async function unsubscribePush(endpoint: string): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  const admin = getAdmin();
+  if ("err" in admin) return admin.err;
+  const { db } = admin;
+  const { error } = await db.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  if (error) return { ok: false, error: "Échec de la désactivation des rappels." };
+  return { ok: true };
+}
+
+export async function sendTestNotification(): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  let push: number;
+  let telegram: boolean;
+  try {
+    ({ push, telegram } = await notifyAll({
+      title: "TTFL Advisor",
+      body: "Notification de test — les rappels fonctionnent.",
+      ttlSeconds: 3600, // M4 (revue finale) : une notification de test n'a rien à survivre longtemps
+    }));
+  } catch (e) {
+    console.error("Échec de notifyAll() :", e instanceof Error ? e.message : e);
+    return { ok: false, error: "Erreur serveur, réessaie plus tard." };
+  }
+  if (push === 0 && !telegram) {
+    return { ok: false, error: "Aucun abonnement actif (et Telegram non configuré)." };
+  }
   return { ok: true };
 }
 

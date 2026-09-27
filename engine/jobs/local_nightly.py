@@ -5,7 +5,9 @@ IP GitHub sont bloquées.
   les 30 effectifs ont répondu) ;
 - calendrier des 35 prochains jours (stats.nba.com) ;
 - historique de la saison via LeagueGameLog (1 appel pour toute la ligue),
-  qui rattrape les box scores purgés du CDN ;
+  seule source de box scores (le CDN NBA, en 403 partout, n'est plus
+  utilisé) ; les picks sont scorés (`score_picks`) juste après ce
+  chargement, sans attendre le prochain `daily_sync` ;
 - matchups bruts défenseur/joueur des matchs éligibles terminés.
 
 `--backfill-season 2025-26` : charge une saison complète (SR + PO), une fois.
@@ -13,6 +15,7 @@ IP GitHub sont bloquées.
 import argparse
 from datetime import UTC, date, datetime, timedelta
 
+from engine.jobs.daily_sync import score_picks
 from engine.rules.calendar import PARIS
 from engine.rules.game_types import is_eligible, season_for_date
 
@@ -115,6 +118,7 @@ def run(repo, nba, today: date, teams: list[dict], backfill_season: str | None =
         _load_logs(repo, nba, season, "Regular Season", start, warnings, drop_from=today)
         if today.month in PLAYOFF_MONTHS:
             _load_logs(repo, nba, season, "Playoffs", start, warnings, drop_from=today)
+        score_picks(repo, season, today)
     _load_matchups(repo, nba, today, warnings)
     return warnings
 
