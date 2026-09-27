@@ -117,7 +117,11 @@ Une soirée fermée dès le premier tip-off (avant minuit Paris) ne peut être c
 ### Exécution
 
 ```bash
-# Sync manuel (tel que GitHub Actions)
+# Sync manuel (tel que GitHub Actions) — écrit aussi team_elo/game_predictions
+# (L3a §3, colonne Force du classement et probabilités de victoire en mode
+# connecté) : nécessite la migration 030 appliquée, sinon l'étape Elo échoue
+# et n'écrit rien (isolée par `_step`, le reste du job — recommandations,
+# plan — continue quand même, voir « Lecture seule » plus bas).
 source venv/bin/activate && python -m engine.jobs.daily_sync
 
 # Job local (effectifs, calendrier stats.nba.com, LeagueGameLog, tel que le cron local)
@@ -152,6 +156,10 @@ Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.co
 ./venv/bin/python -m engine.jobs.backtest --season 2025-26 --from 2026-02-01 --to 2026-04-12
 # --decay 0.97,0.985,1.0   : variantes de decay pour `plan` (diagnostic, en plus du décay par défaut)
 # --out docs/backtest/2025-26-sr.md   : chemin du rapport (défaut : docs/backtest/<saison>-sr.md)
+# --elo-k 30 --elo-hca 55 --elo-eps 200   : paramètres Elo pour la ligne « best_available + écart de
+#   force » (défaut : EloParams() — k=20, home_advantage=70, elo_per_share=0) ; le rapport les imprime
+#   toujours dans les Limites, pour que le rapport dise avec quels paramètres il a tourné (review
+#   finale L3a, Important 3)
 ```
 
 **Lecture seule** : le job n'appelle que les méthodes `load_*` de `SupabaseRepo` — aucune écriture, aucune ligne `sync_log` (contrairement à `daily_sync`/`local_nightly`). Testé par `tests/jobs/test_backtest_job.py` avec un faux repo dont seules les méthodes de lecture nécessaires sont déléguées ; tout le reste (écritures, `sync_log`, futures méthodes) lève une `AssertionError`.
@@ -181,16 +189,21 @@ Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.co
 
 **Rejeu** : les matchs éligibles (R11/R12 : saison régulière, `cup_final`, playoffs, terminés, scores connus) sont rejoués en ordre chronologique depuis le début de la saison, notes de départ 1500 pour chaque équipe — pas de fuite du futur (même filtre que `ratings_before`). Seuls les matchs de la fenêtre d'évaluation (défaut à partir du 1er décembre) comptent dans les métriques ; les matchs antérieurs ne servent qu'à faire chauffer les notes. Les notes sont mises à jour de proche en proche (`apply_game`, helper incrémental partagé avec `ratings_before`) : une seule passe par combinaison `(k, home_advantage)` plutôt qu'un appel à `ratings_before` par soirée (O(n) plutôt que O(n²)). La mise à jour des notes ne dépend jamais de `elo_per_share` (qui ne corrige que la probabilité prédite, pas le résultat observé) : les 4 valeurs de la grille `elo_per_share` sont évaluées sans rejouer les notes, un seul passage par `(k, home_advantage)` suffit pour les 4.
 
-**Grille** : `k ∈ {15, 20, 25}`, `home_advantage ∈ {40, 70, 100}`, `elo_per_share ∈ {0, 150, 300, 450}` (36 combinaisons). Métriques par combinaison : taux de victoires à domicile réel sur la fenêtre, précision (favori prédit gagnant), score de Brier, perte logarithmique. Référence naïve : probabilité constante = fréquence de victoires à domicile observée sur la fenêtre.
+**Grille** : par défaut `k ∈ {15, 20, 25}`, `home_advantage ∈ {40, 70, 100}`, `elo_per_share ∈ {0, 150, 300, 450}` (36 combinaisons) — élargissable sans toucher au code via `--k`/`--hca`/`--eps` (voir la commande ci-dessus). Métriques par combinaison : taux de victoires à domicile réel sur la fenêtre, précision (favori prédit gagnant), score de Brier, perte logarithmique. Référence naïve : probabilité constante = fréquence de victoires à domicile observée sur la fenêtre. Une combinaison sans aucun match dans la fenêtre (`n = 0`, grille trop large pour une fenêtre courte) a une perte logarithmique infinie : jamais choisie comme « meilleur jeu » ; si TOUTES les combinaisons sont dans ce cas, le rapport ne montre aucun « meilleur jeu » plutôt qu'un faux gagnant à 0.
+
+**Absent de production 0.05** : le seuil « joueur de rotation » (`ABSENT_MIN_SHARE`, `engine.stats.elo`) est le même en calibration (`elo_report`) et en production (`engine.strategy.inputs.absent_shares`, utilisé par `daily_sync` et par le facteur « écart de force ») — un seul seuil partagé, pour que la correction appliquée en production corresponde à celle mesurée par le rapport qui a choisi `elo_per_share` (review finale L3a, Important 2).
 
 **Correction blessures (calibration)** : absents = joueurs de rotation de l'équipe (part de production `team_shares` ≥ 5 %, sur les logs strictement antérieurs au match) sans minutes ce soir-là (log absent ou 0 minute) — pas les statuts d'indisponibilité réels (aucun historique en base) : contrairement au backtest L2, pas besoin d'oracle `dnp_oracle`, le rejeu regarde après coup si le joueur a effectivement joué.
 
-**Rapport** : meilleur jeu de paramètres (perte logarithmique minimale sur les 36 combinaisons), apport de la correction blessures (meilleur jeu avec `elo_per_share` possiblement > 0 vs meilleur jeu à `elo_per_share = 0`), tableau complet trié par perte logarithmique.
+**Rapport** : meilleur jeu de paramètres (perte logarithmique minimale sur la grille), apport de la correction blessures (meilleur jeu avec `elo_per_share` possiblement > 0 vs meilleur jeu à `elo_per_share = 0`), avertissement si le meilleur k ou home_advantage tombe sur une borne de la grille cherchée (⚠, signe que la vraie plage optimale est peut-être hors grille), pente des moindres carrés de l'écart réel sur l'écart attendu avant-match (vérifie `points_per_elo`, ≈1 attendu), tableau complet trié par perte logarithmique.
+
+**Choix de k — ne pas prendre le minimum brut de la grille** : sur 2025-26 (démarrage à froid depuis 1500, pas de saison antérieure en base), le minimum de perte logarithmique dérive vers un k élevé (plateau 50-80) pour deux raisons qui ne tiendront pas en production 2026-27 (notes reportées d'une vraie saison précédente, régressées 25 % — un k élevé y ferait suivre le tanking de fin de saison précédente) : convergence depuis 1500 et volatilité de fin de saison (tank/repos). Choisir le plus petit k à ~0.002 de perte logarithmique du minimum du plateau (pas le minimum brut), documenter ce choix et pourquoi il diffère de l'optimum de grille, et revisiter à la mi-décembre 2026 avec un rejeu sur la saison 2026-27 (le premier échantillon vraiment représentatif d'un démarrage « chaud »).
 
 **Limites** :
 - La proxy « absent = sans minutes ce soir-là » est optimiste par construction (dans la réalité, les rapports de blessures existaient avant le match) — sans fuite pour autant, le résultat du match n'entre jamais dans la correction elle-même.
 - Une seule saison chargée en base à ce stade → pas de validation croisée entre saisons, les paramètres choisis sont ceux qui minimisent la perte logarithmique sur 2025-26 uniquement.
 - Fenêtre par défaut à partir du 1er décembre : les deux premiers mois de la saison ne servent qu'à faire chauffer les notes depuis 1500, sans compter dans les métriques.
+- `points_per_elo` (1/28, le réglage 538 pour k≈20) n'est pas recalibré : à k élevé, l'écart de points attendu (stocké dans `game_predictions`, utilisé par le seuil du facteur « écart de force ») est probablement surestimé — la pente affichée dans le rapport le vérifie.
 
 ## Tests SQL
 
