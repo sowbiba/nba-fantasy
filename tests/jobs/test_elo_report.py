@@ -238,6 +238,76 @@ def test_parse_grid_valeur_vide_ou_blanche_retombe_sur_le_defaut():
     assert _parse_grid("   ", SHARE_GRID) == SHARE_GRID
 
 
+# --- M-1 (n=0 → inf), M-2 (borne de grille), M-4 (pente écart) -------------
+
+def test_run_fenetre_vide_best_est_none_et_le_rapport_ne_plante_pas():
+    # M-1 : aucune soirée dans la fenêtre (from_date après la fin de la
+    # saison synthétique) → toutes les combinaisons ont n=0, log_loss=inf :
+    # aucune n'est un « meilleur jeu » valide (pas de faux gagnant à 0.0).
+    data = _data()
+    after_season = date(2025, 11, 1) + timedelta(days=200)
+    result = run(data, SEASON, after_season)
+    assert result["n_window"] == 0
+    assert all(r.log_loss == float("inf") for r in result["rows"])
+    assert result["best"] is None
+    assert result["best_no_injury"] is None
+    assert result["best_with_injury"] is None
+    report = render_report(SEASON, result)   # ne doit pas lever
+    assert "## Meilleur jeu de paramètres" not in report
+
+
+def test_run_grille_par_defaut_meilleur_jeu_a_la_borne_avertit():
+    # M-2 : sur cette saison synthétique, le minimum global de la grille par
+    # défaut est k = 15 (borne basse de K_GRID) et home_advantage = 40
+    # (borne basse de HCA_GRID) : le rapport doit avertir.
+    data = _data()
+    result = run(data, SEASON)
+    assert result["best"].k == min(K_GRID)
+    report = render_report(SEASON, result)
+    assert "⚠ à la borne de la grille" in report
+    assert "k = 15" in report
+
+
+def test_render_report_pas_d_avertissement_borne_si_meilleur_jeu_interieur():
+    from dataclasses import replace
+
+    data = _data()
+    result = run(data, SEASON)
+    interior = replace(result["best"], k=20.0, home_advantage=70.0)   # milieu des deux grilles par défaut
+    result = {**result, "best": interior}
+    report = render_report(SEASON, result)
+    assert "⚠ à la borne de la grille" not in report
+
+
+def test_render_report_pas_d_avertissement_borne_si_grille_a_une_seule_valeur():
+    data = _data()
+    result = run(data, SEASON, k_grid=(15.0,), hca_grid=(40.0,))
+    # `best.k` est nécessairement l'unique valeur de la grille (donc « à la
+    # borne » au sens strict), mais une grille à un seul point n'est pas une
+    # recherche : pas d'avertissement.
+    report = render_report(SEASON, result)
+    assert "⚠ à la borne de la grille" not in report
+
+
+def test_ols_slope_calcule_la_pente_des_moindres_carres():
+    from engine.jobs.elo_report import _ols_slope
+
+    # y = 2x exactement : pente 2.
+    assert _ols_slope([(0.0, 0.0), (1.0, 2.0), (2.0, 4.0), (3.0, 6.0)]) == pytest.approx(2.0)
+    assert _ols_slope([]) is None
+    assert _ols_slope([(1.0, 5.0)]) is None            # un seul point
+    assert _ols_slope([(5.0, 1.0), (5.0, 9.0)]) is None   # x constant : pente indéfinie
+
+
+def test_render_report_affiche_la_pente_ecart_reel_attendu():
+    data = _data()
+    result = run(data, SEASON)
+    assert result["best"].margin_slope is not None
+    report = render_report(SEASON, result)
+    assert "Pente écart réel / écart attendu" in report
+    assert f"{result['best'].margin_slope:.3f}" in report
+
+
 def test_main_sans_eps_garde_la_grille_share_par_defaut(tmp_path, monkeypatch):
     readonly = ReadOnlyRepo(_season_repo())
     monkeypatch.setattr("engine.io.repo.SupabaseRepo.from_env", classmethod(lambda cls: readonly))
