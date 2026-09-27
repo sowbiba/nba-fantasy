@@ -20,10 +20,10 @@ def _seed(pg):
     )
 
 
-def _rowcount_as_anon(pg, sql):
+def _rowcount_as(pg, role, sql):
     """0 ligne (RLS sans policy permissive) ou erreur de permission : les
     deux sont des refus valides (même motif que test_028_private.py)."""
-    pg.execute("set local role anon")
+    pg.execute(f"set local role {role}")
     n = 0
     try:
         with pg.transaction():
@@ -36,11 +36,26 @@ def _rowcount_as_anon(pg, sql):
     return n
 
 
+def _rowcount_as_anon(pg, sql):
+    return _rowcount_as(pg, "anon", sql)
+
+
 def test_anon_ne_lit_ni_elo_ni_predictions(pg):
     with pg.transaction(force_rollback=True):
         _seed(pg)
         for table, sql in PRIVATE_SELECTS.items():
             assert _rowcount_as_anon(pg, sql) == 0, f"{table} lisible par anon"
+
+
+def test_authenticated_ne_lit_ni_elo_ni_predictions(pg):
+    # Migration 030 (RLS sans policy) promet aucune lecture ni pour anon ni
+    # pour authenticated (mode connecté = colonne Force lue via ownerDb(),
+    # jamais un rôle Postgres authenticated côté front) — review finale L3a,
+    # Minor 6.
+    with pg.transaction(force_rollback=True):
+        _seed(pg)
+        for table, sql in PRIVATE_SELECTS.items():
+            assert _rowcount_as(pg, "authenticated", sql) == 0, f"{table} lisible par authenticated"
 
 
 def test_service_role_lit_tout(pg):
