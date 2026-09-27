@@ -1,11 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Bebas_Neue, Space_Grotesk } from "next/font/google";
-import Link from "next/link";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
+import HeaderControl from "@/components/HeaderControl";
 import PullToRefresh from "@/components/PullToRefresh";
 import ServiceWorker from "@/components/ServiceWorker";
-import SignOutButton from "@/components/SignOutButton";
 import { getViewer } from "@/lib/viewer";
 
 const display = Bebas_Neue({
@@ -47,26 +46,13 @@ export default async function RootLayout({
       <body className="font-body text-[color:var(--color-text)] min-h-screen">
         <ServiceWorker />
         <PullToRefresh />
-        <div
-          className="fixed inset-x-0 top-0 z-40 pointer-events-none"
+        <main
+          className="max-w-lg mx-auto pb-24"
           style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
         >
-          <div className="max-w-lg mx-auto flex justify-end">
-            <div className="pointer-events-auto px-4 py-2">
-              {owner ? (
-                <SignOutButton />
-              ) : (
-                <Link
-                  href="/connexion"
-                  className="text-[11px] uppercase tracking-[0.15em] text-[color:var(--color-text-mute)] underline"
-                >
-                  Mode connecté
-                </Link>
-              )}
-            </div>
-          </div>
-        </div>
-        <main className="max-w-lg mx-auto pb-24">{children}</main>
+          <HeaderControl owner={owner} />
+          {children}
+        </main>
         <BottomNav owner={owner} />
       </body>
     </html>
