@@ -14,9 +14,9 @@
 
 ## Rythme de synchronisation (cron)
 
-Le sync principal tourne via **GitHub Actions** (`.github/workflows/daily-sync.yml`) : 3 passages dans la journée (07 h / 12 h / 17 h, heure de Paris) puis un passage **toutes les heures de 18 h à 23 h** (blessures, P(joue), plan) pendant que les matchs se jouent en Europe. Un cron local complète à 23 h 50 pour les effectifs et le calendrier (`stats.nba.com` bloque les IPs GitHub). Hors saison, les deux sont désactivés.
+Le sync principal tourne via **GitHub Actions** (`.github/workflows/daily-sync.yml`) : 3 passages dans la journée (07 h / 12 h / 17 h, heure de Paris) puis un passage **toutes les heures, de 18 h à minuit (été) ou 17 h à 23 h (hiver)** (blessures, P(joue), plan) pendant que les matchs se jouent en Europe. Un cron local complète à 23 h 50 pour les effectifs et le calendrier (`stats.nba.com` bloque les IPs GitHub). Hors saison, les deux sont désactivés.
 
-Les horaires du yml sont en UTC (l'heure du cron GitHub Actions) : `0 5,10,15 * * *` (07/12/17 h Paris) et `0 16-21 * * *` (18 h→23 h Paris, toutes les heures). Cette correspondance n'est correcte qu'en heure d'été (CEST = UTC+2) : **après le passage à l'heure d'hiver (25/10, CET = UTC+1), chaque run arrive une heure plus tôt côté Paris.** Pour garder l'alignement, passer à `"0 6,11,16 * * *"` / `"0 17-22 * * *"` (voir le commentaire en tête de `daily-sync.yml`).
+Les horaires du yml sont en UTC (l'heure du cron GitHub Actions) : `0 5,10,15 * * *` (07/12/17 h Paris) et `0 16-22 * * *` (toutes les heures). Cette plage couvre à la fois l'heure d'été (CEST = UTC+2 : 18 h→00 h Paris) et l'heure d'hiver (CET = UTC+1 : 17 h→23 h Paris) — aucun changement n'est nécessaire au passage d'heure (voir le commentaire en tête de `daily-sync.yml`).
 
 `daily_sync` (GitHub Actions) n'appelle plus `cdn.nba.com` (403 partout) : les statuts/scores du jour et de la veille viennent d'ESPN.
 
@@ -110,6 +110,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_xxx
 ```
 
 **Attention : `web/.env.local` pointe la prod. En `npm run dev`, un pick ou une correction écrit en production.**
+
+Une soirée fermée dès le premier tip-off (avant minuit Paris) ne peut être corrigée qu'après minuit Paris : `correct_pick` s'applique aux soirées passées, et la page Picks n'offre "Corriger" que pour les dates antérieures à aujourd'hui (M9, revue finale L2a).
 
 ### Exécution
 
