@@ -57,7 +57,7 @@ class SupabaseRepo:
 
     def load_games_of_seasons(self, seasons: list[str]) -> list[dict]:
         return self._all(lambda: self.c.table("games")
-                         .select("id,date,home_team,away_team,game_type,season,status")
+                         .select("id,date,home_team,away_team,game_type,season,status,tip_off")
                          .in_("season", seasons).order("id"))
 
     def load_game_logs(self, seasons: list[str]) -> list[dict]:
