@@ -47,7 +47,7 @@ async function handle(req: NextRequest): Promise<Response> {
   }
   const date = deckDate();
 
-  const { data: night } = await db
+  const { data: night, error: nightErr } = await db
     .from("nights")
     .select("date, closing_at")
     .eq("date", date)
@@ -55,13 +55,23 @@ async function handle(req: NextRequest): Promise<Response> {
     .gt("n_eligible_games", 0)
     .maybeSingle();
 
+  if (nightErr) {
+    console.error("Échec de la requête nights :", nightErr.message ?? nightErr);
+    return Response.json({ error: "nights" }, { status: 500 });
+  }
+
   if (!night) return Response.json({ sent: 0 });
 
-  const { data: pickRow } = await db
+  const { data: pickRow, error: pickErr } = await db
     .from("picks")
     .select("player_id, players(name, injury_status)")
     .eq("date", date)
     .maybeSingle();
+
+  if (pickErr) {
+    console.error("Échec de la requête picks :", pickErr.message ?? pickErr);
+    return Response.json({ error: "picks" }, { status: 500 });
+  }
 
   const pick = pickRow
     ? (() => {
@@ -76,7 +86,12 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data: sentRows } = await db.from("reminders_sent").select("kind, key").eq("night", date);
   const sent = new Set((sentRows ?? []).map((r) => `${r.kind}|${r.key}`));
 
-  const reminders = dueReminders({ now: new Date(), night, pick, sent });
+  const now = new Date();
+  const reminders = dueReminders({ now, night, pick, sent });
+  // M4 (revue finale) : TTL = temps restant avant la fermeture — passé ce
+  // délai le rappel n'a plus de sens (ne pas laisser web-push le livrer à
+  // un téléphone qui revient en ligne le lendemain).
+  const ttlSeconds = Math.max(1, Math.round((new Date(night.closing_at).getTime() - now.getTime()) / 1000));
 
   let sentCount = 0;
   for (const r of reminders) {
@@ -88,7 +103,7 @@ async function handle(req: NextRequest): Promise<Response> {
     }
     let delivered = false;
     try {
-      const result = await notifyAll({ title: r.title, body: r.body, url: "/" });
+      const result = await notifyAll({ title: r.title, body: r.body, url: "/", ttlSeconds });
       delivered = result.push > 0 || result.telegram;
     } catch (e) {
       console.error("Échec de notifyAll :", e instanceof Error ? e.message : e);
