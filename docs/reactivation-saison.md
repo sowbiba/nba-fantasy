@@ -28,6 +28,10 @@
 
 Constat du 2026-09-27 : `cdn.nba.com` renvoie aussi 403 depuis GitHub Actions (calendrier et scoreboard). Le calendrier ne vient donc que du cron local (stats.nba.com). Résolu par L2a : `daily_sync` (GitHub Actions) et le direct front (`/api/live-box-score/[gameId]`) utilisent désormais ESPN (`site.api.espn.com`) pour les statuts, scores et box scores — `cdn.nba.com` n'est plus appelé par aucun job ni par le front (le code de `engine/io/nba.py` reste dans le repo, mais n'est plus utilisé nulle part).
 
+## Début de saison (20/10) : retester cdn.nba.com
+
+Demande de l'utilisateur (2026-09-27) : le box score ESPN ne dit pas qui est sur le terrain (point « en jeu » perdu). Au premier soir de match, retester `https://cdn.nba.com/static/json/liveData/boxscore/boxscore_<gameId>.json` (et le scoreboard) depuis Vercel et depuis GitHub. S'il répond de nouveau : le direct repasse par cdn.nba.com (qui donne `oncourt`), ESPN en secours.
+
 ## Quelques jours avant le premier match (après L1c)
 
 5. Activer le workflow : `gh workflow enable daily-sync.yml`.
