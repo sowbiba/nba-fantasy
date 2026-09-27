@@ -280,6 +280,30 @@ def test_daily_sync_correction_blessures_baisse_la_probabilite_de_l_equipe_du_bl
     assert prob_blesse > prob_sain
 
 
+def test_daily_sync_transmet_elo_params_a_build_decision_inputs(monkeypatch):
+    # I-4 (review finale L3a) : `_write_elo` et le chemin de décision doivent
+    # utiliser les MÊMES `elo_params` — sinon ils divergeraient le jour où
+    # quelqu'un passe des paramètres non-défaut ou active le facteur « écart
+    # de force ». Capture l'appel réel à `build_decision_inputs` plutôt que
+    # de vérifier un effet indirect (le facteur est désactivé par défaut).
+    import engine.jobs.daily_sync as daily_sync_module
+
+    captured = {}
+    real = daily_sync_module.build_decision_inputs
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(daily_sync_module, "build_decision_inputs", _capture)
+
+    params = EloParams(k=33.0, home_advantage=55.0, elo_per_share=123.0)
+    repo = _base_repo()
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW, elo_params=params)
+
+    assert captured.get("elo_params") is params
+
+
 class _BoomTeamElo:
     """Enveloppe un `FakeRepo` : délègue tout sauf `upsert_team_elo`, qui
     lève — simule une panne d'écriture Elo (table absente, erreur

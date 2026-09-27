@@ -226,7 +226,7 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime,
     decision_inputs, _profiles = build_decision_inputs(
         today=today, players=players, games=window, season_games=season_games, logs=all_logs,
         season=season, prior=prior, picks=picks, second_chances=second_chances,
-        series_rows=series_rows, nights=nights,
+        series_rows=series_rows, nights=nights, elo_params=elo_params,
     )
     decision = decide(decision_inputs, blowout=decision_inputs.blowout_model)   # None sauf BLOWOUT_ENABLED
 
