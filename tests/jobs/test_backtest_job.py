@@ -136,11 +136,12 @@ def test_le_job_ne_lit_que_le_repo_lecture_seule_et_n_ecrit_jamais(monkeypatch, 
 
     out = tmp_path / "rapport.md"
     main(["--season", SEASON, "--from", NIGHTS[0].isoformat(), "--to", NIGHTS[-1].isoformat(),
-          "--out", str(out)])
+          "--decay", "0.97", "--out", str(out)])
 
     assert out.exists()
     report = out.read_text(encoding="utf-8")
     assert "## Conclusion" in report
+    assert "decay=0.97" in report   # parsing de --decay (liste séparée par virgules)
 
 
 def test_le_repo_lecture_seule_leve_sur_toute_ecriture():

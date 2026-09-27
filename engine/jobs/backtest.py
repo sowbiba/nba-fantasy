@@ -26,7 +26,7 @@ from engine.backtest.simulate import (
     user_result,
 )
 from engine.rules.scoring import night_points
-from engine.strategy.value import FUTURE_DECAY
+from engine.strategy.value import FUTURE_DECAY, X2_MONTHS
 
 STRATEGIES = ("best_available", "plan")
 INJURY_MODES = ("none", "dnp_oracle")
@@ -124,7 +124,8 @@ def run(data: SeasonData, start: date, end: date, decays: list[float] | None = N
 
     last_of_month = _last_regular_night_of_month(data)
     end_month = (end.year, end.month)
-    x2_truncated = last_of_month.get(end_month) is not None and last_of_month[end_month] > end
+    x2_truncated = (end.month in X2_MONTHS and last_of_month.get(end_month) is not None
+                   and last_of_month[end_month] > end)
 
     return {
         "rows": rows,
@@ -133,6 +134,20 @@ def run(data: SeasonData, start: date, end: date, decays: list[float] | None = N
         "full_season": {"start": full_start, "end": full_end, "officiel": full_official, "logs": full_logs},
         "x2_truncated_month": end_month if x2_truncated else None,
     }
+
+
+def _verdict(by_mode: dict[tuple[str, str], "Row"]) -> tuple[str, dict[str, float]]:
+    """Règle d'activation appliquée littéralement : plan − meilleur choix par
+    mode, et le verdict binaire (« bat » seulement si les deux modes gagnent)."""
+    diffs = {}
+    for mode in INJURY_MODES:
+        plan_row = by_mode[(f"plan (decay={FUTURE_DECAY}, défaut)", mode)]
+        ba_row = by_mode[("best_available", mode)]
+        diffs[mode] = plan_row.result.average - ba_row.result.average
+    beats_both = all(diffs[m] > 0 for m in INJURY_MODES)
+    verdict = "le plan bat le meilleur choix dans les deux modes" if beats_both \
+        else "le plan ne bat pas le meilleur choix dans les deux modes"
+    return verdict, diffs
 
 
 def render_report(season: str, start: date, end: date, decays: list[float], data: dict) -> str:
@@ -176,23 +191,18 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
                  "donc peu d'historique de profils avant février de la saison en cours.")
     if data["x2_truncated_month"] is not None:
         y, m = data["x2_truncated_month"]
-        lines.append(f"- La fenêtre se termine avant la fin du mois {m:02d}/{y} : le x2 de ce mois n'est "
-                     "pas utilisé à l'intérieur de la fenêtre (posé sur la dernière soirée du mois, hors "
-                     "fenêtre).")
+        lines.append(f"- La fenêtre se termine avant la fin du mois {m:02d}/{y} (mois x2) : asymétrie en "
+                     "faveur de `plan` pour ce mois — `best_available` (référence naïve) pose son x2 sur "
+                     "la dernière soirée éligible du mois, hors fenêtre, donc perd le x2 de ce mois ; "
+                     "`plan` (planificateur MILP, S3) peut le poser plus tôt dans le mois dès que la fin du "
+                     "mois est visible dans son horizon de 35 jours, donc à l'intérieur de la fenêtre.")
     lines.append("- Saison régulière uniquement (R14, R10) : les soirées de playoffs, s'il y en a dans la "
                  "fenêtre, sont exclues du calcul.")
     lines.append("")
 
     lines += ["## Conclusion", ""]
     by_mode: dict[tuple[str, str], Row] = {(r.label, r.mode): r for r in rows}
-    diffs = {}
-    for mode in INJURY_MODES:
-        plan_row = by_mode[(f"plan (decay={FUTURE_DECAY}, défaut)", mode)]
-        ba_row = by_mode[("best_available", mode)]
-        diffs[mode] = plan_row.result.average - ba_row.result.average
-    beats_both = all(diffs[m] > 0 for m in INJURY_MODES)
-    verdict = "le plan bat le meilleur choix dans les deux modes" if beats_both \
-        else "le plan ne bat pas le meilleur choix dans les deux modes"
+    verdict, diffs = _verdict(by_mode)
     lines.append(f"- Règle d'activation : {verdict}.")
     for mode in INJURY_MODES:
         lines.append(f"  - mode {mode} : plan − meilleur choix = {diffs[mode]:+.2f}")
@@ -241,8 +251,11 @@ def main(argv: list[str] | None = None) -> None:
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
+    by_mode = {(r.label, r.mode): r for r in result["rows"]}
+    verdict, _diffs = _verdict(by_mode)
     print(f"backtest {args.season} {start}→{end} : rapport écrit dans {out} "
           f"({result['total_nights']} soirées, {len(result['diverging_nights'])} écart(s) officiel/logs)")
+    print(f"  Règle d'activation : {verdict}.")
 
 
 if __name__ == "__main__":

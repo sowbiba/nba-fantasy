@@ -49,7 +49,8 @@ nba-fantasy/
 │   ├── io/                            # Supabase, cdn.nba.com, stats.nba.com, ESPN (fetch/push)
 │   └── jobs/
 │       ├── daily_sync.py              # Passage complet (GitHub Actions)
-│       └── local_nightly.py           # Effectifs + LeagueGameLog + matchups (PC local)
+│       ├── local_nightly.py           # Effectifs + LeagueGameLog + matchups (PC local)
+│       └── backtest.py                # Backtest lecture seule + rapport Markdown (voir § Backtest)
 ├── tests/                             # tests unitaires (pytest)
 ├── web/                               # Frontend Next.js 16
 │   ├── src/app/                       # Pages (App Router)
@@ -158,7 +159,7 @@ Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.co
 **Limites** :
 - Aucun historique des statuts de blessures en base : le rapport donne deux bornes plutôt qu'une vérité unique — `none` (personne n'est jamais déclaré blessé : pessimiste) et `dnp_oracle` (un joueur ayant DNP le soir même après avoir joué au moins un de ses 5 derniers matchs est déclaré « Out » : optimiste). L'utilisateur, lui, avait l'information du jour : la comparaison équitable est entre les deux bornes, pas contre l'une des deux isolément.
 - La saison 2024-25 n'est pas chargée en base → fenêtre par défaut février-avril de la saison en cours (peu d'historique de profils avant février).
-- Si la fenêtre se termine avant la fin d'un mois x2, ce mois n'a pas son x2 dans la fenêtre (posé sur la dernière soirée du mois, hors fenêtre) — signalé dans le rapport quand c'est le cas.
+- Si la fenêtre se termine avant la fin d'un mois x2 : asymétrie en faveur de `plan` pour ce mois — `best_available` (référence naïve, x2 sur la dernière soirée du mois) perd le x2 hors fenêtre, alors que `plan` (planificateur MILP, S3) peut le poser plus tôt dans le mois s'il voit la fin du mois dans son horizon de 35 jours — signalé dans le rapport quand c'est le cas.
 - Comparaison restreinte à la saison régulière (R14, R10 : pas de x2 en playoffs).
 - Le rapport montre la moyenne réelle de l'utilisateur deux fois : via `picks.actual_score` (officiel, ce que l'app a enregistré) et via les logs (`user_result`, notée comme les simulations) — avec le nombre de soirées où les deux diffèrent.
 
