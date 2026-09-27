@@ -99,8 +99,11 @@ export interface MatchupSeasonRow {
   games: number;
 }
 
-/** Vue publique `standings` (migration 027) : classement Est/Ouest calculé
- *  depuis `games`, saison régulière (NBA Cup comprise, finale exclue). */
+/** Vue publique `standings` (migration 027, colonne `point_diff` migration
+ *  031) : classement Est/Ouest calculé depuis `games`, saison régulière (NBA
+ *  Cup comprise, finale exclue). `pct`, `games_behind` et `point_diff` sont
+ *  des `numeric` Postgres : PostgREST les sérialise en chaînes, jamais en
+ *  number JS — toujours passer par `Number(...)` avant tout calcul. */
 export interface StandingsRow {
   season: string;
   conference: "Est" | "Ouest";
@@ -117,6 +120,7 @@ export interface StandingsRow {
   last10_losses: number;
   streak: string;
   rank: number;
+  point_diff: number;
 }
 
 export interface RecommendationWithPlayer extends Recommendation {

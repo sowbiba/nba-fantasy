@@ -1,21 +1,14 @@
--- 027 — Classement Est/Ouest calculé depuis les matchs (spec plan mode
--- public). Vue publique : hérite de la lecture anon de `games` via
--- security_invoker. Saison régulière uniquement (`game_type = 'regular'`,
--- `status = 'final'`) ; la finale de la NBA Cup (`cup_final`) et le
--- préseason (`preseason`) sont exclus. Saison affichée = la plus récente
--- présente dans `games` avec `game_type = 'regular'`. Idempotente.
+-- 031 — Classement : nouvelle colonne publique `point_diff` (écart moyen de
+-- points par match, pour − contre), sur les mêmes matchs que la vue compte
+-- déjà (saison régulière, `status = 'final'`, les deux scores non nuls —
+-- cf. 029). Arrondi à 1 décimale, 0 sans match joué.
 --
--- Verbe DDL (2026-09, migration 031) : `drop view if exists` + `create view`
--- au lieu de `create or replace view`. Schéma identique sur une base neuve —
--- seule différence : rester rejouable (`tests/sql/test_migrations.py`)
--- une fois qu'une migration ultérieure (031) a ajouté une colonne en fin de
--- vue, ce que `create or replace view` refuse de « redéfaire » en arrière
--- (« cannot drop columns from view ») quand toutes les migrations sont
--- réappliquées dans l'ordre sur une base déjà à jour.
+-- Même vue que 029 : `create or replace view` ne peut ajouter une colonne
+-- qu'en dernière position, donc les 15 colonnes existantes restent dans le
+-- même ordre et `point_diff` est ajoutée à la fin. `security_invoker` et les
+-- grants sont inchangés. Idempotente.
 
-drop view if exists standings;
-
-create view standings with (security_invoker = true) as
+create or replace view standings with (security_invoker = true) as
 with target_season as (
   select max(season) as season from games where game_type = 'regular'
 ),
@@ -36,12 +29,15 @@ results as (
     g.date,
     tg.is_home,
     case when tg.is_home then g.home_score > g.away_score
-         else g.away_score > g.home_score end as won
+         else g.away_score > g.home_score end as won,
+    case when tg.is_home then g.home_score else g.away_score end as pts_for,
+    case when tg.is_home then g.away_score else g.home_score end as pts_against
   from games g
   cross join lateral (values (g.home_team, true), (g.away_team, false)) as tg(team, is_home)
   join conferences c on c.team = tg.team
   join target_season ts on g.season = ts.season
   where g.game_type = 'regular' and g.status = 'final'
+    and g.home_score is not null and g.away_score is not null
 ),
 totals as (
   select
@@ -51,7 +47,8 @@ totals as (
     count(*) filter (where is_home and won) as home_wins,
     count(*) filter (where is_home and not won) as home_losses,
     count(*) filter (where not is_home and won) as away_wins,
-    count(*) filter (where not is_home and not won) as away_losses
+    count(*) filter (where not is_home and not won) as away_losses,
+    round(avg(pts_for - pts_against), 1) as point_diff
   from results
   group by team
 ),
@@ -104,7 +101,8 @@ base as (
     coalesce(t.away_losses, 0) as away_losses,
     coalesce(l.last10_wins, 0) as last10_wins,
     coalesce(l.last10_losses, 0) as last10_losses,
-    coalesce((case when s.won then 'V' else 'D' end) || s.n, '') as streak
+    coalesce((case when s.won then 'V' else 'D' end) || s.n, '') as streak,
+    coalesce(t.point_diff, 0) as point_diff
   from conferences c
   left join totals t on t.team = c.team
   left join last10 l on l.team = c.team
@@ -141,7 +139,8 @@ select
   rb.last10_wins,
   rb.last10_losses,
   rb.streak,
-  rb.rank
+  rb.rank,
+  rb.point_diff
 from ranked_base rb
 join leaders ld on ld.conference = rb.conference
 order by rb.conference, rb.rank;

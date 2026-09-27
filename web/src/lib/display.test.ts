@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { homeState, isClosed, pickPoints, recMeta, standingsTint, standingsZone, topDefender, winPct, winPctPair, x2Hint, x2HintText } from "./display";
+import {
+  bestFirstIsDescending,
+  displayedSortDir,
+  formatPointDiff,
+  homeState,
+  isClosed,
+  pickPoints,
+  recMeta,
+  sortStandings,
+  standingsTint,
+  standingsZone,
+  streakScore,
+  topDefender,
+  winPct,
+  winPctPair,
+  x2Hint,
+  x2HintText,
+} from "./display";
+import type { StandingsRow } from "@/types";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -131,5 +149,162 @@ describe("standingsTint", () => {
   it("nul au-delà de la 10e place", () => {
     expect(standingsTint(11)).toBe(0);
     expect(standingsTint(15)).toBe(0);
+  });
+});
+
+describe("formatPointDiff", () => {
+  it("positif : signe +", () => expect(formatPointDiff(7.53)).toBe("+7.5"));
+  it("négatif : signe -", () => expect(formatPointDiff(-3.24)).toBe("-3.2"));
+  it("zéro exact : pas de signe", () => expect(formatPointDiff(0)).toBe("0.0"));
+  it("arrondit à zéro : jamais -0.0", () => {
+    expect(formatPointDiff(-0.04)).toBe("0.0");
+    expect(formatPointDiff(0.04)).toBe("0.0");
+  });
+  it("valeur en chaîne (PostgREST numeric) : coercée", () => expect(formatPointDiff("6.3")).toBe("+6.3"));
+});
+
+describe("streakScore", () => {
+  it("série de victoires : positif, la longueur", () => {
+    expect(streakScore("V3")).toBe(3);
+    expect(streakScore("V1")).toBe(1);
+  });
+  it("série de défaites : négatif, la longueur", () => {
+    expect(streakScore("D1")).toBe(-1);
+    expect(streakScore("D5")).toBe(-5);
+  });
+  it("pas de série : 0", () => expect(streakScore("")).toBe(0));
+  it("format inattendu : 0, ne plante pas", () => {
+    expect(streakScore("X2")).toBe(0);
+    expect(streakScore("V")).toBe(0);
+    expect(streakScore("2")).toBe(0);
+  });
+});
+
+describe("displayedSortDir / bestFirstIsDescending", () => {
+  it("V (meilleur d'abord = plus de victoires en tête) : 1er appui affiche décroissant", () => {
+    expect(bestFirstIsDescending("wins")).toBe(true);
+    expect(displayedSortDir("wins", "asc")).toBe("desc");
+  });
+  it("D (meilleur d'abord = moins de défaites en tête) : 1er appui affiche croissant", () => {
+    expect(bestFirstIsDescending("losses")).toBe(false);
+    expect(displayedSortDir("losses", "asc")).toBe("asc");
+  });
+  it("2e appui inverse toujours le sens affiché, quelle que soit la colonne", () => {
+    expect(displayedSortDir("wins", "desc")).toBe("asc");
+    expect(displayedSortDir("losses", "desc")).toBe("desc");
+  });
+  it.each(["pct", "last10", "streak", "point_diff", "force"] as const)(
+    "%s : meilleur d'abord = décroissant",
+    (key) => expect(displayedSortDir(key, "asc")).toBe("desc"),
+  );
+  it.each(["rank", "games_behind"] as const)(
+    "%s : meilleur d'abord = croissant",
+    (key) => expect(displayedSortDir(key, "asc")).toBe("asc"),
+  );
+});
+
+describe("sortStandings", () => {
+  function row(overrides: Partial<StandingsRow>): StandingsRow {
+    return {
+      season: "2026-27",
+      conference: "Est",
+      team: "AAA",
+      wins: 0,
+      losses: 0,
+      pct: 0,
+      games_behind: 0,
+      home_wins: 0,
+      home_losses: 0,
+      away_wins: 0,
+      away_losses: 0,
+      last10_wins: 0,
+      last10_losses: 0,
+      streak: "",
+      rank: 1,
+      point_diff: 0,
+      ...overrides,
+    };
+  }
+
+  const rows = [
+    row({ team: "A", rank: 1, wins: 10, losses: 2, pct: 0.833, games_behind: 0, last10_wins: 7, streak: "V2", point_diff: 8.5 }),
+    row({ team: "B", rank: 2, wins: 8, losses: 4, pct: 0.667, games_behind: 2, last10_wins: 9, streak: "D1", point_diff: -1.2 }),
+    row({ team: "C", rank: 3, wins: 6, losses: 6, pct: 0.5, games_behind: 4, last10_wins: 3, streak: "V5", point_diff: 3.0 }),
+  ];
+
+  it("ne mute pas le tableau d'entrée", () => {
+    const copy = [...rows];
+    sortStandings(rows, "pct", "asc");
+    expect(rows).toEqual(copy);
+  });
+
+  it("clé rank (défaut) : ordre officiel", () => {
+    expect(sortStandings(rows, "rank", "asc").map((r) => r.team)).toEqual(["A", "B", "C"]);
+    expect(sortStandings(rows, "rank", "desc").map((r) => r.team)).toEqual(["C", "B", "A"]);
+  });
+
+  it("clé pct : % décroissant en premier appui", () => {
+    expect(sortStandings(rows, "pct", "asc").map((r) => r.team)).toEqual(["A", "B", "C"]);
+    expect(sortStandings(rows, "pct", "desc").map((r) => r.team)).toEqual(["C", "B", "A"]);
+  });
+
+  it("clé wins : victoires décroissantes en premier appui", () => {
+    expect(sortStandings(rows, "wins", "asc").map((r) => r.team)).toEqual(["A", "B", "C"]);
+  });
+
+  it("clé losses : défaites croissantes en premier appui (moins = mieux)", () => {
+    expect(sortStandings(rows, "losses", "asc").map((r) => r.team)).toEqual(["A", "B", "C"]);
+  });
+
+  it("clé games_behind : écart croissant en premier appui (0 = mieux)", () => {
+    expect(sortStandings(rows, "games_behind", "asc").map((r) => r.team)).toEqual(["A", "B", "C"]);
+  });
+
+  it("clé last10 : victoires des 10 derniers décroissantes en premier appui", () => {
+    expect(sortStandings(rows, "last10", "asc").map((r) => r.team)).toEqual(["B", "A", "C"]);
+  });
+
+  it("clé point_diff : écart décroissant en premier appui", () => {
+    expect(sortStandings(rows, "point_diff", "asc").map((r) => r.team)).toEqual(["A", "C", "B"]);
+    expect(sortStandings(rows, "point_diff", "desc").map((r) => r.team)).toEqual(["B", "C", "A"]);
+  });
+
+  it("clé streak : séries de victoires d'abord (la plus longue en tête), puis vide, puis défaites (la plus courte en tête)", () => {
+    const withEmpty = [...rows, row({ team: "D", rank: 4, streak: "" })];
+    expect(sortStandings(withEmpty, "streak", "asc").map((r) => r.team)).toEqual(["C", "A", "D", "B"]);
+  });
+
+  it("clé streak inversée (2e appui) : défaites d'abord (la plus longue en tête), puis vide, puis victoires (la plus courte en tête)", () => {
+    const withEmpty = [...rows, row({ team: "D", rank: 4, streak: "" })];
+    expect(sortStandings(withEmpty, "streak", "desc").map((r) => r.team)).toEqual(["B", "D", "A", "C"]);
+  });
+
+  it("clé force : cote décroissante en premier appui, absente toujours en fin de liste dans les deux sens", () => {
+    const ratings = { A: 1500, B: 1600 }; // C absent (pas dans team_elo)
+    expect(sortStandings(rows, "force", "asc", ratings).map((r) => r.team)).toEqual(["B", "A", "C"]);
+    expect(sortStandings(rows, "force", "desc", ratings).map((r) => r.team)).toEqual(["A", "B", "C"]);
+  });
+
+  it("clé force sans ratings du tout : ordre stable par rang", () => {
+    expect(sortStandings(rows, "force", "asc", null).map((r) => r.team)).toEqual(["A", "B", "C"]);
+  });
+
+  it("égalité : départage stable par rang officiel, jamais mélangé au 2e appui", () => {
+    const tied = [
+      row({ team: "X", rank: 5, wins: 5 }),
+      row({ team: "Y", rank: 2, wins: 5 }),
+      row({ team: "Z", rank: 8, wins: 5 }),
+    ];
+    expect(sortStandings(tied, "wins", "asc").map((r) => r.team)).toEqual(["Y", "X", "Z"]);
+    expect(sortStandings(tied, "wins", "desc").map((r) => r.team)).toEqual(["Y", "X", "Z"]);
+  });
+
+  it("valeurs en chaîne (PostgREST numeric) : coercées, pas d'ordre lexical", () => {
+    const stringy = [
+      row({ team: "P", rank: 1, pct: "0.9" as unknown as number, point_diff: "10.0" as unknown as number }),
+      row({ team: "Q", rank: 2, pct: "0.5" as unknown as number, point_diff: "2.0" as unknown as number }),
+    ];
+    expect(sortStandings(stringy, "pct", "asc").map((r) => r.team)).toEqual(["P", "Q"]);
+    expect(sortStandings(stringy, "point_diff", "asc").map((r) => r.team)).toEqual(["P", "Q"]);
   });
 });

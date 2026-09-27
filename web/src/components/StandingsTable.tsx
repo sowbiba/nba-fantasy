@@ -1,5 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { StandingsRow } from "@/types";
-import { standingsTint, standingsZone } from "@/lib/display";
+import { displayedSortDir, formatPointDiff, sortStandings, standingsTint, standingsZone, StandingsSortKey, SortDir } from "@/lib/display";
 
 /** `.652`, jamais `0.652` (convention NBA). 0 match joué → `.000`. */
 function formatPct(pct: number): string {
@@ -11,34 +14,121 @@ function formatGB(gb: number, rank: number): string {
   return gb.toFixed(1).replace(/\.0$/, "");
 }
 
+function ariaSort(active: boolean, dir: SortDir): "ascending" | "descending" | "none" {
+  if (!active) return "none";
+  return dir === "asc" ? "ascending" : "descending";
+}
+
+function SortIndicator({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return null;
+  return <span className="ml-0.5 text-[8px] align-middle">{dir === "asc" ? "▲" : "▼"}</span>;
+}
+
+/** En-tête triable (tâche 2) : un bouton pleine largeur pour rester tappable
+ *  au doigt (mobile-first), un `aria-sort` sur le `<th>` pour les lecteurs
+ *  d'écran, un indicateur ▲/▼ visible seulement sur la colonne active. */
+function SortableHeader({
+  sortKey,
+  label,
+  ariaLabel,
+  align,
+  active,
+  displayDir,
+  onToggle,
+}: {
+  sortKey: StandingsSortKey;
+  label: string;
+  ariaLabel: string;
+  align: "left" | "right";
+  active: boolean;
+  /** Sens réel affiché (croissant/décroissant des valeurs), pas l'état
+   *  interne « meilleur d'abord vs inversé » — voir `displayedSortDir`
+   *  (@/lib/display) : « meilleur d'abord » n'est pas toujours décroissant
+   *  (D, GB, Rang sont meilleurs en croissant). */
+  displayDir: SortDir;
+  onToggle: (key: StandingsSortKey) => void;
+}) {
+  return (
+    <th
+      scope="col"
+      aria-sort={ariaSort(active, displayDir)}
+      className={`font-semibold py-1.5 ${align === "left" ? "text-left pr-2" : "text-right px-1.5"}`}
+    >
+      <button
+        type="button"
+        onClick={() => onToggle(sortKey)}
+        aria-label={ariaLabel}
+        className={`w-full py-0.5 ${align === "left" ? "text-left" : "text-right"} ${active ? "text-white" : ""}`}
+      >
+        {label}
+        <SortIndicator active={active} dir={displayDir} />
+      </button>
+    </th>
+  );
+}
+
 function ConferenceTable({ rows, ratings }: { rows: StandingsRow[]; ratings?: Record<string, number> | null }) {
+  // Tri par défaut = rang officiel (spec tâche 2). Un tri par une autre
+  // colonne masque les séparateurs de zone (ils n'ont de sens qu'en ordre de
+  // rang) mais garde la teinte de chaque ligne, toujours calculée depuis le
+  // rang officiel `r.rank` — jamais depuis la position affichée.
+  const [sortKey, setSortKey] = useState<StandingsSortKey>("rank");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function toggleSort(key: StandingsSortKey) {
+    if (key === sortKey) {
+      // Rang déjà actif : inverser l'ordre officiel n'a pas de sens, un
+      // second appui sur « Rang » reste sans effet.
+      if (key === "rank") return;
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  const sorted = sortStandings(rows, sortKey, sortDir, ratings);
+  const isDefaultOrder = sortKey === "rank";
+  const header = (key: StandingsSortKey, label: string, ariaLabel: string, align: "left" | "right" = "right") => (
+    <SortableHeader
+      sortKey={key}
+      label={label}
+      ariaLabel={ariaLabel}
+      align={align}
+      active={sortKey === key}
+      displayDir={displayedSortDir(key, sortDir)}
+      onToggle={toggleSort}
+    />
+  );
+
   return (
     <div className="overflow-x-auto -mx-1 px-1">
-      <table className="w-full text-xs border-collapse min-w-[420px]">
+      <table className="w-full text-xs border-collapse min-w-[460px]">
         <thead>
           <tr className="text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-text-mute)]">
-            <th className="text-left font-semibold py-1.5 pr-2">Rang</th>
+            {header("rank", "Rang", "Trier par rang officiel", "left")}
             <th className="text-left font-semibold py-1.5 pr-2">Équipe</th>
-            <th className="text-right font-semibold py-1.5 px-1.5">V</th>
-            <th className="text-right font-semibold py-1.5 px-1.5">D</th>
-            <th className="text-right font-semibold py-1.5 px-1.5">%</th>
-            <th className="text-right font-semibold py-1.5 px-1.5">GB</th>
+            {header("wins", "V", "Trier par victoires")}
+            {header("losses", "D", "Trier par défaites")}
+            {header("pct", "%", "Trier par pourcentage de victoires")}
+            {header("games_behind", "GB", "Trier par écart au premier")}
             <th className="text-right font-semibold py-1.5 px-1.5">Dom.</th>
             <th className="text-right font-semibold py-1.5 px-1.5">Ext.</th>
-            <th className="text-right font-semibold py-1.5 px-1.5">10 der.</th>
-            <th className="text-right font-semibold py-1.5 pl-1.5">Série</th>
-            {ratings && <th className="text-right font-semibold py-1.5 pl-1.5">Force</th>}
+            {header("last10", "10 der.", "Trier par victoires sur les 10 derniers matchs")}
+            {header("streak", "Série", "Trier par série en cours")}
+            {header("point_diff", "Écart", "Trier par écart moyen de points")}
+            {ratings && header("force", "Force", "Trier par force (cote Elo)")}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => {
+          {sorted.map((r, i) => {
             const zone = standingsZone(r.rank);
             const tint = standingsTint(r.rank);
-            // Séparateur dès que la zone change (playoffs → play-in → hors zone),
-            // donc toujours après la 6e et la 10e place sans dupliquer ces
-            // numéros en dur ici.
-            const next = rows[i + 1];
-            const separator = !!next && standingsZone(next.rank) !== zone;
+            // Séparateur dès que la zone change (playoffs → play-in → hors
+            // zone) : n'a de sens qu'en ordre de rang officiel, donc masqué
+            // dès qu'on trie par une autre colonne (tâche 2).
+            const next = sorted[i + 1];
+            const separator = isDefaultOrder && !!next && standingsZone(next.rank) !== zone;
             return (
               <tr
                 key={r.team}
@@ -55,7 +145,8 @@ function ConferenceTable({ rows, ratings }: { rows: StandingsRow[]; ratings?: Re
                 <td className="text-right py-1.5 px-1.5 text-[color:var(--color-text-mute)]">{r.home_wins}-{r.home_losses}</td>
                 <td className="text-right py-1.5 px-1.5 text-[color:var(--color-text-mute)]">{r.away_wins}-{r.away_losses}</td>
                 <td className="text-right py-1.5 px-1.5 text-[color:var(--color-text-mute)]">{r.last10_wins}-{r.last10_losses}</td>
-                <td className="text-right py-1.5 pl-1.5 text-[color:var(--color-text-mute)]">{r.streak || "—"}</td>
+                <td className="text-right py-1.5 px-1.5 text-[color:var(--color-text-mute)]">{r.streak || "—"}</td>
+                <td className="text-right py-1.5 px-1.5 text-[color:var(--color-text-mute)]">{formatPointDiff(r.point_diff)}</td>
                 {ratings && (
                   <td className="text-right py-1.5 pl-1.5 text-[color:var(--color-text-mute)]">
                     {r.team in ratings ? Math.round(ratings[r.team]) : "—"}
