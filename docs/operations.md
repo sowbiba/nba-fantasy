@@ -164,6 +164,31 @@ Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.co
 - Comparaison restreinte à la saison régulière (R14, R10 : pas de x2 en playoffs).
 - Le rapport montre la moyenne réelle de l'utilisateur deux fois : via `picks.actual_score` (officiel, ce que l'app a enregistré) et via les logs (`user_result`, notée comme les simulations) — avec le nombre de soirées où les deux diffèrent.
 
+## Rapport Elo
+
+`engine/jobs/elo_report.py` rejoue une saison déjà jouée match par match (Elo maison, `engine/stats/elo.py`) pour choisir les paramètres (`k`, `home_advantage`, `elo_per_share`) et mesurer l'apport de la correction blessures. Rapport Markdown en sortie, pas d'interface web.
+
+```bash
+./venv/bin/python -m engine.jobs.elo_report --season 2025-26
+# --from 2025-12-01   : début de la fenêtre d'évaluation (défaut : 1er décembre de la saison)
+# --out docs/backtest/elo-2025-26.md   : chemin du rapport (défaut : docs/backtest/elo-<saison>.md)
+```
+
+**Lecture seule** : le job n'appelle que les méthodes `load_*` de `SupabaseRepo` (via `engine.backtest.data.load_season`) — aucune écriture. Testé par `tests/jobs/test_elo_report.py` avec un faux repo dont seules les méthodes de lecture nécessaires sont déléguées ; tout le reste lève une `AssertionError`.
+
+**Rejeu** : les matchs éligibles (R11/R12 : saison régulière, `cup_final`, playoffs, terminés, scores connus) sont rejoués en ordre chronologique depuis le début de la saison, notes de départ 1500 pour chaque équipe — pas de fuite du futur (même filtre que `ratings_before`). Seuls les matchs de la fenêtre d'évaluation (défaut à partir du 1er décembre) comptent dans les métriques ; les matchs antérieurs ne servent qu'à faire chauffer les notes. Les notes sont mises à jour de proche en proche (`apply_game`, helper incrémental partagé avec `ratings_before`) : une seule passe par combinaison `(k, home_advantage)` plutôt qu'un appel à `ratings_before` par soirée (O(n) plutôt que O(n²)). La mise à jour des notes ne dépend jamais de `elo_per_share` (qui ne corrige que la probabilité prédite, pas le résultat observé) : les 4 valeurs de la grille `elo_per_share` sont évaluées sans rejouer les notes, un seul passage par `(k, home_advantage)` suffit pour les 4.
+
+**Grille** : `k ∈ {15, 20, 25}`, `home_advantage ∈ {40, 70, 100}`, `elo_per_share ∈ {0, 150, 300, 450}` (36 combinaisons). Métriques par combinaison : taux de victoires à domicile réel sur la fenêtre, précision (favori prédit gagnant), score de Brier, perte logarithmique. Référence naïve : probabilité constante = fréquence de victoires à domicile observée sur la fenêtre.
+
+**Correction blessures (calibration)** : absents = joueurs de rotation de l'équipe (part de production `team_shares` ≥ 5 %, sur les logs strictement antérieurs au match) sans minutes ce soir-là (log absent ou 0 minute) — pas les statuts d'indisponibilité réels (aucun historique en base) : contrairement au backtest L2, pas besoin d'oracle `dnp_oracle`, le rejeu regarde après coup si le joueur a effectivement joué.
+
+**Rapport** : meilleur jeu de paramètres (perte logarithmique minimale sur les 36 combinaisons), apport de la correction blessures (meilleur jeu avec `elo_per_share` possiblement > 0 vs meilleur jeu à `elo_per_share = 0`), tableau complet trié par perte logarithmique.
+
+**Limites** :
+- La proxy « absent = sans minutes ce soir-là » est optimiste par construction (dans la réalité, les rapports de blessures existaient avant le match) — sans fuite pour autant, le résultat du match n'entre jamais dans la correction elle-même.
+- Une seule saison chargée en base à ce stade → pas de validation croisée entre saisons, les paramètres choisis sont ceux qui minimisent la perte logarithmique sur 2025-26 uniquement.
+- Fenêtre par défaut à partir du 1er décembre : les deux premiers mois de la saison ne servent qu'à faire chauffer les notes depuis 1500, sans compter dans les métriques.
+
 ## Tests SQL
 
 Les fonctions et triggers SQL (migrations 017+) sont testés sur un Postgres jetable, reconstruit à chaque session de tests depuis `schema.sql` et toutes les migrations.

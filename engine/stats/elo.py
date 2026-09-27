@@ -49,15 +49,18 @@ def mov_multiplier(margin: int, winner_elo_diff: float) -> float:
     return ((abs(margin) + 3) ** 0.8) / (7.5 + 0.006 * winner_elo_diff)
 
 
-def _as_date(v) -> date:
+def as_date(v) -> date:
     return v if isinstance(v, date) else date.fromisoformat(str(v)[:10])
 
 
-def _game_season(game: dict) -> str:
-    return game.get("season") or season_for_date(_as_date(game["date"]))
+def game_season(game: dict) -> str:
+    return game.get("season") or season_for_date(as_date(game["date"]))
 
 
-def _is_countable(game: dict) -> bool:
+def is_countable(game: dict) -> bool:
+    """Match utilisable par l'Elo : terminé, scores connus, type éligible
+    (R11/R12). Public — réutilisé par le rejeu incrémental (`elo_report`,
+    tâche 3) pour filtrer/trier les matchs exactement comme `ratings_before`."""
     return (
         game.get("status") == "final"
         and game.get("home_score") is not None
@@ -66,47 +69,64 @@ def _is_countable(game: dict) -> bool:
     )
 
 
+def apply_season_carryover(ratings: dict[str, float], p: EloParams) -> None:
+    """Retour partiel vers `p.mean`, en place, pour toutes les équipes déjà
+    vues (changement de saison)."""
+    for team in ratings:
+        ratings[team] = p.carryover * ratings[team] + (1 - p.carryover) * p.mean
+
+
+def apply_game(ratings: dict[str, float], game: dict, p: EloParams) -> None:
+    """Applique en place le résultat d'un match déjà terminé à `ratings`
+    (équipe jamais vue : `START_RATING`). Aucune vérification de date ou de
+    type ici : c'est à l'appelant (`ratings_before`, ou le rejeu
+    chronologique du job `elo_report`) de garantir l'ordre et l'absence de
+    fuite — c'est le petit helper incrémental qui permet de rejouer une
+    saison en O(n) plutôt que de rappeler `ratings_before` (O(n)) à chaque
+    soirée (O(n²))."""
+    home, away = game["home_team"], game["away_team"]
+    home_rating = ratings.get(home, START_RATING)
+    away_rating = ratings.get(away, START_RATING)
+
+    home_score, away_score = game["home_score"], game["away_score"]
+    margin = home_score - away_score
+    home_won = margin > 0
+    prob_home = win_prob(home_rating, away_rating, p)
+
+    winner_diff = (
+        (home_rating + p.home_advantage) - away_rating
+        if home_won
+        else away_rating - (home_rating + p.home_advantage)
+    )
+    mult = mov_multiplier(margin, winner_diff)
+    actual_home = 1.0 if home_won else 0.0
+    delta = p.k * mult * (actual_home - prob_home)
+
+    ratings[home] = home_rating + delta
+    ratings[away] = away_rating - delta
+
+
 def ratings_before(games: list[dict], before: date, p: EloParams) -> dict[str, float]:
     """Notes de toutes les équipes vues, après tous les matchs terminés
     (status 'final', scores non nuls, game_type éligible) de date < before,
     rejoués en ordre (date, id) ; retour vers la moyenne à chaque changement
     de saison rencontré (toutes les équipes déjà vues sont régressées une
     fois, même celles sans match dans la nouvelle saison)."""
-    eligible = [g for g in games if _is_countable(g) and _as_date(g["date"]) < before]
-    eligible.sort(key=lambda g: (_as_date(g["date"]), g["id"]))
+    eligible = [g for g in games if is_countable(g) and as_date(g["date"]) < before]
+    eligible.sort(key=lambda g: (as_date(g["date"]), g["id"]))
 
     ratings: dict[str, float] = {}
     current_season: str | None = None
 
     for game in eligible:
-        season = _game_season(game)
+        season = game_season(game)
         if current_season is None:
             current_season = season
         elif season != current_season:
-            for team in ratings:
-                ratings[team] = p.carryover * ratings[team] + (1 - p.carryover) * p.mean
+            apply_season_carryover(ratings, p)
             current_season = season
 
-        home, away = game["home_team"], game["away_team"]
-        home_rating = ratings.get(home, START_RATING)
-        away_rating = ratings.get(away, START_RATING)
-
-        home_score, away_score = game["home_score"], game["away_score"]
-        margin = home_score - away_score
-        home_won = margin > 0
-        prob_home = win_prob(home_rating, away_rating, p)
-
-        winner_diff = (
-            (home_rating + p.home_advantage) - away_rating
-            if home_won
-            else away_rating - (home_rating + p.home_advantage)
-        )
-        mult = mov_multiplier(margin, winner_diff)
-        actual_home = 1.0 if home_won else 0.0
-        delta = p.k * mult * (actual_home - prob_home)
-
-        ratings[home] = home_rating + delta
-        ratings[away] = away_rating - delta
+        apply_game(ratings, game, p)
 
     # `before` peut être en début de saison N+1 alors qu'aucun match de N+1
     # n'a encore été joué (ex. soir d'ouverture) : la boucle ci-dessus n'a
@@ -114,8 +134,7 @@ def ratings_before(games: list[dict], before: date, p: EloParams) -> dict[str, f
     # (idempotent avec la boucle : si un match N+1 a déjà été traité,
     # current_season vaut déjà season_for_date(before) et rien ne change).
     if current_season is not None and season_for_date(before) != current_season:
-        for team in ratings:
-            ratings[team] = p.carryover * ratings[team] + (1 - p.carryover) * p.mean
+        apply_season_carryover(ratings, p)
 
     return ratings
 
