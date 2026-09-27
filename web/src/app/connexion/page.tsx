@@ -7,7 +7,7 @@ export default function ConnexionPage() {
         CONNE<span className="flame-text">XION</span>
       </h1>
       <p className="text-sm text-[color:var(--color-text-mute)] mt-2">
-        Un code à 6 chiffres t&apos;est envoyé par e-mail. Il ouvre une session sur cet appareil.
+        Un code à 6 chiffres t&apos;est envoyé. Il ouvre une session sur cet appareil.
       </p>
       <LoginForm />
     </div>

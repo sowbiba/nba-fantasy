@@ -92,7 +92,13 @@ const IconScore = (
   </svg>
 );
 
-const tabs: Tab[] = [
+const PUBLIC_TABS: Tab[] = [
+  { href: "/", label: "Ce soir", icon: IconBall },
+  { href: "/games", label: "Matchs", icon: IconScore },
+  { href: "/injuries", label: "Blessés", icon: IconMed },
+];
+
+const OWNER_TABS: Tab[] = [
   { href: "/", label: "Ce soir", icon: IconBall },
   { href: "/deck", label: "Deck", icon: IconChart },
   { href: "/games", label: "Matchs", icon: IconScore },
@@ -100,8 +106,9 @@ const tabs: Tab[] = [
   { href: "/injuries", label: "Blessés", icon: IconMed },
 ];
 
-export default function BottomNav() {
+export default function BottomNav({ owner }: { owner: boolean }) {
   const pathname = usePathname();
+  const tabs = owner ? OWNER_TABS : PUBLIC_TABS;
 
   return (
     <nav

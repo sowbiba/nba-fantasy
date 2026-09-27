@@ -4,7 +4,7 @@ import { createAuthClient } from "@/lib/supabase/server";
 import { isOwnerEmail } from "@/lib/auth";
 import { deckDate, seasonForDate } from "@/lib/date";
 import PicksHistory, { HistoryRow } from "./PicksHistory";
-import SignOutButton from "./SignOutButton";
+import SignOutButton from "@/components/SignOutButton";
 
 export const revalidate = 0;
 
