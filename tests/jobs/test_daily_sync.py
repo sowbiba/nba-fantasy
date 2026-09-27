@@ -280,6 +280,34 @@ def test_daily_sync_correction_blessures_baisse_la_probabilite_de_l_equipe_du_bl
     assert prob_blesse > prob_sain
 
 
+class _BoomTeamElo:
+    """Enveloppe un `FakeRepo` : délègue tout sauf `upsert_team_elo`, qui
+    lève — simule une panne d'écriture Elo (table absente, erreur
+    transitoire) pour vérifier que `run` isole cette étape (`_step`)."""
+
+    def __init__(self, fake):
+        self._fake = fake
+
+    def upsert_team_elo(self, rows):
+        raise RuntimeError("team_elo indisponible")
+
+    def __getattr__(self, name):
+        return getattr(self._fake, name)
+
+
+def test_daily_sync_continue_si_l_ecriture_elo_echoue():
+    fake = _base_repo()
+    repo = _BoomTeamElo(fake)
+    result = run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
+    assert any("elo" in w.lower() for w in result.warnings)
+    # Le reste du job (recommandations, plan) doit quand même tourner :
+    # l'Elo n'est qu'un affichage additionnel, pas un pré-requis de decide().
+    assert fake.recommendations[TODAY]
+    assert fake.plan
+    # Et l'échec n'a laissé aucune ligne `team_elo` à moitié écrite.
+    assert not fake.team_elo
+
+
 def test_daily_sync_pas_de_x2_si_le_mois_est_deja_servi():
     yesterday = TODAY - timedelta(days=1)
     picks = [{"id": 1, "player_id": 3, "game_id": "0022600011", "date": yesterday.isoformat(),

@@ -227,3 +227,25 @@ def test_parse_args_grille_par_defaut_si_options_omises():
     args = _parse_args(["--season", SEASON])
     assert _parse_grid(args.k, K_GRID) == K_GRID
     assert _parse_grid(args.hca, (40.0, 70.0, 100.0)) == (40.0, 70.0, 100.0)
+    assert _parse_grid(args.eps, SHARE_GRID) == SHARE_GRID   # --eps omis → grille par défaut préservée
+
+
+def test_parse_grid_valeur_vide_ou_blanche_retombe_sur_le_defaut():
+    from engine.jobs.elo_report import _parse_grid
+
+    assert _parse_grid(None, SHARE_GRID) == SHARE_GRID
+    assert _parse_grid("", SHARE_GRID) == SHARE_GRID
+    assert _parse_grid("   ", SHARE_GRID) == SHARE_GRID
+
+
+def test_main_sans_eps_garde_la_grille_share_par_defaut(tmp_path, monkeypatch):
+    readonly = ReadOnlyRepo(_season_repo())
+    monkeypatch.setattr("engine.io.repo.SupabaseRepo.from_env", classmethod(lambda cls: readonly))
+    out = tmp_path / "rapport.md"
+    # --k/--hca personnalisés, --eps omis : la grille elo_per_share par
+    # défaut (SHARE_GRID) doit rester utilisée, pas une grille vide.
+    main(["--season", SEASON, "--out", str(out), "--k", "30", "--hca", "80"])
+    report = out.read_text(encoding="utf-8")
+    assert len(SHARE_GRID) > 1
+    for eps in SHARE_GRID:
+        assert f"| {eps:g} |" in report

@@ -278,7 +278,7 @@ def _parse_grid(raw: str | None, default: tuple[float, ...]) -> tuple[float, ...
     """`--k`/`--hca`/`--eps` : liste de flottants séparés par des virgules,
     pour rejouer le rapport sur une grille plus large que la grille par
     défaut (défaut : la grille du module, inchangée si l'option est omise)."""
-    if raw is None:
+    if raw is None or not raw.strip():
         return default
     return tuple(float(v.strip()) for v in raw.split(",") if v.strip())
 

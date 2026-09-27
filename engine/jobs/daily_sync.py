@@ -134,6 +134,24 @@ def game_prediction_rows(window: list[dict], today: date, ratings: dict[str, flo
     return rows
 
 
+def _write_elo(repo, season_games: list[dict], window: list[dict], today: date, season: str,
+              players: dict[int, dict], all_logs: list[GameLog], elo_params: EloParams,
+              now: datetime) -> None:
+    """Note Elo de chaque équipe et prédictions des matchs à venir (L3a §3).
+    Appelée via `_step` par `run` : une panne d'écriture ici (table absente,
+    erreur transitoire) ne doit jamais empêcher les recommandations et le
+    plan du soir d'être écrits — ce sont eux qui comptent le plus pour
+    l'utilisateur, l'Elo n'est qu'un affichage connecté additionnel."""
+    ratings = ratings_before(season_games, today + timedelta(days=1), elo_params)
+    team_rows = team_elo_rows(season_games, today, season, ratings, now)
+    if team_rows:
+        repo.upsert_team_elo(team_rows)
+    absent = absent_shares(today=today, players=players, logs=all_logs)
+    pred_rows = game_prediction_rows(window, today, ratings, absent, elo_params, now)
+    if pred_rows:
+        repo.upsert_game_predictions(pred_rows)
+
+
 def _apply_injuries(repo, injuries: dict[str, list[dict]]) -> None:
     players = repo.load_players()
     by_team: dict[str, list[dict]] = defaultdict(list)
@@ -192,14 +210,8 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime,
 
     window = repo.load_games_between(today - timedelta(days=SCHEDULE_PAST_DAYS), today + timedelta(days=SCHEDULE_AHEAD_DAYS))
 
-    ratings = ratings_before(season_games, today + timedelta(days=1), elo_params)
-    team_rows = team_elo_rows(season_games, today, season, ratings, now)
-    if team_rows:
-        repo.upsert_team_elo(team_rows)
-    absent = absent_shares(today=today, players=players, logs=all_logs)
-    pred_rows = game_prediction_rows(window, today, ratings, absent, elo_params, now)
-    if pred_rows:
-        repo.upsert_game_predictions(pred_rows)
+    _step("elo", lambda: _write_elo(repo, season_games, window, today, season, players, all_logs,
+                                    elo_params, now), result)
 
     series_rows = repo.load_series(season)
     nights = [n for n in build_nights([g for g in window if _d(g["date"]) >= today], series_rows)]
