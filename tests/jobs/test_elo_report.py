@@ -196,3 +196,34 @@ def test_main_accepte_from_explicite(tmp_path, monkeypatch):
     main(["--season", SEASON, "--from", "2025-11-15", "--out", str(out)])
     report = out.read_text(encoding="utf-8")
     assert "2025-11-15" in report
+
+
+def test_run_grille_personnalisee_via_k_hca_eps():
+    # `run(..., k_grid=..., hca_grid=..., share_grid=...)` rejoue exactement
+    # cette grille (pas la grille par défaut du module).
+    data = _data()
+    result = run(data, SEASON, k_grid=(30.0,), hca_grid=(80.0,), share_grid=(0.0, 500.0))
+    assert len(result["rows"]) == 2
+    assert {r.k for r in result["rows"]} == {30.0}
+    assert {r.home_advantage for r in result["rows"]} == {80.0}
+    assert {r.elo_per_share for r in result["rows"]} == {0.0, 500.0}
+
+
+def test_main_accepte_k_hca_eps_pour_elargir_la_grille(tmp_path, monkeypatch):
+    readonly = ReadOnlyRepo(_season_repo())
+    monkeypatch.setattr("engine.io.repo.SupabaseRepo.from_env", classmethod(lambda cls: readonly))
+    out = tmp_path / "rapport.md"
+    main(["--season", SEASON, "--out", str(out), "--k", "30", "--hca", "50,90", "--eps", "0,600"])
+    report = out.read_text(encoding="utf-8")
+    # Grille 1 × 2 × 2 = 4 lignes dans le tableau complet, aucune des valeurs
+    # par défaut (ex. k = 20) ne doit y apparaître.
+    assert report.count("\n| 30 |") == 4
+    assert "| 20 |" not in report
+
+
+def test_parse_args_grille_par_defaut_si_options_omises():
+    from engine.jobs.elo_report import _parse_args, _parse_grid
+
+    args = _parse_args(["--season", SEASON])
+    assert _parse_grid(args.k, K_GRID) == K_GRID
+    assert _parse_grid(args.hca, (40.0, 70.0, 100.0)) == (40.0, 70.0, 100.0)

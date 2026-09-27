@@ -108,13 +108,13 @@ def _log_loss(y: float, p: float) -> float:
 
 
 def _replay(data: SeasonData, eligible: list[dict], absent_shares: dict[str, dict[str, float]],
-           from_date: date, k: float, hca: float) -> list[GridRow]:
+           from_date: date, k: float, hca: float, share_grid: tuple[float, ...] = SHARE_GRID) -> list[GridRow]:
     """Une seule passe chronologique pour (k, home_advantage) : rejoue les
     notes match par match (`apply_game`, incrémental — pas de rappel à
     `ratings_before`) et, pour chaque match de la fenêtre d'évaluation,
-    calcule la prédiction des 4 `elo_per_share` de la grille avant de mettre
-    les notes à jour avec le vrai résultat."""
-    predictions: dict[float, list[tuple[float, float]]] = {eps: [] for eps in SHARE_GRID}
+    calcule la prédiction des `elo_per_share` de `share_grid` (par défaut
+    `SHARE_GRID`) avant de mettre les notes à jour avec le vrai résultat."""
+    predictions: dict[float, list[tuple[float, float]]] = {eps: [] for eps in share_grid}
     ratings: dict[str, float] = {}
 
     for game in eligible:
@@ -123,7 +123,7 @@ def _replay(data: SeasonData, eligible: list[dict], absent_shares: dict[str, dic
             absent = absent_shares[game["id"]]
             home_score, away_score = game["home_score"], game["away_score"]
             actual_home = 1.0 if home_score > away_score else 0.0
-            for eps in SHARE_GRID:
+            for eps in share_grid:
                 params = EloParams(k=k, home_advantage=hca, elo_per_share=eps)
                 pred = predict(game, ratings, absent, params)
                 predictions[eps].append((actual_home, pred.home_win_prob))
@@ -135,7 +135,7 @@ def _replay(data: SeasonData, eligible: list[dict], absent_shares: dict[str, dic
         apply_game(ratings, game, EloParams(k=k, home_advantage=hca))
 
     rows = []
-    for eps in SHARE_GRID:
+    for eps in share_grid:
         pairs = predictions[eps]
         n = len(pairs)
         if n == 0:
@@ -149,18 +149,22 @@ def _replay(data: SeasonData, eligible: list[dict], absent_shares: dict[str, dic
     return rows
 
 
-def run(data: SeasonData, season: str, from_date: date | None = None) -> dict:
+def run(data: SeasonData, season: str, from_date: date | None = None, *,
+       k_grid: tuple[float, ...] = K_GRID, hca_grid: tuple[float, ...] = HCA_GRID,
+       share_grid: tuple[float, ...] = SHARE_GRID) -> dict:
     """Calcule la grille complète et la référence naïve (lecture seule,
-    aucun accès réseau/base — `data` est déjà chargée)."""
+    aucun accès réseau/base — `data` est déjà chargée). `k_grid`/`hca_grid`/
+    `share_grid` permettent de rejouer sur une grille plus large que la
+    grille par défaut (option CLI `--k`/`--hca`/`--eps`)."""
     from_date = from_date or _default_from(season)
     eligible = [g for g in _eligible_games(data.games) if game_season(g) == season]
     window_games = [g for g in eligible if as_date(g["date"]) >= from_date]
     absent_shares = _absent_shares_by_game(data, window_games)
 
     rows: list[GridRow] = []
-    for k in K_GRID:
-        for hca in HCA_GRID:
-            rows.extend(_replay(data, eligible, absent_shares, from_date, k, hca))
+    for k in k_grid:
+        for hca in hca_grid:
+            rows.extend(_replay(data, eligible, absent_shares, from_date, k, hca, share_grid))
 
     n_window = len(window_games)
     home_win_rate = (sum(1 for g in window_games if g["home_score"] > g["away_score"]) / n_window
@@ -270,6 +274,15 @@ def render_report(season: str, result: dict) -> str:
     return "\n".join(lines)
 
 
+def _parse_grid(raw: str | None, default: tuple[float, ...]) -> tuple[float, ...]:
+    """`--k`/`--hca`/`--eps` : liste de flottants séparés par des virgules,
+    pour rejouer le rapport sur une grille plus large que la grille par
+    défaut (défaut : la grille du module, inchangée si l'option est omise)."""
+    if raw is None:
+        return default
+    return tuple(float(v.strip()) for v in raw.split(",") if v.strip())
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Rapport Elo en lecture seule : validation et choix des paramètres (grille k, "
@@ -278,6 +291,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--from", dest="from_date", default=None, help="AAAA-MM-JJ (défaut : 1er décembre)")
     parser.add_argument("--out", default=None, help="chemin du rapport Markdown "
                                                      "(défaut : docs/backtest/elo-<saison>.md)")
+    parser.add_argument("--k", default=None, help="grille k séparée par des virgules "
+                                                   f"(défaut : {','.join(f'{v:g}' for v in K_GRID)})")
+    parser.add_argument("--hca", default=None, help="grille home_advantage séparée par des virgules "
+                                                     f"(défaut : {','.join(f'{v:g}' for v in HCA_GRID)})")
+    parser.add_argument("--eps", default=None, help="grille elo_per_share séparée par des virgules "
+                                                     f"(défaut : {','.join(f'{v:g}' for v in SHARE_GRID)})")
     return parser.parse_args(argv)
 
 
@@ -287,11 +306,14 @@ def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     from_date = date.fromisoformat(args.from_date) if args.from_date else None
     out = Path(args.out) if args.out else Path(f"docs/backtest/elo-{args.season}.md")
+    k_grid = _parse_grid(args.k, K_GRID)
+    hca_grid = _parse_grid(args.hca, HCA_GRID)
+    share_grid = _parse_grid(args.eps, SHARE_GRID)
 
     repo = SupabaseRepo.from_env()
     data = load_season(repo, args.season)
 
-    result = run(data, args.season, from_date)
+    result = run(data, args.season, from_date, k_grid=k_grid, hca_grid=hca_grid, share_grid=share_grid)
     report = render_report(args.season, result)
 
     out.parent.mkdir(parents=True, exist_ok=True)
