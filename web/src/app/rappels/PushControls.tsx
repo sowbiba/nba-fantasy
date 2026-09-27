@@ -8,7 +8,8 @@ type Status = "checking" | "unsupported" | "ios-not-installed" | "not-configured
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 function isIos(): boolean {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window);
+  return (/iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window)) ||
+         (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
 function isStandalone(): boolean {
@@ -72,7 +73,7 @@ export default function PushControls() {
         }
         const permission = await Notification.requestPermission();
         if (permission !== "granted") {
-          setError("Notifications refusées : active-les dans les réglages du téléphone.");
+          setError("Notifications refusées. Sur iPhone, elles ne marchent que depuis l'app ajoutée à l'écran d'accueil (Partager → Sur l'écran d'accueil, « Ouvrir en tant qu'app web » activé), ouverte depuis son icône. Sinon, autorise-les dans Réglages → Notifications.");
           return;
         }
         const registration = await navigator.serviceWorker.ready;
