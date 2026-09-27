@@ -11,6 +11,8 @@ PRIVATE_SELECTS = {
     "player_watchlist": "select * from player_watchlist",
     "weekly_plan": "select * from weekly_plan",
     "series_forecast": "select * from series_forecast",
+    "team_outlook": "select * from team_outlook",
+    "player_team_rank": "select * from player_team_rank",
 }
 
 PUBLIC_SELECTS = {
@@ -60,6 +62,12 @@ def _seed(pg):
     pg.execute(
         "insert into series_forecast (series_id, winner_team, expected_games) values "
         f"({series_id}, 'DEN', 6)"
+    )
+    pg.execute(
+        "insert into team_outlook (team, outlook) values ('DEN', 'advance')"
+    )
+    pg.execute(
+        "insert into player_team_rank (player_id, team, save_rank) values (1, 'DEN', 1)"
     )
 
 

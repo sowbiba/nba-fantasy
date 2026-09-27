@@ -10,6 +10,10 @@
 -- Restent publics (inchangés) : games, game_logs, players, injuries
 -- (colonnes de players), nights, series, matchups, sync_log, standings.
 --
+-- team_outlook et player_team_rank (012) sont aussi la couche de stratégie
+-- personnelle du joueur (outlook par équipe, save rank, notes libres) :
+-- même traitement que picks/plan ci-dessus.
+--
 -- Idempotente.
 
 drop policy if exists "anon read picks" on picks;
@@ -19,6 +23,8 @@ drop policy if exists "anon read plan" on plan;
 drop policy if exists "anon read second_chances" on second_chances;
 drop policy if exists "anon read watchlist" on player_watchlist;
 drop policy if exists "anon read forecast" on series_forecast;
+drop policy if exists "anon read team_outlook" on team_outlook;
+drop policy if exists "anon read player_team_rank" on player_team_rank;
 
 -- plan_latest est une vue security_invoker sur plan (021) : elle hérite du
 -- retrait ci-dessus sans policy propre.
