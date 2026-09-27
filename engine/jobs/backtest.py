@@ -241,10 +241,11 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
     if data["x2_truncated_month"] is not None:
         y, m = data["x2_truncated_month"]
         lines.append(f"- La fenêtre se termine avant la fin du mois {m:02d}/{y} (mois x2) : asymétrie en "
-                     "faveur de `plan` pour ce mois — `best_available` (référence naïve) pose son x2 sur "
-                     "la dernière soirée éligible du mois, hors fenêtre, donc perd le x2 de ce mois ; "
-                     "`plan` (planificateur MILP, S3) peut le poser plus tôt dans le mois dès que la fin du "
-                     "mois est visible dans son horizon de 35 jours, donc à l'intérieur de la fenêtre.")
+                     "faveur de `plan` et `best_available_x2plan` pour ce mois — `best_available` (référence "
+                     "naïve) pose son x2 sur la dernière soirée éligible du mois, hors fenêtre, donc perd le "
+                     "x2 de ce mois ; `plan` et `best_available_x2plan` (x2 du planificateur MILP, S3) "
+                     "peuvent le poser plus tôt dans le mois dès que la fin du mois est visible dans leur "
+                     "horizon de 35 jours, donc à l'intérieur de la fenêtre.")
     lines.append("- Le score « officiel » (`picks.actual_score`) est rempli à partir des mêmes game_logs "
                  "(`score_picks`) : l'écart officiel/logs n'est pas une vérification indépendante contre "
                  "trashtalk.co. Dates vérifiées sur 2025-26 (lecture seule) : aucun log dont la date "
