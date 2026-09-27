@@ -9,7 +9,7 @@ import { HARD_OUT_STATUSES, isClosed } from "@/lib/display";
 export type DeckNightProps = {
   date: string; closingAt: string; nGames: number; isPhantom: boolean; isToday: boolean;
   pick: { playerId: number; name: string; team: string; injury: string | null; isX2: boolean } | null;
-  suggestion: { playerId: number; name: string; team: string; gameId: string; projection: number; explanation: string } | null;
+  suggestion: { playerId: number; name: string; team: string; gameId: string; projection: number; explanation: string; isX2: boolean } | null;
 };
 
 export default function DeckNight(p: DeckNightProps) {
@@ -45,7 +45,10 @@ export default function DeckNight(p: DeckNightProps) {
           <Link href={`/player/${p.pick.playerId}`} className="font-semibold text-[color:var(--color-emerald)]">
             {p.pick.name}
           </Link>{" "}
-          <span className="text-[11px] text-[color:var(--color-text-mute)]">{p.pick.team}{p.pick.isX2 ? " · x2" : ""}</span>
+          <span className="text-[11px] text-[color:var(--color-text-mute)]">
+            {p.pick.team}{p.pick.isX2 ? " · x2" : ""}
+            {p.suggestion?.isX2 && !p.pick.isX2 ? " · plan : x2 ce soir-là" : ""}
+          </span>
           {p.pick.injury && HARD_OUT_STATUSES.has(p.pick.injury) && !closed && (
             <p className="text-xs text-[color:var(--color-crimson)]">⚠️ {p.pick.injury} : remplace-le avant la fermeture.</p>
           )}
@@ -56,6 +59,11 @@ export default function DeckNight(p: DeckNightProps) {
             <Link href={`/player/${p.suggestion.playerId}`} className="text-[color:var(--color-text)]">
               {p.suggestion.name}
             </Link>{" "}
+            {p.suggestion.isX2 && (
+              <span title="Le plan suggère le x2 cette nuit-là" className="rounded-full bg-[color:var(--color-gold)]/15 border border-[color:var(--color-gold)]/40 px-1.5 py-0.5 text-[10px] font-bold text-[color:var(--color-gold)]">
+                x2
+              </span>
+            )}{" "}
             <span className="text-[11px] text-[color:var(--color-text-mute)]">{p.suggestion.explanation}</span>
           </div>
           {closed ? (

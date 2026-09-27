@@ -43,6 +43,17 @@ export function isClosed(closingAt: string | null | undefined, now: Date = new D
   return now.getTime() >= new Date(closingAt).getTime();
 }
 
+/** Suggestion du x2 (plan indicatif, 30j) : le plan reste une aide, le pick "meilleur dispo"
+ *  du soir ne change pas. "pose" = le plan suggère de poser le x2 ce soir (mois autorisé, pas
+ *  déjà posé) ; "deja" = c'est déjà fait ; null = rien à afficher (pas de suggestion, ou mois
+ *  interdit). Miroir informatif de is_x2 (plan, migration 019/021) — la contrainte réelle
+ *  (fenêtre 30j) reste en base (picks_x2_window, migration 021). */
+export function x2Hint(input: { planIsX2: boolean; hasPick: boolean; pickIsX2: boolean; x2Allowed: boolean }): "pose" | "deja" | null {
+  if (!input.planIsX2 || !input.x2Allowed) return null;
+  if (input.hasPick && input.pickIsX2) return "deja";
+  return "pose";
+}
+
 export function homeState(s: { hasNight: boolean; recCount: number; hasPick: boolean }) {
   if (!s.hasNight) return "no_games" as const;
   if (s.hasPick) return "picked" as const;

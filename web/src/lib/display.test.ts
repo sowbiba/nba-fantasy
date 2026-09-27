@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeState, isClosed, pickPoints, recMeta, topDefender } from "./display";
+import { homeState, isClosed, pickPoints, recMeta, topDefender, x2Hint } from "./display";
 
 describe("recMeta", () => {
   it("formate les colonnes S1", () => {
@@ -44,6 +44,17 @@ describe("isClosed", () => {
     expect(isClosed(null, new Date("2026-11-24T23:00:00Z"))).toBe(false);
     expect(isClosed(undefined, new Date("2026-11-24T23:00:00Z"))).toBe(false);
   });
+});
+
+describe("x2Hint", () => {
+  it("le plan suggère le x2 ce soir, pas encore posé : pose", () =>
+    expect(x2Hint({ planIsX2: true, hasPick: true, pickIsX2: false, x2Allowed: true })).toBe("pose"));
+  it("le plan suggère le x2, déjà posé sur ce pick : deja", () =>
+    expect(x2Hint({ planIsX2: true, hasPick: true, pickIsX2: true, x2Allowed: true })).toBe("deja"));
+  it("mois interdit (x2Allowed false) : rien à afficher même si le plan suggère", () =>
+    expect(x2Hint({ planIsX2: true, hasPick: false, pickIsX2: false, x2Allowed: false })).toBeNull());
+  it("le plan ne suggère pas le x2 ce soir : rien à afficher", () =>
+    expect(x2Hint({ planIsX2: false, hasPick: true, pickIsX2: false, x2Allowed: true })).toBeNull());
 });
 
 describe("homeState", () => {
