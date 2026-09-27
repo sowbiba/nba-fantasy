@@ -8,7 +8,7 @@ import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import MyPickCard from "@/components/MyPickCard";
 import { deckDate, frLongDate, parisTime } from "@/lib/date";
-import { HARD_OUT_STATUSES, homeState, topDefender } from "@/lib/display";
+import { HARD_OUT_STATUSES, homeState, topDefender, x2Hint, x2HintText } from "@/lib/display";
 
 export const revalidate = 0;
 
@@ -16,23 +16,27 @@ export const revalidate = 0;
 // picks_x2_window, migration 021), ce set ne fait que masquer le bouton.
 const X2_MONTHS = new Set([11, 12, 1, 2, 3, 4]);
 
+type PlanRow = { night: string; player_id: number; is_x2: boolean };
+
 async function getData() {
   const deck = deckDate();
-  const [nightRes, gamesRes, recsRes, pickRes, syncRes] = await Promise.all([
+  const [nightRes, gamesRes, recsRes, pickRes, syncRes, planRes] = await Promise.all([
     supabase.from("nights").select("*").eq("date", deck).maybeSingle(),
     supabase.from("games").select("*").eq("date", deck).order("tip_off"),
     supabase.from("recommendations").select("*").eq("date", deck).order("rank"),
     supabase.from("picks").select("*").eq("date", deck).maybeSingle(),
     supabase.from("sync_log").select("*").eq("job", "daily_sync").order("started_at", { ascending: false }).limit(1),
+    supabase.from("plan_latest").select("night, player_id, is_x2").eq("night", deck).maybeSingle(),
   ]);
   const night = (nightRes.data as Night | null) ?? null;
+  const plan = (planRes.data as PlanRow | null) ?? null;
   const games = ((gamesRes.data || []) as Game[]).filter((g) =>
     // Miroir de ELIGIBLE_TYPES (engine/rules/game_types.py, R4).
     ["regular", "cup_final", "playoffs"].includes(g.game_type));
   const recs = (recsRes.data || []) as Recommendation[];
   const pick = (pickRes.data as Pick | null) ?? null;
 
-  const ids = [...new Set([...recs.map((r) => r.player_id), ...(pick ? [pick.player_id] : [])])];
+  const ids = [...new Set([...recs.map((r) => r.player_id), ...(pick ? [pick.player_id] : []), ...(plan ? [plan.player_id] : [])])];
   const playersRes = ids.length ? await supabase.from("players").select("*").in("id", ids) : { data: [], error: null };
   const players = new Map(((playersRes.data || []) as Player[]).map((p) => [p.id, p]));
 
@@ -71,20 +75,28 @@ async function getData() {
     ...r, defender: defenders.get(`${r.player_id}:${opponentOf(r)}`) ?? null,
   }));
 
-  const dataError = [nightRes, gamesRes, recsRes, pickRes, playersRes].some((r) => r.error) || !!matchupError;
+  const dataError = [nightRes, gamesRes, recsRes, pickRes, playersRes, planRes].some((r) => r.error) || !!matchupError;
 
   return {
-    deck, night, games, recsWithPlayers, pick, dataError,
+    deck, night, games, recsWithPlayers, pick, dataError, plan,
     pickPlayer: pick ? players.get(pick.player_id) ?? null : null,
+    planPlayer: plan ? players.get(plan.player_id) ?? null : null,
     sync: (syncRes.data?.[0] || null) as SyncLog | null,
   };
 }
 
 export default async function TonightPage() {
-  const { deck, night, games, recsWithPlayers, pick, pickPlayer, sync, dataError } = await getData();
+  const { deck, night, games, recsWithPlayers, pick, pickPlayer, plan, planPlayer, sync, dataError } = await getData();
   const state = homeState({ hasNight: !!night && night.n_eligible_games > 0, recCount: recsWithPlayers.length, hasPick: !!pick });
   const top3 = recsWithPlayers.slice(0, 3);
   const month = Number(deck.slice(5, 7));
+  const x2Allowed = (pick ? pick.mode === "regular" : night?.mode === "regular") && X2_MONTHS.has(month);
+  // R10 (informatif) : avec un pick, le moteur replanifie sur ce pick ; on ne suit le plan
+  // que si son joueur est bien le pick (voir x2Hint).
+  const hint = x2Hint({
+    planIsX2: !!plan?.is_x2, planPlayerId: plan?.player_id ?? null, pickPlayerId: pick?.player_id ?? null,
+    pickIsX2: pick?.is_x2 ?? false, x2Allowed,
+  });
 
   return (
     <div className="animate-fade-in">
@@ -120,9 +132,15 @@ export default async function TonightPage() {
         </div>
       )}
 
+      {hint && (
+        <div className="mx-3 mt-3 rounded-[var(--radius-card-sm)] border border-[color:var(--color-gold)]/40 bg-[color:var(--color-gold)]/10 px-3 py-2 text-xs text-[color:var(--color-gold)]">
+          {x2HintText(hint, planPlayer?.name)}
+        </div>
+      )}
+
       {pick && pickPlayer ? (
         <MyPickCard key={`${pick.id}-${pick.is_x2}`} date={deck} playerId={pickPlayer.id} playerName={pickPlayer.name} team={pickPlayer.team}
-                    isX2={pick.is_x2} x2Allowed={pick.mode === "regular" && X2_MONTHS.has(month)} closingAt={night?.closing_at ?? ""} />
+                    isX2={pick.is_x2} x2Allowed={x2Allowed} closingAt={night?.closing_at ?? ""} />
       ) : (
         !dataError && <NoPickBanner hasGamesTonight={state !== "no_games"} />
       )}

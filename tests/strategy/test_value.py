@@ -29,3 +29,11 @@ def test_tonight_value_exemple_s1():
 
 def test_future_value():
     assert future_value(10, 0.9, 50.0) == pytest.approx(0.985 ** 10 * 45.0)
+
+
+def test_x2_gain_penalise_le_risque_et_le_dnp():
+    from engine.strategy.value import X2_MONTHS, X2_RISK_K, x2_gain
+    assert x2_gain(1.0, 50.0, 10.0) == 50.0 - X2_RISK_K * 10.0
+    assert x2_gain(0.0, 50.0, 10.0) == 0.0
+    assert x2_gain(0.5, 50.0, 0.0) == 25.0
+    assert 10 not in X2_MONTHS and 5 not in X2_MONTHS and {11, 4} <= X2_MONTHS

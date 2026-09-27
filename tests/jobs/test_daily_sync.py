@@ -175,3 +175,19 @@ def test_fake_repo_matchups_raw_exige_def_player_id():
     # (migration 013) — une ligne sans def_player_id doit être rejetée.
     with pytest.raises(AssertionError):
         FakeRepo().upsert_matchups_raw([{"game_id": "g", "off_player_id": 1}])
+
+
+def test_daily_sync_ecrit_le_x2_du_plan():
+    # Seule soirée de novembre visible = ce soir → x2 de novembre forcé (S3).
+    repo = _base_repo()
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
+    assert [(r["night"], r["is_x2"]) for r in repo.plan] == [(TODAY.isoformat(), True)]
+
+
+def test_daily_sync_pas_de_x2_si_le_mois_est_deja_servi():
+    yesterday = TODAY - timedelta(days=1)
+    picks = [{"id": 1, "player_id": 3, "game_id": "0022600011", "date": yesterday.isoformat(),
+              "mode": "regular", "season": "2026-27", "actual_score": None, "is_x2": True}]
+    repo = _base_repo(picks=picks)
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
+    assert repo.plan and not any(r["is_x2"] for r in repo.plan)

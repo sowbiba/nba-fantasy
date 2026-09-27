@@ -5,7 +5,7 @@ import DeckNight from "@/components/DeckNight";
 
 export const revalidate = 0;
 
-type PlanRow = { night: string; player_id: number; projection: number; explanation: string };
+type PlanRow = { night: string; player_id: number; projection: number; explanation: string; is_x2: boolean };
 type PickRow = { date: string; player_id: number; is_x2: boolean; game_id: string };
 
 export default async function DeckPage() {
@@ -13,7 +13,7 @@ export default async function DeckPage() {
   const until = addDays(today, 14);
   const [nightsRes, planRes, picksRes] = await Promise.all([
     supabase.from("nights").select("*").gte("date", today).lte("date", until).order("date"),
-    supabase.from("plan_latest").select("night, player_id, projection, explanation").gte("night", today).lte("night", until),
+    supabase.from("plan_latest").select("night, player_id, projection, explanation, is_x2").gte("night", today).lte("night", until),
     supabase.from("picks").select("date, player_id, is_x2, game_id").gte("date", today).lte("date", until),
   ]);
   const nights = (nightsRes.data || []) as Night[];
@@ -55,7 +55,7 @@ export default async function DeckPage() {
             <DeckNight key={n.date} date={n.date} closingAt={n.closing_at} nGames={n.n_eligible_games}
               isPhantom={n.is_phantom} isToday={n.date === today}
               pick={pick && pickPlayer ? { playerId: pickPlayer.id, name: pickPlayer.name, team: pickPlayer.team, injury: pickPlayer.injury_status, isX2: pick.is_x2 } : null}
-              suggestion={s && sPlayer && sGame ? { playerId: sPlayer.id, name: sPlayer.name, team: sPlayer.team, gameId: sGame.id, projection: s.projection, explanation: s.explanation } : null} />
+              suggestion={s && sPlayer && sGame ? { playerId: sPlayer.id, name: sPlayer.name, team: sPlayer.team, gameId: sGame.id, projection: s.projection, explanation: s.explanation, isX2: s.is_x2 } : null} />
           );
         })}
         {nights.length === 0 && !dataError && <p className="text-sm text-[color:var(--color-text-mute)]">Aucune soirée TTFL dans les 14 prochains jours.</p>}

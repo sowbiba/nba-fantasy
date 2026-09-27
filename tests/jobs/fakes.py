@@ -138,6 +138,14 @@ class FakeRepo:
     def set_pick_score(self, pick_id, score):
         next(p for p in self.picks if p["id"] == pick_id)["actual_score"] = score
 
+    def upsert_nights(self, rows):
+        _validate(rows, NIGHTS_ALLOWED, NIGHTS_NOT_NULL, "nights")
+        bad_mode = [r["mode"] for r in rows if r["mode"] not in NIGHT_MODES]
+        assert not bad_mode, f"nights : mode(s) invalide(s) {bad_mode}"
+        # Upsert on date: keep existing rows not in the upserted dates, append new ones
+        kept_dates = {r["date"] for r in rows}
+        self.nights = [n for n in self.nights if n["date"] not in kept_dates] + list(rows)
+
     def replace_nights(self, start, rows):
         _validate(rows, NIGHTS_ALLOWED, NIGHTS_NOT_NULL, "nights")
         bad_mode = [r["mode"] for r in rows if r["mode"] not in NIGHT_MODES]

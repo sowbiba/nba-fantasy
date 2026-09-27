@@ -381,8 +381,8 @@ def user_result(data: SeasonData, start: date, end: date) -> BacktestResult   # 
 
 ### Task 10: Résultats et mise en prod (feu vert de l'utilisateur à chaque étape)
 
-- [ ] **Step 1: Backtest (lecture seule)** — `./venv/bin/python -m engine.jobs.backtest --season 2025-26 --from 2026-02-01 --to 2026-04-12 --decay 0.97,0.985,1.0 --out docs/backtest/2025-26-sr.md` ; commit du rapport ; **présenter les chiffres à l'utilisateur**.
+- [ ] **Step 1: Backtest (lecture seule)** — `./venv/bin/python -m engine.jobs.backtest --season 2025-26 --from 2026-02-01 --to 2026-04-12 --decay 0.97,1.0 --out docs/backtest/2025-26-sr.md` (0.985 = défaut, déjà dans le tableau) ; commit du rapport ; **présenter les chiffres à l'utilisateur**.
 - [ ] **Step 2: Décision** — si le plan bat le meilleur choix dans les deux modes de blessure et que l'utilisateur valide : `TONIGHT_SOURCE = "plan"` (et `FUTURE_DECAY` au meilleur `decay`), commit. Sinon, rien ne change et le rapport est consigné dans `docs/strategie-ttfl.md` (S2 : plan indicatif).
 - [ ] **Step 3: Migration 026** — `supabase db push --linked --dry-run` ne doit lister que 026 ; puis push.
-- [ ] **Step 4: Soirées 2025-26** — `./venv/bin/python -m engine.jobs.rebuild_nights --season 2025-26` (écriture prod) ; vérifier `period_stats('2025-26','regular','2026-06-30')` ≈ moyenne 34.0 connue de l'utilisateur.
+- [ ] **Step 4: Soirées 2025-26** — `./venv/bin/python -m engine.jobs.rebuild_nights --season 2025-26` (écriture prod) ; vérifier `period_stats('2025-26','regular','2026-06-30')` ≈ 35.0 (moyenne R14 : x2 doublés, soirées sans pick à 0 — cf. ligne « Contexte » du rapport de backtest ; le 34.0 de l'audit est la moyenne brute par pick, sans x2 ni soirées sans pick).
 - [ ] **Step 5: Déployer le front** (`cd web && vercel --prod --yes`), merge dans `main`, push, run manuel de `daily-sync.yml` : vérifier qu'un plan avec `is_x2` s'écrit (en novembre) ou que les colonnes restent cohérentes (en octobre, aucun x2).

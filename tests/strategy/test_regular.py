@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta
 
+import pytest
+
 from engine.rules.availability import PickRow, SeriesRow
 from engine.rules.calendar import PARIS, Night
 from engine.stats.profile import PlayerProfile
@@ -50,6 +52,16 @@ def test_decide_reco_du_soir_triee_par_valeur_et_filtre_minutes():
     assert ids == sorted(ids, key=lambda pid: -next(r.cell.value for r in d.recommendations if r.cell.player_id == pid))
 
 
+def test_decide_decay_parametrable_change_le_lock_value():
+    d_default = decide(_inputs())
+    d_decay = decide(_inputs(), decay=0.5)
+    star_default = next(r for r in d_default.recommendations if r.cell.player_id == 1)
+    star_decay = next(r for r in d_decay.recommendations if r.cell.player_id == 1)
+    # Seule soirée future du fixture : J+20 -> lock_value = decay**20 * ev.
+    assert 0 < star_decay.lock_value < star_default.lock_value
+    assert star_decay.lock_value == pytest.approx(star_default.lock_value * (0.5 / 0.985) ** 20)
+
+
 def test_decide_lock_value_et_meilleur_futur():
     d = decide(_inputs())
     star = next(r for r in d.recommendations if r.cell.player_id == 1)
@@ -60,8 +72,22 @@ def test_decide_lock_value_et_meilleur_futur():
 
 def test_decide_plan_joue_la_star_a_son_meilleur_soir():
     d = decide(_inputs())
-    assert d.plan[TODAY + timedelta(days=20)].player_id == 1
-    assert d.plan[TODAY].player_id == 2
+    assert d.plan[TODAY + timedelta(days=20)].cell.player_id == 1
+    assert d.plan[TODAY].cell.player_id == 2
+
+
+def test_decide_tonight_source_best_available_par_defaut():
+    # Le meilleur choix S1 du soir (joueur 1) diffère de plan[today] (joueur 2).
+    d = decide(_inputs())
+    assert d.plan[TODAY].cell.player_id == 2
+    assert d.recommendations[0].cell.player_id == 1
+
+
+def test_decide_tonight_source_plan_place_le_joueur_du_plan_en_tete():
+    d = decide(_inputs(), tonight_source="plan")
+    ids = [r.cell.player_id for r in d.recommendations]
+    assert ids == [2, 1]  # joueur du plan en tête, le reste garde l'ordre par valeur
+    assert ids.count(2) == 1  # ne doit apparaître qu'une seule fois
 
 
 def test_decide_exclut_cooldown_et_out():
@@ -72,10 +98,21 @@ def test_decide_exclut_cooldown_et_out():
 
 
 def test_decide_respecte_les_reservations():
+    # Mois x2 déjà servi : la soirée réservée reste hors du plan (I-2 ne la
+    # garde que dans un mois x2 ouvert).
     resa = PickRow(7, 1, TODAY + timedelta(days=20), "regular", "2026-27")
-    d = decide(_inputs(picks=[resa]))
+    d = decide(_inputs(picks=[resa], x2_used_months=frozenset({(2026, 11)})))
     assert TODAY + timedelta(days=20) not in d.plan          # soirée déjà fixée
     assert 1 not in [r.cell.player_id for r in d.recommendations]   # réservé à J+20 → bloqué ce soir
+
+
+def test_decide_reservation_dans_un_mois_x2_ouvert_reste_au_plan_sur_le_joueur_reserve():
+    # I-2 : novembre ouvert → la soirée réservée reste au plan, avec le joueur
+    # de l'utilisateur (seule cellule), et le blocage de ce soir est inchangé.
+    resa = PickRow(7, 1, TODAY + timedelta(days=20), "regular", "2026-27")
+    d = decide(_inputs(picks=[resa]))
+    assert d.plan[TODAY + timedelta(days=20)].cell.player_id == 1
+    assert 1 not in [r.cell.player_id for r in d.recommendations]
 
 
 def test_decide_debut_de_saison_utilise_le_prior():
@@ -187,5 +224,119 @@ def test_plan_ne_compte_pas_deux_fois_le_blocage():
         recent_logs=recent_logs, defense={}, picks=[], second_chances=[], series=[],
     )
     dec = decide(d_inputs)
-    assert dec.plan[TODAY].player_id == 201
-    assert dec.plan[d20].player_id == 203
+    assert dec.plan[TODAY].cell.player_id == 201
+    assert dec.plan[d20].cell.player_id == 203
+
+
+# --- x2 mensuel (S3, R10) ---------------------------------------------------
+
+from engine.strategy.regular import _x2_months
+
+
+def test_x2_mois_entierement_visible_force_son_x2():
+    # Les deux soirées de novembre (02 et 22) sont dans l'horizon : le x2 de
+    # novembre est forcé et posé sur une soirée du plan.
+    inputs = _inputs()
+    assert _x2_months(inputs, {n.date: n for n in inputs.nights}) == {(2026, 11): True}
+    d = decide(inputs)
+    assert sum(e.is_x2 for e in d.plan.values()) == 1
+
+
+def test_x2_mois_deja_servi_sans_x2():
+    d = decide(_inputs(x2_used_months=frozenset({(2026, 11)})))
+    assert d.plan and not any(e.is_x2 for e in d.plan.values())
+
+
+def test_x2_pas_en_octobre():
+    today = date(2026, 10, 25)
+    d = decide(_inputs(today=today, nights=[_night(today), _night(today + timedelta(days=3))],
+                       games=[_game("g1", today, "DEN", "LAL"), _game("g2", today + timedelta(days=3), "DEN", "WAS")]))
+    assert d.plan and not any(e.is_x2 for e in d.plan.values())
+
+
+def test_x2_mois_non_visible_en_entier_non_force():
+    # 25/10 : novembre visible jusqu'au 23/11, mais une soirée le 28/11 est
+    # hors horizon → x2 de novembre disponible, pas forcé.
+    today = date(2026, 10, 25)
+    nights = [_night(today), _night(date(2026, 11, 5)), _night(date(2026, 11, 28))]
+    inputs = _inputs(today=today, nights=nights)
+    horizon = {n.date: n for n in nights if (n.date - today).days < 30}
+    assert _x2_months(inputs, horizon) == {(2026, 11): False}
+
+
+def test_x2_jamais_sur_une_soiree_de_playoffs():
+    # Avril : la soirée PO du 20 est exclue du x2 ; la dernière soirée SR
+    # (10/04) est dans l'horizon → forcé sur la soirée SR.
+    today = date(2027, 4, 10)
+    po = today + timedelta(days=10)
+    night_po = Night(po, "2026-27", "playoffs", 1, datetime(po.year, po.month, po.day, 23, tzinfo=PARIS), False)
+    d = decide(_inputs(today=today, nights=[_night(today), night_po],
+                       games=[_game("g1", today, "DEN", "LAL"), _game("g2", po, "DEN", "WAS", "playoffs")]))
+    assert d.plan[today].is_x2
+    assert po not in d.plan or not d.plan[po].is_x2
+
+
+# --- I-1 : un échec du planificateur ne prive pas la soirée de ses recos -------
+
+def test_echec_du_planificateur_garde_les_recommandations(monkeypatch, caplog):
+    import engine.strategy.regular as regular_mod
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("planificateur : pas de solution (test)")
+
+    monkeypatch.setattr(regular_mod, "solve", boom)
+    with caplog.at_level("ERROR", logger=regular_mod.__name__):
+        d = decide(_inputs())
+    assert d.plan == {}
+    assert [r.cell.player_id for r in d.recommendations] == [1, 2]
+    assert "planificateur en échec" in caplog.text
+
+
+# --- I-2 : x2 sur le pick déjà posé ----------------------------------------------
+
+LAST_NOV = date(2026, 11, 30)
+
+
+def _fin_de_mois(**over):
+    # Ce soir = dernière soirée SR de novembre ; soirée suivante en décembre.
+    dec = LAST_NOV + timedelta(days=5)
+    base = dict(today=LAST_NOV, nights=[_night(LAST_NOV), _night(dec)],
+                games=[_game("g1", LAST_NOV, "DEN", "LAL"), _game("g2", dec, "DEN", "WAS")])
+    base.update(over)
+    return _inputs(**base)
+
+
+def test_pick_du_soir_derniere_soiree_du_mois_porte_le_x2():
+    # L'utilisateur a pické le joueur 2 ce soir (dernière soirée de novembre,
+    # x2 non utilisé) : le mois forcé garde sa variable sur ce pick.
+    pick = PickRow(11, 2, LAST_NOV, "regular", "2026-27")
+    d = decide(_fin_de_mois(picks=[pick]))
+    assert d.plan[LAST_NOV].cell.player_id == 2
+    assert d.plan[LAST_NOV].is_x2
+
+
+def test_pick_du_soir_cellule_calculee_comme_les_autres():
+    # Même projection/p_play que la cellule du joueur 2 sans pick (le
+    # cooldown de son propre pick est ignoré, rien d'autre).
+    sans_pick = decide(_fin_de_mois())
+    ref = next(r.cell for r in sans_pick.recommendations if r.cell.player_id == 2)
+    d = decide(_fin_de_mois(picks=[PickRow(11, 2, LAST_NOV, "regular", "2026-27")]))
+    cell = d.plan[LAST_NOV].cell
+    assert (cell.projection, cell.p_play, cell.ctx) == (ref.projection, ref.p_play, ref.ctx)
+    assert cell.x2_gain != 0.0
+
+
+def test_soiree_pickee_dans_un_mois_x2_deja_servi_exclue():
+    pick = PickRow(11, 2, LAST_NOV, "regular", "2026-27")
+    d = decide(_fin_de_mois(picks=[pick], x2_used_months=frozenset({(2026, 11)})))
+    assert LAST_NOV not in d.plan
+
+
+def test_soiree_pickee_hors_mois_x2_exclue():
+    # Octobre : pas de x2 → la soirée pickée reste hors du plan comme avant.
+    today = date(2026, 10, 25)
+    pick = PickRow(11, 2, today, "regular", "2026-27")
+    d = decide(_inputs(today=today, picks=[pick],
+                       nights=[_night(today), _night(today + timedelta(days=3))],
+                       games=[_game("g1", today, "DEN", "LAL"), _game("g2", today + timedelta(days=3), "DEN", "WAS")]))
+    assert today not in d.plan

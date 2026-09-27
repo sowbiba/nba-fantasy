@@ -57,7 +57,7 @@ class SupabaseRepo:
 
     def load_games_of_seasons(self, seasons: list[str]) -> list[dict]:
         return self._all(lambda: self.c.table("games")
-                         .select("id,date,home_team,away_team,game_type,season,status")
+                         .select("id,date,home_team,away_team,game_type,season,status,tip_off")
                          .in_("season", seasons).order("id"))
 
     def load_game_logs(self, seasons: list[str]) -> list[dict]:
@@ -103,6 +103,9 @@ class SupabaseRepo:
 
     def set_pick_score(self, pick_id: int, score: int) -> None:
         self.c.table("picks").update({"actual_score": score}).eq("id", pick_id).execute()
+
+    def upsert_nights(self, rows: list[dict]) -> None:
+        self._upsert("nights", rows, "date")
 
     def replace_nights(self, start: date, rows: list[dict]) -> None:
         # Upsert d'abord, purge des soirées obsolètes ensuite : un échec de

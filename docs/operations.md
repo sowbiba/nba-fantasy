@@ -49,7 +49,8 @@ nba-fantasy/
 │   ├── io/                            # Supabase, cdn.nba.com, stats.nba.com, ESPN (fetch/push)
 │   └── jobs/
 │       ├── daily_sync.py              # Passage complet (GitHub Actions)
-│       └── local_nightly.py           # Effectifs + LeagueGameLog + matchups (PC local)
+│       ├── local_nightly.py           # Effectifs + LeagueGameLog + matchups (PC local)
+│       └── backtest.py                # Backtest lecture seule + rapport Markdown (voir § Backtest)
 ├── tests/                             # tests unitaires (pytest)
 ├── web/                               # Frontend Next.js 16
 │   ├── src/app/                       # Pages (App Router)
@@ -142,6 +143,26 @@ Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.co
 ```
 50 23 * * * cd /home/isow/workspace/perso/nba-fantasy && ./venv/bin/python -m engine.jobs.local_nightly >> /tmp/ttfl-local.log 2>&1 || { echo "$(date '+\%F \%T') TTFL local KO" >> /home/isow/ttfl-sync-failures.log; DISPLAY=:0 notify-send -u critical "TTFL local KO" 2>/dev/null; }
 ```
+
+## Backtest
+
+`engine/jobs/backtest.py` simule `best_available` et `plan` (dans les deux modes de blessures, et un ou plusieurs `decay` pour `plan`) sur une fenêtre passée, et compare le résultat aux vrais picks de l'utilisateur sur les mêmes soirées. Rapport Markdown en sortie, pas d'interface web.
+
+```bash
+./venv/bin/python -m engine.jobs.backtest --season 2025-26 --from 2026-02-01 --to 2026-04-12
+# --decay 0.97,0.985,1.0   : variantes de decay pour `plan` (diagnostic, en plus du décay par défaut)
+# --out docs/backtest/2025-26-sr.md   : chemin du rapport (défaut : docs/backtest/<saison>-sr.md)
+```
+
+**Lecture seule** : le job n'appelle que les méthodes `load_*` de `SupabaseRepo` — aucune écriture, aucune ligne `sync_log` (contrairement à `daily_sync`/`local_nightly`). Testé par `tests/jobs/test_backtest_job.py` avec un faux repo dont seules les méthodes de lecture nécessaires sont déléguées ; tout le reste (écritures, `sync_log`, futures méthodes) lève une `AssertionError`.
+
+**Limites** :
+- Aucun historique des statuts de blessures en base : le rapport donne deux bornes plutôt qu'une vérité unique — `none` (personne n'est jamais déclaré blessé : pessimiste) et `dnp_oracle` (un joueur ayant DNP le soir même après avoir joué au moins un de ses 5 derniers matchs est déclaré « Out » : optimiste). L'utilisateur, lui, avait l'information du jour : la comparaison équitable est entre les deux bornes, pas contre l'une des deux isolément.
+- La saison 2024-25 n'est pas chargée en base → fenêtre par défaut février-avril de la saison en cours (peu d'historique de profils avant février).
+- Chaque simulation démarre amorcée par les vrais picks de l'utilisateur des 30 jours avant le début de la fenêtre (cooldown R3 et x2 du mois en cours, R10) : la comparaison démarre sous les mêmes contraintes. Au-delà, l'historique simulé de chaque stratégie diverge du sien au fil des soirées — voulu, c'est ce qu'on compare.
+- Si la fenêtre se termine avant la fin d'un mois x2 : asymétrie en faveur de `plan` pour ce mois — `best_available` (référence naïve, x2 sur la dernière soirée du mois) perd le x2 hors fenêtre, alors que `plan` (planificateur MILP, S3) peut le poser plus tôt dans le mois s'il voit la fin du mois dans son horizon de 35 jours — signalé dans le rapport quand c'est le cas.
+- Comparaison restreinte à la saison régulière (R14, R10 : pas de x2 en playoffs).
+- Le rapport montre la moyenne réelle de l'utilisateur deux fois : via `picks.actual_score` (officiel, ce que l'app a enregistré) et via les logs (`user_result`, notée comme les simulations) — avec le nombre de soirées où les deux diffèrent.
 
 ## Tests SQL
 
