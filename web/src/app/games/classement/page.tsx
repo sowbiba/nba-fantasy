@@ -10,12 +10,12 @@ import StandingsTable from "@/components/StandingsTable";
 export const revalidate = 300;
 
 async function getData() {
-  const { data } = await supabase.from("standings").select("*").order("conference").order("rank");
-  return { rows: (data || []) as StandingsRow[] };
+  const { data, error } = await supabase.from("standings").select("*").order("conference").order("rank");
+  return { rows: (data || []) as StandingsRow[], dataError: !!error };
 }
 
 export default async function StandingsPage() {
-  const { rows } = await getData();
+  const { rows, dataError } = await getData();
 
   return (
     <div className="px-4 py-5 animate-fade-in">
@@ -30,7 +30,13 @@ export default async function StandingsPage() {
         </h1>
       </div>
 
-      <StandingsTable rows={rows} />
+      {dataError ? (
+        <p role="alert" className="rounded-[var(--radius-card-sm)] border border-[color:var(--color-crimson)]/40 bg-[color:var(--color-crimson)]/10 px-3 py-2 text-sm text-[color:var(--color-crimson)]">
+          Données indisponibles pour le moment, réessaie dans quelques minutes.
+        </p>
+      ) : (
+        <StandingsTable rows={rows} />
+      )}
     </div>
   );
 }
