@@ -119,24 +119,6 @@ export interface StandingsRow {
   rank: number;
 }
 
-/** `team_elo` (migration 030, mode connecté uniquement). */
-export interface TeamElo {
-  team: string;
-  rating: number;
-  games: number;
-  updated_at: string;
-}
-
-/** `game_predictions` (migration 030, mode connecté uniquement). */
-export interface GamePrediction {
-  game_id: string;
-  home_rating: number;
-  away_rating: number;
-  home_win_prob: number;
-  expected_margin: number;
-  updated_at: string;
-}
-
 export interface RecommendationWithPlayer extends Recommendation {
   player: Player;
   game: Game;
