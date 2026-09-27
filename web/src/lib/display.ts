@@ -1,5 +1,5 @@
 import { frDayMonth } from "./date";
-import type { MatchupSeasonRow } from "@/types";
+import type { MatchupSeasonRow, StandingsRow } from "@/types";
 
 // Garde-fou d'affichage (pas une règle) : un joueur passé « Out » après la
 // dernière synchro ne doit pas rester en tête / doit être signalé. Miroir de
@@ -106,4 +106,104 @@ export function standingsTint(rank: number): number {
   if (rank >= 1 && rank <= 6) return 0.07 - (rank - 1) * 0.008;
   if (rank >= 7 && rank <= 10) return 0.02 - (rank - 7) * 0.0015;
   return 0;
+}
+
+/** Écart moyen affiché (`point_diff`) : toujours signé, jamais « -0.0 » pour
+ *  une valeur qui arrondit à zéro. `point_diff` arrive en `numeric`
+ *  Postgres (donc parfois en chaîne via PostgREST) : toujours passer par
+ *  `Number(...)` ici plutôt que de faire confiance au type déclaré. */
+export function formatPointDiff(n: number | string): string {
+  const v = Number(n);
+  const abs = Math.abs(v).toFixed(1);
+  if (abs === "0.0") return "0.0";
+  return v > 0 ? `+${abs}` : `-${abs}`;
+}
+
+/** Lecture de la colonne `streak` (`"V3"`, `"D1"`, `""`) en un score
+ *  ordonnable : une série de victoires est positive (plus longue = plus
+ *  grande), une série de défaites négative (plus longue = plus négative),
+ *  pas de série (ou format inattendu) = 0. Sert le tri « meilleur d'abord »
+ *  du classement (tâche 2) : score décroissant place les séries de
+ *  victoires devant, la plus longue en tête, puis "" puis les séries de
+ *  défaites, la plus courte en tête. */
+export function streakScore(streak: string): number {
+  const m = /^([VD])(\d+)$/.exec(streak);
+  if (!m) return 0;
+  const n = Number(m[2]);
+  return m[1] === "V" ? n : -n;
+}
+
+/** Colonnes du classement sur lesquelles la tâche 2 permet de trier.
+ *  `"force"` n'a de sens qu'en mode connecté (colonne `ratings` fournie par
+ *  `ownerDb()`, jamais interrogée en mode public — StandingsTable ne rend
+ *  le bouton de tri correspondant que si `ratings` est fourni). */
+export type StandingsSortKey =
+  | "rank"
+  | "pct"
+  | "wins"
+  | "losses"
+  | "games_behind"
+  | "last10"
+  | "streak"
+  | "point_diff"
+  | "force";
+
+export type SortDir = "asc" | "desc";
+
+/** Comparaison « meilleur d'abord » (indépendante de la direction affichée) :
+ *  négatif si `a` doit passer avant `b`. `dir` inverse ensuite ce résultat
+ *  (2e appui = sens inverse) sans jamais casser la stabilité du départage
+ *  par rang officiel. */
+function compareBestFirst(key: StandingsSortKey, a: StandingsRow, b: StandingsRow): number {
+  switch (key) {
+    case "rank":
+      return a.rank - b.rank;
+    case "pct":
+      return Number(b.pct) - Number(a.pct);
+    case "wins":
+      return b.wins - a.wins;
+    case "losses":
+      return a.losses - b.losses;
+    case "games_behind":
+      return Number(a.games_behind) - Number(b.games_behind);
+    case "last10":
+      return b.last10_wins - a.last10_wins;
+    case "streak":
+      return streakScore(b.streak) - streakScore(a.streak);
+    case "point_diff":
+      return Number(b.point_diff) - Number(a.point_diff);
+    case "force":
+      // Traité à part dans sortStandings (valeurs manquantes toujours en
+      // fin de liste, quelle que soit la direction).
+      return 0;
+  }
+}
+
+/** Tri pur du classement (tâche 2/3) : ne mute jamais `rows`, départage
+ *  toujours par rang officiel (`a.rank - b.rank`) à égalité — y compris pour
+ *  les lignes sans cote (`force`), qui restent en fin de liste dans les deux
+ *  sens de tri. `ratings` (Force, mode connecté seulement) est ignoré pour
+ *  toute autre clé. */
+export function sortStandings(
+  rows: StandingsRow[],
+  key: StandingsSortKey,
+  dir: SortDir,
+  ratings?: Record<string, number> | null,
+): StandingsRow[] {
+  const sign = dir === "desc" ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    if (key === "force") {
+      const ra = ratings?.[a.team];
+      const rb = ratings?.[b.team];
+      const aMissing = ra === undefined || ra === null;
+      const bMissing = rb === undefined || rb === null;
+      if (aMissing && bMissing) return a.rank - b.rank;
+      if (aMissing) return 1;
+      if (bMissing) return -1;
+      const primary = sign * (rb - ra);
+      return primary !== 0 ? primary : a.rank - b.rank;
+    }
+    const primary = sign * compareBestFirst(key, a, b);
+    return primary !== 0 ? primary : a.rank - b.rank;
+  });
 }
