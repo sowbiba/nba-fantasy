@@ -1,6 +1,7 @@
 """Job quotidien (GitHub Actions, plusieurs fois/jour) : statuts et scores
-ESPN, scoring des picks, blessures, soirées, recommandations du soir et
-plan 30 jours.
+ESPN, scoring des picks, blessures, soirées, recommandations du soir, plan
+30 jours, Elo des équipes et prédictions de match (`team_elo` /
+`game_predictions`, L3a).
 
 Jamais d'appel à stats.nba.com (IP GitHub bloquées) ni au CDN NBA (403
 partout). Calendrier et box scores viennent de `local_nightly` (stats.nba.com,
@@ -16,9 +17,9 @@ from engine.explain.texts import plan_explanation, reco_texts, tier
 from engine.io.espn import match_injury_to_player
 from engine.rules.availability import PickRow, SecondChance
 from engine.rules.calendar import PARIS, build_nights
-from engine.rules.game_types import previous_season, season_for_date
+from engine.rules.game_types import is_eligible, previous_season, season_for_date
 from engine.stats.aggregates import player_aggregates
-from engine.stats.elo import EloParams, is_countable, predict, ratings_before
+from engine.stats.elo import EloParams, game_season, is_countable, predict, ratings_before
 from engine.stats.profile import GameLog
 from engine.strategy.inputs import absent_shares, build_decision_inputs
 from engine.strategy.regular import HORIZON_DAYS, decide
@@ -92,15 +93,19 @@ def score_picks(repo, season: str, today: date) -> None:
             repo.set_pick_score(p["id"], 0)   # R7 : ne pas avoir joué = 0
 
 
-def team_elo_rows(season_games: list[dict], today: date, ratings: dict[str, float], now: datetime) -> list[dict]:
+def team_elo_rows(season_games: list[dict], today: date, season: str, ratings: dict[str, float],
+                  now: datetime) -> list[dict]:
     """Lignes `team_elo` : note de chaque équipe vue par `ratings` (déjà
     calculées après tous les matchs terminés jusqu'à `today` inclus), et le
-    nombre de matchs comptables jusqu'à `today` inclus (mêmes règles que
-    `ratings_before` : `is_countable`, date < today + 1 jour)."""
+    nombre de matchs comptables JOUÉS CETTE SAISON jusqu'à `today` inclus
+    (mêmes règles que `ratings_before` : `is_countable`, date < today + 1
+    jour ; `games` ne compte pas la saison précédente — `season_games`
+    mélange saison courante et précédente, cf. `run` — sinon la colonne
+    afficherait ~82 matchs dès le soir d'ouverture)."""
     cutoff = today + timedelta(days=1)
     games_played: dict[str, int] = defaultdict(int)
     for g in season_games:
-        if is_countable(g) and _d(g["date"]) < cutoff:
+        if is_countable(g) and game_season(g) == season and _d(g["date"]) < cutoff:
             games_played[g["home_team"]] += 1
             games_played[g["away_team"]] += 1
     return [{"team": team, "rating": round(rating, 2), "games": games_played.get(team, 0),
@@ -109,14 +114,17 @@ def team_elo_rows(season_games: list[dict], today: date, ratings: dict[str, floa
 
 def game_prediction_rows(window: list[dict], today: date, ratings: dict[str, float],
                          absent: dict[str, float], p: EloParams, now: datetime) -> list[dict]:
-    """Lignes `game_predictions` pour les matchs à venir non terminés de la
-    fenêtre `today` → `today + PREDICTION_WINDOW_DAYS` jours, avec la
-    correction blessures des statuts ACTUELS (`absent`, calculée une seule
-    fois pour toute la fenêtre : c'est la meilleure information disponible
-    au moment de la synchro, même si elle ne dit presque rien d'un match
-    dans 10 jours — spec L3a §3)."""
+    """Lignes `game_predictions` pour les matchs à venir ÉLIGIBLES (R11/R12 :
+    saison régulière, `cup_final`, playoffs — pas de préparation/all-star,
+    que l'Elo ne voit jamais) et non terminés de la fenêtre `today` →
+    `today + PREDICTION_WINDOW_DAYS` jours, avec la correction blessures des
+    statuts ACTUELS (`absent`, calculée une seule fois pour toute la
+    fenêtre : c'est la meilleure information disponible au moment de la
+    synchro, même si elle ne dit presque rien d'un match dans 10 jours —
+    spec L3a §3)."""
     horizon = today + timedelta(days=PREDICTION_WINDOW_DAYS)
-    upcoming = [g for g in window if g.get("status") != "final" and today <= _d(g["date"]) <= horizon]
+    upcoming = [g for g in window if g.get("status") != "final" and is_eligible(g.get("game_type", "unknown"))
+               and today <= _d(g["date"]) <= horizon]
     rows = []
     for g in upcoming:
         pred = predict(g, ratings, absent, p)
@@ -151,7 +159,8 @@ def _apply_injuries(repo, injuries: dict[str, list[dict]]) -> None:
         repo.upsert_players(rows)
 
 
-def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime) -> RunResult:
+def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime,
+       elo_params: EloParams = EloParams()) -> RunResult:
     result = RunResult()
     season = season_for_date(today)
     prior = previous_season(season)
@@ -183,9 +192,8 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime) -> R
 
     window = repo.load_games_between(today - timedelta(days=SCHEDULE_PAST_DAYS), today + timedelta(days=SCHEDULE_AHEAD_DAYS))
 
-    elo_params = EloParams()
     ratings = ratings_before(season_games, today + timedelta(days=1), elo_params)
-    team_rows = team_elo_rows(season_games, today, ratings, now)
+    team_rows = team_elo_rows(season_games, today, season, ratings, now)
     if team_rows:
         repo.upsert_team_elo(team_rows)
     absent = absent_shares(today=today, players=players, logs=all_logs)

@@ -214,10 +214,13 @@ def test_daily_sync_ecrit_les_predictions_de_match_a_venir():
 def test_game_prediction_rows_hors_fenetre_ou_matchs_termines_ignores():
     games = [
         {"id": "past", "date": (TODAY - timedelta(days=1)).isoformat(), "home_team": "LAL",
-         "away_team": "DEN", "status": "final"},
+         "away_team": "DEN", "status": "final", "game_type": "regular"},
         {"id": "loin", "date": (TODAY + timedelta(days=20)).isoformat(), "home_team": "LAL",
-         "away_team": "DEN", "status": "scheduled"},
-        {"id": "ok", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled"},
+         "away_team": "DEN", "status": "scheduled", "game_type": "regular"},
+        {"id": "preseason", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN",
+         "status": "scheduled", "game_type": "preseason"},   # R11 : jamais vu par l'Elo
+        {"id": "ok", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled",
+         "game_type": "regular"},
     ]
     rows = game_prediction_rows(games, TODAY, {"LAL": 1500.0, "DEN": 1500.0}, {}, EloParams(), NOW)
     assert [r["game_id"] for r in rows] == ["ok"]
@@ -227,7 +230,8 @@ def test_game_prediction_rows_joueur_out_baisse_la_probabilite_de_son_equipe():
     # Correction blessures activée (elo_per_share > 0) : la part d'absents de
     # l'équipe à domicile (LAL) baisse sa note et donc sa probabilité de
     # victoire, par rapport à la même situation sans correction.
-    game = {"id": "g1", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled"}
+    game = {"id": "g1", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled",
+            "game_type": "regular"}
     ratings = {"LAL": 1550.0, "DEN": 1550.0}
     absent = {"LAL": 0.6}
     rows_no_injury = game_prediction_rows([game], TODAY, ratings, absent, EloParams(elo_per_share=0.0), NOW)
@@ -242,12 +246,38 @@ def test_team_elo_rows_note_arrondie_et_compte_les_matchs_comptables():
          "status": "final", "home_score": 100, "away_score": 90, "game_type": "regular", "season": "2026-27"},
         {"id": "2", "date": TODAY.isoformat(), "home_team": "LAL", "away_team": "DEN", "status": "scheduled",
          "game_type": "regular", "season": "2026-27"},
+        # Saison précédente : comptable par l'Elo (`ratings_before` mélange
+        # les saisons, retour vers la moyenne au changement) mais ne doit
+        # pas gonfler le compteur `games` de la saison en cours.
+        {"id": "0", "date": date(2025, 12, 1).isoformat(), "home_team": "LAL", "away_team": "DEN",
+         "status": "final", "home_score": 90, "away_score": 80, "game_type": "regular", "season": "2025-26"},
     ]
     ratings = {"LAL": 1512.345, "DEN": 1487.655}
-    rows = team_elo_rows(games, TODAY, ratings, NOW)
+    rows = team_elo_rows(games, TODAY, "2026-27", ratings, NOW)
     by_team = {r["team"]: r for r in rows}
     assert by_team["LAL"]["games"] == 1 and by_team["DEN"]["games"] == 1   # le match du soir ne compte pas encore
     assert by_team["LAL"]["rating"] == round(1512.345, 2)
+
+
+def test_daily_sync_correction_blessures_baisse_la_probabilite_de_l_equipe_du_blesse():
+    # Bout en bout (via `run`) : le joueur 2 (LAL) est 100 % de la production
+    # de LAL sur les logs de la fixture → statut "Out" et elo_per_share > 0
+    # doivent baisser `home_win_prob` de "0022600020" (DEN domicile, LAL
+    # extérieur) par rapport au même run sans blessure, EloParams identiques.
+    params = EloParams(elo_per_share=300.0)
+    injuries = {"LAL": [{"name": "Joueur 2", "status": "Out", "detail": "Genou", "return_date": None,
+                         "short_comment": "", "updated_at": ""}]}
+
+    repo_sain = _base_repo()
+    run(repo_sain, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW, elo_params=params)
+
+    repo_blesse = _base_repo()
+    run(repo_blesse, _fetch_scoreboard(SCOREBOARD), lambda: injuries, TODAY, NOW, elo_params=params)
+
+    prob_sain = repo_sain.game_predictions["0022600020"]["home_win_prob"]
+    prob_blesse = repo_blesse.game_predictions["0022600020"]["home_win_prob"]
+    # LAL (extérieur) affaibli → DEN (domicile) plus favorisé.
+    assert prob_blesse > prob_sain
 
 
 def test_daily_sync_pas_de_x2_si_le_mois_est_deja_servi():

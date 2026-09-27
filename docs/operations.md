@@ -172,6 +172,9 @@ Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.co
 ./venv/bin/python -m engine.jobs.elo_report --season 2025-26
 # --from 2025-12-01   : début de la fenêtre d'évaluation (défaut : 1er décembre de la saison)
 # --out docs/backtest/elo-2025-26.md   : chemin du rapport (défaut : docs/backtest/elo-<saison>.md)
+# --k 15,20,25,30 --hca 40,70,100,130 --eps 0,150,300,450,600   : grilles k / home_advantage /
+#   elo_per_share séparées par des virgules, pour élargir la recherche au-delà de la grille par
+#   défaut du module (chaque option omise garde sa grille par défaut)
 ```
 
 **Lecture seule** : le job n'appelle que les méthodes `load_*` de `SupabaseRepo` (via `engine.backtest.data.load_season`) — aucune écriture. Testé par `tests/jobs/test_elo_report.py` avec un faux repo dont seules les méthodes de lecture nécessaires sont déléguées ; tout le reste lève une `AssertionError`.
