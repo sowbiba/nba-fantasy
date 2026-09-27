@@ -98,10 +98,21 @@ def test_decide_exclut_cooldown_et_out():
 
 
 def test_decide_respecte_les_reservations():
+    # Mois x2 déjà servi : la soirée réservée reste hors du plan (I-2 ne la
+    # garde que dans un mois x2 ouvert).
     resa = PickRow(7, 1, TODAY + timedelta(days=20), "regular", "2026-27")
-    d = decide(_inputs(picks=[resa]))
+    d = decide(_inputs(picks=[resa], x2_used_months=frozenset({(2026, 11)})))
     assert TODAY + timedelta(days=20) not in d.plan          # soirée déjà fixée
     assert 1 not in [r.cell.player_id for r in d.recommendations]   # réservé à J+20 → bloqué ce soir
+
+
+def test_decide_reservation_dans_un_mois_x2_ouvert_reste_au_plan_sur_le_joueur_reserve():
+    # I-2 : novembre ouvert → la soirée réservée reste au plan, avec le joueur
+    # de l'utilisateur (seule cellule), et le blocage de ce soir est inchangé.
+    resa = PickRow(7, 1, TODAY + timedelta(days=20), "regular", "2026-27")
+    d = decide(_inputs(picks=[resa]))
+    assert d.plan[TODAY + timedelta(days=20)].cell.player_id == 1
+    assert 1 not in [r.cell.player_id for r in d.recommendations]
 
 
 def test_decide_debut_de_saison_utilise_le_prior():
@@ -279,3 +290,53 @@ def test_echec_du_planificateur_garde_les_recommandations(monkeypatch, caplog):
     assert d.plan == {}
     assert [r.cell.player_id for r in d.recommendations] == [1, 2]
     assert "planificateur en échec" in caplog.text
+
+
+# --- I-2 : x2 sur le pick déjà posé ----------------------------------------------
+
+LAST_NOV = date(2026, 11, 30)
+
+
+def _fin_de_mois(**over):
+    # Ce soir = dernière soirée SR de novembre ; soirée suivante en décembre.
+    dec = LAST_NOV + timedelta(days=5)
+    base = dict(today=LAST_NOV, nights=[_night(LAST_NOV), _night(dec)],
+                games=[_game("g1", LAST_NOV, "DEN", "LAL"), _game("g2", dec, "DEN", "WAS")])
+    base.update(over)
+    return _inputs(**base)
+
+
+def test_pick_du_soir_derniere_soiree_du_mois_porte_le_x2():
+    # L'utilisateur a pické le joueur 2 ce soir (dernière soirée de novembre,
+    # x2 non utilisé) : le mois forcé garde sa variable sur ce pick.
+    pick = PickRow(11, 2, LAST_NOV, "regular", "2026-27")
+    d = decide(_fin_de_mois(picks=[pick]))
+    assert d.plan[LAST_NOV].cell.player_id == 2
+    assert d.plan[LAST_NOV].is_x2
+
+
+def test_pick_du_soir_cellule_calculee_comme_les_autres():
+    # Même projection/p_play que la cellule du joueur 2 sans pick (le
+    # cooldown de son propre pick est ignoré, rien d'autre).
+    sans_pick = decide(_fin_de_mois())
+    ref = next(r.cell for r in sans_pick.recommendations if r.cell.player_id == 2)
+    d = decide(_fin_de_mois(picks=[PickRow(11, 2, LAST_NOV, "regular", "2026-27")]))
+    cell = d.plan[LAST_NOV].cell
+    assert (cell.projection, cell.p_play, cell.ctx) == (ref.projection, ref.p_play, ref.ctx)
+    assert cell.x2_gain != 0.0
+
+
+def test_soiree_pickee_dans_un_mois_x2_deja_servi_exclue():
+    pick = PickRow(11, 2, LAST_NOV, "regular", "2026-27")
+    d = decide(_fin_de_mois(picks=[pick], x2_used_months=frozenset({(2026, 11)})))
+    assert LAST_NOV not in d.plan
+
+
+def test_soiree_pickee_hors_mois_x2_exclue():
+    # Octobre : pas de x2 → la soirée pickée reste hors du plan comme avant.
+    today = date(2026, 10, 25)
+    pick = PickRow(11, 2, today, "regular", "2026-27")
+    d = decide(_inputs(today=today, picks=[pick],
+                       nights=[_night(today), _night(today + timedelta(days=3))],
+                       games=[_game("g1", today, "DEN", "LAL"), _game("g2", today + timedelta(days=3), "DEN", "WAS")]))
+    assert today not in d.plan

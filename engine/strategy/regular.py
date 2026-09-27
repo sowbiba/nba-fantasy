@@ -98,6 +98,40 @@ def _x2_months(inputs: DecisionInputs, horizon: dict[date, Night]) -> dict[tuple
             if m[1] in X2_MONTHS and m not in inputs.x2_used_months}
 
 
+def _picked_cells(inputs: DecisionInputs, nights: dict[date, Night],
+                  x2_months: dict[tuple[int, int], bool], games_by_night: dict[date, list[dict]],
+                  estimate, decay: float | None) -> dict[date, Cell]:
+    """Cellule planificateur du joueur pické, pour chaque soirée déjà pickée
+    de l'horizon en saison régulière dans un mois où le x2 est encore
+    disponible (`x2_months`). Calculée comme les autres cellules (projection,
+    p_play, valeur, gain x2) mais sans le filtre de disponibilité : le
+    cooldown de son propre pick l'exclurait. Soirée ignorée si le joueur n'a
+    pas de profil ou pas de match éligible ce soir-là."""
+    latest: dict[date, PickRow] = {}
+    for p in inputs.picks:
+        if p.date not in latest or p.id > latest[p.date].id:
+            latest[p.date] = p
+    out: dict[date, Cell] = {}
+    for d, pick in latest.items():
+        night = nights.get(d)
+        if night is None or night.mode != "regular" or (d.year, d.month) not in x2_months:
+            continue
+        row = inputs.players.get(pick.player_id)
+        if row is None or inputs.profiles.get(pick.player_id) is None:
+            continue
+        team = row["team"]
+        game = next((g for g in games_by_night[d] if team in (g["home_team"], g["away_team"])), None)
+        if game is None:
+            continue
+        is_home = game["home_team"] == team
+        opponent = game["away_team"] if is_home else game["home_team"]
+        k = (d - inputs.today).days
+        projection, p, ctx = estimate(pick.player_id, team, opponent, is_home, d, k)
+        out[d] = Cell(pick.player_id, d, projection, p, future_value(k, p, projection, decay), ctx,
+                      x2_gain=x2_gain(p, projection, inputs.profiles[pick.player_id].stddev))
+    return out
+
+
 def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: float | None = None) -> Decision:
     today = inputs.today
     nights = {n.date: n for n in inputs.nights
@@ -124,6 +158,24 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         if row.get("active", True):
             roster[row["team"]].append(pid)
 
+    def _estimate(pid: int, team: str, opponent: str, is_home: bool, d: date, k: int
+                  ) -> tuple[float, float, GameContext]:
+        """(projection, p_play, contexte) d'un joueur sur un match (S1)."""
+        profile = inputs.profiles[pid]
+        row = inputs.players[pid]
+        status = row.get("injury_status")
+        rd = rest_days(team, d, team_dates)
+        ctx = GameContext(opponent, is_home, rd, opp_factor(inputs.defense, opponent, row.get("position", "F")))
+        projection = project(profile, ctx)
+        b2b = rd == 0
+        if k == 0:
+            p = p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),
+                       is_b2b_second=b2b, exp_minutes=profile.exp_minutes)
+        else:
+            p = future_p_play(injury_status=status, availability_rate=profile.availability_rate,
+                              is_b2b_second=b2b, exp_minutes=profile.exp_minutes)
+        return projection, p, ctx
+
     raw = []  # (days_ahead, player_id, night, projection, p, ctx)
     for d, night in nights.items():
         k = (d - today).days
@@ -142,18 +194,7 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
                                         mode=night.mode, picks=inputs.picks,
                                         second_chances=inputs.second_chances, series=inputs.series).ok:
                         continue
-                    rd = rest_days(team, d, team_dates)
-                    ctx = GameContext(opponent, is_home, rd,
-                                      opp_factor(inputs.defense, opponent, row.get("position", "F")))
-                    projection = project(profile, ctx)
-                    b2b = rd == 0
-                    if k == 0:
-                        p = p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),
-                                   is_b2b_second=b2b, exp_minutes=profile.exp_minutes)
-                    else:
-                        p = future_p_play(injury_status=status, availability_rate=profile.availability_rate,
-                                          is_b2b_second=b2b, exp_minutes=profile.exp_minutes)
-                    raw.append((k, pid, d, projection, p, ctx))
+                    raw.append((k, pid, d, *_estimate(pid, team, opponent, is_home, d, k)))
 
     # Dédoublonnage par (joueur, soirée) : une ligne de match dupliquée ne
     # doit produire qu'une seule cellule, celle de plus forte espérance
@@ -189,13 +230,19 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         gain = x2_gain(p, projection, inputs.profiles[pid].stddev) if nights[d].mode == "regular" else 0.0
         planner_cells.append(replace(cell, value=plan_value, x2_gain=gain))
 
+    x2_months = _x2_months(inputs, nights)
     fixed = {p.date for p in inputs.picks}
-    plan_nights = sorted(d for d in nights if d not in fixed)
-    plan_set = set(plan_nights)
+    free_nights = {d for d in nights if d not in fixed}
+    # Soirées déjà pickées (réservations, pick du soir) dans un mois x2
+    # ouvert : gardées dans le modèle avec une seule cellule, le joueur de
+    # l'utilisateur, assignée d'office — le x2 peut ainsi se poser sur son
+    # pick, et un mois forcé garde sa variable sur sa dernière soirée (I-2).
+    forced_cells = _picked_cells(inputs, nights, x2_months, games_by_night, _estimate, decay)
+    plan_nights = sorted(free_nights | set(forced_cells))
+    required = set(forced_cells) | ({today} if today in free_nights else set())
     try:
-        plan = solve([c for c in planner_cells if c.night in plan_set], plan_nights,
-                     required={today} if today in plan_set else frozenset(),
-                     x2_months=_x2_months(inputs, nights),
+        plan = solve([c for c in planner_cells if c.night in free_nights] + list(forced_cells.values()),
+                     plan_nights, required=required, x2_months=x2_months,
                      x2_nights={d for d in plan_nights if nights[d].mode == "regular"})
     except RuntimeError:
         # Le plan est indicatif : son échec ne doit jamais priver la soirée
