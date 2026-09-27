@@ -1,4 +1,6 @@
-"""Job de backtest (lecture seule) : simule `best_available` et `plan`, dans
+"""Job de backtest (lecture seule) : simule `best_available`,
+`best_available_x2plan` (pick meilleur dispo + x2 suivant le plan, le
+comportement livré) et `plan`, dans
 les deux modes de blessures (`none`, `dnp_oracle`), sur une fenêtre passée, et
 compare le résultat aux vrais picks de l'utilisateur sur les mêmes soirées.
 
@@ -19,6 +21,7 @@ from pathlib import Path
 
 from engine.backtest.data import SeasonData, eligible_nights, load_season
 from engine.backtest.simulate import (
+    STRATEGIES,
     BacktestResult,
     NightResult,
     _last_regular_night_of_month,
@@ -29,7 +32,6 @@ from engine.rules.availability import COOLDOWN_DAYS, PickRow
 from engine.rules.scoring import night_points
 from engine.strategy.value import FUTURE_DECAY, X2_MONTHS
 
-STRATEGIES = ("best_available", "plan")
 INJURY_MODES = ("none", "dnp_oracle")
 DEFAULT_WINDOW = (2, 4)   # février → avril : fenêtre par défaut (voir docstring module)
 SEED_DAYS = COOLDOWN_DAYS   # amorce des simulations avec les vrais picks des 30 jours avant `start`
@@ -238,9 +240,15 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
     for mode in INJURY_MODES:
         lines.append(f"  - mode {mode} : plan − meilleur choix = {diffs[mode]:+.2f}")
 
+    lines.append("- x2 du plan sur le pick meilleur dispo (comportement livré), hors règle d'activation :")
+    for mode in INJURY_MODES:
+        diff = (by_mode[("best_available_x2plan", mode)].result.average
+                - by_mode[("best_available", mode)].result.average)
+        lines.append(f"  - mode {mode} : best_available_x2plan − best_available = {diff:+.2f}")
+
     ref = by_mode[("Mes vrais picks (logs)", "n/a")].result.average
     lines.append(f"- Écart à ma moyenne réelle (référence : mes picks notés via les logs, {ref:.2f}) :")
-    for strategy_label in ("best_available", f"plan (decay={FUTURE_DECAY}, défaut)"):
+    for strategy_label in ("best_available", "best_available_x2plan", f"plan (decay={FUTURE_DECAY}, défaut)"):
         for mode in INJURY_MODES:
             avg = by_mode[(strategy_label, mode)].result.average
             lines.append(f"  - {strategy_label} / {mode} : {avg - ref:+.2f}")
@@ -257,7 +265,7 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Backtest en lecture seule (best_available/plan vs vrais picks).")
+    parser = argparse.ArgumentParser(description="Backtest en lecture seule (best_available, best_available_x2plan, plan vs vrais picks).")
     parser.add_argument("--season", required=True)
     parser.add_argument("--from", dest="start", required=True, help="AAAA-MM-JJ")
     parser.add_argument("--to", dest="end", required=True, help="AAAA-MM-JJ")

@@ -10,7 +10,7 @@ cet historique simulé avec les vrais picks de l'utilisateur antérieurs à la
 fenêtre, pour démarrer sous les mêmes contraintes (cooldown, x2 du mois) —
 voir `simulate`.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Iterable
 
@@ -27,7 +27,11 @@ from engine.strategy.inputs import build_decision_inputs
 from engine.strategy.regular import decide
 from engine.strategy.value import X2_MONTHS
 
-STRATEGIES = ("best_available", "plan")
+# best_available_x2plan = comportement livré en production : pick = meilleur
+# dispo (rang 1), puis le plan est recalculé avec ce pick fixé ce soir et
+# le x2 suit sa décision pour ce soir (le plan peut poser le x2 sur un pick
+# déjà fait, voir engine.strategy.regular._picked_cells).
+STRATEGIES = ("best_available", "best_available_x2plan", "plan")
 INJURY_MODES = ("none", "dnp_oracle")
 GAMES_PAST_DAYS = 5      # comme daily_sync (SCHEDULE_PAST_DAYS) : jours de repos
 GAMES_AHEAD_DAYS = 35    # comme daily_sync : le planificateur a besoin de voir la fin du mois
@@ -44,7 +48,7 @@ class NightResult:
 
 @dataclass(frozen=True)
 class BacktestResult:
-    strategy: str          # "best_available" | "plan" | "user"
+    strategy: str          # une des STRATEGIES | "user"
     injury_mode: str       # "none" | "dnp_oracle"
     nights: list[NightResult]
 
@@ -146,7 +150,7 @@ def simulate(data: SeasonData, start: date, end: date, strategy: str, injury_mod
             series_rows=[],
             nights=eligible_nights(data, d, horizon_end),
         )
-        decision = decide(inputs, tonight_source=strategy, decay=decay)
+        decision = decide(inputs, tonight_source="plan" if strategy == "plan" else "best_available", decay=decay)
 
         if not decision.recommendations:
             results.append(NightResult(d, None, False, 0))
@@ -154,6 +158,16 @@ def simulate(data: SeasonData, start: date, end: date, strategy: str, injury_mod
         pid = decision.recommendations[0].cell.player_id
         if strategy == "plan":
             entry = decision.plan.get(d)
+            is_x2 = (entry is not None and entry.cell.player_id == pid and entry.is_x2
+                     and _x2_allowed(night.mode, d, x2_used))
+        elif strategy == "best_available_x2plan":
+            # Le pick du soir est fait : le plan est recalculé avec ce pick
+            # fixé (comme le ferait la synchro suivante) et le x2 suit sa
+            # décision pour ce soir.
+            tonight_pick = PickRow(len(history) + 1, pid, d, night.mode, data.season, False)
+            replan = decide(replace(inputs, picks=[*inputs.picks, tonight_pick]),
+                            tonight_source="best_available", decay=decay)
+            entry = replan.plan.get(d)
             is_x2 = (entry is not None and entry.cell.player_id == pid and entry.is_x2
                      and _x2_allowed(night.mode, d, x2_used))
         else:

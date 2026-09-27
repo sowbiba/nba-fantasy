@@ -222,3 +222,44 @@ def test_seed_picks_x2_du_mois_deja_pose_empeche_un_second_x2():
     # Sans le seed, novembre pose bien son propre x2 (comportement existant).
     without_seed = simulate(data, nights[0], nights[-1], "best_available")
     assert any(n.is_x2 for n in without_seed.nights if n.night.month == 11)
+
+
+# --- I-3 : best_available_x2plan (comportement livré) ---------------------------
+
+def test_x2plan_garde_les_picks_du_meilleur_dispo_et_pose_un_x2_par_mois():
+    nights = [date(2026, 11, 28), date(2026, 11, 29), date(2026, 11, 30), date(2026, 12, 1)]
+    data = _season(nights)
+    ba = simulate(data, nights[0], nights[-1], "best_available")
+    x2plan = simulate(data, nights[0], nights[-1], "best_available_x2plan")
+    # Mêmes picks (rang 1 best-available chaque soir) : seul le x2 change.
+    assert [n.player_id for n in x2plan.nights] == [n.player_id for n in ba.nights]
+    november = [n for n in x2plan.nights if n.night.month == 11 and n.is_x2]
+    assert len(november) == 1   # fin de novembre visible : x2 forcé, posé sur un pick
+    assert november[0].points == 2 * BASE[november[0].player_id]
+
+
+def test_x2plan_replanifie_avec_le_pick_du_soir_fixe_et_suit_plan_du_soir(monkeypatch):
+    nights = [date(2026, 11, 28), date(2026, 11, 29), date(2026, 11, 30), date(2026, 12, 1)]
+    data = _season(nights)
+    calls = []
+    real_decide = sim.decide
+
+    def spy(inputs, **kwargs):
+        decision = real_decide(inputs, **kwargs)
+        calls.append((inputs, kwargs, decision))
+        return decision
+
+    monkeypatch.setattr(sim, "decide", spy)
+    result = simulate(data, nights[0], nights[-1], "best_available_x2plan")
+    # Deux décisions par soirée avec reco : la reco, puis le plan avec le pick fixé.
+    assert len(calls) == 2 * len(result.nights)
+    for i, night in enumerate(result.nights):
+        first, second = calls[2 * i], calls[2 * i + 1]
+        assert first[1]["tonight_source"] == second[1]["tonight_source"] == "best_available"
+        fixed = [p for p in second[0].picks if p.date == night.night]
+        assert [p.player_id for p in fixed] == [night.player_id]
+        entry = second[2].plan.get(night.night)
+        expected = entry is not None and entry.cell.player_id == night.player_id and entry.is_x2
+        # Un seul x2 par mois : un x2 suggéré après celui du mois n'est pas posé.
+        assert night.is_x2 == (expected and not any(
+            n.is_x2 for n in result.nights[:i] if n.night.month == night.night.month))

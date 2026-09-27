@@ -83,14 +83,14 @@ def test_run_produit_les_lignes_attendues_et_un_ecart_officiel_logs():
     data = _data()
     result = run(data, NIGHTS[0], NIGHTS[-1])
     labels = [(r.label, r.mode) for r in result["rows"]]
-    # officiel + logs (n/a) + best_available × 2 modes + plan (défaut) × 2 modes = 6.
+    # officiel + logs (n/a) + (best_available, best_available_x2plan, plan défaut) × 2 modes = 8.
     assert ("Mes vrais picks (officiel)", "n/a") in labels
     assert ("Mes vrais picks (logs)", "n/a") in labels
     for strategy in STRATEGIES:
         label = strategy if strategy != "plan" else f"plan (decay={FUTURE_DECAY}, défaut)"
         for mode in INJURY_MODES:
             assert (label, mode) in labels
-    assert len(result["rows"]) == 6
+    assert len(result["rows"]) == 8
     # La soirée 2 (actual_score officiel 35 ≠ log 50) doit apparaître.
     assert NIGHTS[1] in result["diverging_nights"]
     assert len(result["diverging_nights"]) == 1
@@ -103,7 +103,7 @@ def test_run_ajoute_deux_lignes_par_decay_demande():
     for decay in (0.97, 1.0):
         for mode in INJURY_MODES:
             assert (f"plan (decay={decay})", mode) in labels
-    assert len(result["rows"]) == 6 + 2 * 2
+    assert len(result["rows"]) == 8 + 2 * 2
 
 
 def test_run_contexte_saison_complete_present():
@@ -127,6 +127,8 @@ def test_report_contient_les_sections_et_la_conclusion_factuelle():
            or "le plan ne bat pas le meilleur choix dans les deux modes" in report)
     assert "mode none : plan − meilleur choix" in report
     assert "mode dnp_oracle : plan − meilleur choix" in report
+    assert "mode none : best_available_x2plan − best_available" in report
+    assert "| best_available_x2plan | dnp_oracle |" in report
     assert "decay=0.97" in report
 
 
