@@ -1,4 +1,4 @@
-"""Décision du soir et plan 30 jours (S1, S2).
+"""Décision du soir et plan 30 jours (S1, S2, S3 : soirée x2 du mois).
 
 Reco du soir (L1) = best-available trié par valeur S1. Le plan est indicatif
 jusqu'à sa validation par backtest (L2, règle d'activation de la spec §7).
@@ -17,8 +17,8 @@ from engine.stats.availability_prob import HARD_OUT_STATUSES, future_p_play, p_p
 from engine.stats.profile import PlayerProfile
 from engine.stats.projection import GameContext, project, rest_days
 from engine.stats.team_defense import opp_factor
-from engine.strategy.planner import Cell, solve
-from engine.strategy.value import future_value, lock_value, tonight_value
+from engine.strategy.planner import Cell, PlanEntry, solve
+from engine.strategy.value import X2_MONTHS, future_value, lock_value, tonight_value, x2_gain
 
 HORIZON_DAYS = 30
 MIN_EXP_MINUTES = 15.0
@@ -37,6 +37,7 @@ class DecisionInputs:
     picks: list[PickRow]
     second_chances: list[SecondChance] = field(default_factory=list)
     series: list[SeriesRow] = field(default_factory=list)
+    x2_used_months: frozenset[tuple[int, int]] = frozenset()   # mois où un pick is_x2 existe déjà
 
 
 @dataclass(frozen=True)
@@ -51,7 +52,7 @@ class Recommendation:
 class Decision:
     tonight: date | None
     recommendations: list[Recommendation]
-    plan: dict[date, Cell]
+    plan: dict[date, PlanEntry]
 
 
 def _game_date(g: dict) -> date:
@@ -70,6 +71,26 @@ def _is_phantom(game: dict, completed_pairs: set[tuple[str, frozenset[str]]]) ->
         return False
     pair = frozenset({game["home_team"], game["away_team"]})
     return (season, pair) in completed_pairs
+
+
+def _x2_months(inputs: DecisionInputs, horizon: dict[date, Night]) -> dict[tuple[int, int], bool]:
+    """S3/R10 : mois (année, mois) de l'horizon où un x2 est encore
+    disponible (novembre–avril, saison régulière, pas déjà utilisé) → forcé
+    si la dernière soirée SR éligible du mois dans `inputs.nights` tombe dans
+    l'horizon. Suppose que `inputs.nights` couvre au-delà de l'horizon
+    (daily_sync charge 35 j) : sinon un mois serait forcé à tort."""
+    if not horizon:
+        return {}
+    last_in_horizon = max(horizon)
+    last_of_month: dict[tuple[int, int], date] = {}
+    for n in inputs.nights:
+        if n.is_phantom or n.n_eligible_games <= 0 or n.mode != "regular":
+            continue
+        key = (n.date.year, n.date.month)
+        last_of_month[key] = max(last_of_month.get(key, n.date), n.date)
+    months = {(d.year, d.month) for d, n in horizon.items() if n.mode == "regular"}
+    return {m: last_of_month[m] <= last_in_horizon for m in sorted(months)
+            if m[1] in X2_MONTHS and m not in inputs.x2_used_months}
 
 
 def decide(inputs: DecisionInputs) -> Decision:
@@ -160,12 +181,16 @@ def decide(inputs: DecisionInputs) -> Decision:
             reco_value = plan_value = future_value(k, p, projection)
         cell = Cell(pid, d, projection, p, reco_value, ctx)
         cells.append(cell)
-        planner_cells.append(cell if k != 0 else replace(cell, value=plan_value))
+        gain = x2_gain(p, projection, inputs.profiles[pid].stddev) if nights[d].mode == "regular" else 0.0
+        planner_cells.append(replace(cell, value=plan_value, x2_gain=gain))
 
     fixed = {p.date for p in inputs.picks}
     plan_nights = sorted(d for d in nights if d not in fixed)
-    plan = solve([c for c in planner_cells if c.night in set(plan_nights)], plan_nights,
-                 required={today} if today in plan_nights else frozenset())
+    plan_set = set(plan_nights)
+    plan = solve([c for c in planner_cells if c.night in plan_set], plan_nights,
+                 required={today} if today in plan_set else frozenset(),
+                 x2_months=_x2_months(inputs, nights),
+                 x2_nights={d for d in plan_nights if nights[d].mode == "regular"})
 
     tonight = today if today in nights else None
     recommendations: list[Recommendation] = []

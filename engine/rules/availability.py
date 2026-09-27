@@ -18,6 +18,7 @@ class PickRow:
     date: date
     mode: str    # 'regular' | 'playoffs'
     season: str
+    is_x2: bool = False
 
 
 @dataclass(frozen=True)

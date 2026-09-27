@@ -60,8 +60,8 @@ def test_decide_lock_value_et_meilleur_futur():
 
 def test_decide_plan_joue_la_star_a_son_meilleur_soir():
     d = decide(_inputs())
-    assert d.plan[TODAY + timedelta(days=20)].player_id == 1
-    assert d.plan[TODAY].player_id == 2
+    assert d.plan[TODAY + timedelta(days=20)].cell.player_id == 1
+    assert d.plan[TODAY].cell.player_id == 2
 
 
 def test_decide_exclut_cooldown_et_out():
@@ -187,5 +187,53 @@ def test_plan_ne_compte_pas_deux_fois_le_blocage():
         recent_logs=recent_logs, defense={}, picks=[], second_chances=[], series=[],
     )
     dec = decide(d_inputs)
-    assert dec.plan[TODAY].player_id == 201
-    assert dec.plan[d20].player_id == 203
+    assert dec.plan[TODAY].cell.player_id == 201
+    assert dec.plan[d20].cell.player_id == 203
+
+
+# --- x2 mensuel (S3, R10) ---------------------------------------------------
+
+from engine.strategy.regular import _x2_months
+
+
+def test_x2_mois_entierement_visible_force_son_x2():
+    # Les deux soirées de novembre (02 et 22) sont dans l'horizon : le x2 de
+    # novembre est forcé et posé sur une soirée du plan.
+    inputs = _inputs()
+    assert _x2_months(inputs, {n.date: n for n in inputs.nights}) == {(2026, 11): True}
+    d = decide(inputs)
+    assert sum(e.is_x2 for e in d.plan.values()) == 1
+
+
+def test_x2_mois_deja_servi_sans_x2():
+    d = decide(_inputs(x2_used_months=frozenset({(2026, 11)})))
+    assert d.plan and not any(e.is_x2 for e in d.plan.values())
+
+
+def test_x2_pas_en_octobre():
+    today = date(2026, 10, 25)
+    d = decide(_inputs(today=today, nights=[_night(today), _night(today + timedelta(days=3))],
+                       games=[_game("g1", today, "DEN", "LAL"), _game("g2", today + timedelta(days=3), "DEN", "WAS")]))
+    assert d.plan and not any(e.is_x2 for e in d.plan.values())
+
+
+def test_x2_mois_non_visible_en_entier_non_force():
+    # 25/10 : novembre visible jusqu'au 23/11, mais une soirée le 28/11 est
+    # hors horizon → x2 de novembre disponible, pas forcé.
+    today = date(2026, 10, 25)
+    nights = [_night(today), _night(date(2026, 11, 5)), _night(date(2026, 11, 28))]
+    inputs = _inputs(today=today, nights=nights)
+    horizon = {n.date: n for n in nights if (n.date - today).days < 30}
+    assert _x2_months(inputs, horizon) == {(2026, 11): False}
+
+
+def test_x2_jamais_sur_une_soiree_de_playoffs():
+    # Avril : la soirée PO du 20 est exclue du x2 ; la dernière soirée SR
+    # (10/04) est dans l'horizon → forcé sur la soirée SR.
+    today = date(2027, 4, 10)
+    po = today + timedelta(days=10)
+    night_po = Night(po, "2026-27", "playoffs", 1, datetime(po.year, po.month, po.day, 23, tzinfo=PARIS), False)
+    d = decide(_inputs(today=today, nights=[_night(today), night_po],
+                       games=[_game("g1", today, "DEN", "LAL"), _game("g2", po, "DEN", "WAS", "playoffs")]))
+    assert d.plan[today].is_x2
+    assert po not in d.plan or not d.plan[po].is_x2

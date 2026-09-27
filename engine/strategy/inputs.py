@@ -68,5 +68,7 @@ def build_decision_inputs(
 
     inputs = DecisionInputs(today=today, nights=nights, games=games, players=players,
                             profiles=profiles, recent_logs=recent_logs, defense=defense,
-                            picks=picks, second_chances=second_chances, series=series)
+                            picks=picks, second_chances=second_chances, series=series,
+                            x2_used_months=frozenset((p.date.year, p.date.month) for p in picks
+                                                     if p.is_x2 and p.mode == "regular"))
     return inputs, profiles

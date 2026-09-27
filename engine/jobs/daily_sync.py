@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from engine.explain.texts import plan_explanation, reco_texts, tier
 from engine.io.espn import match_injury_to_player
-from engine.rules.availability import PickRow, SecondChance, SeriesRow
+from engine.rules.availability import PickRow, SecondChance
 from engine.rules.calendar import PARIS, build_nights
 from engine.rules.game_types import previous_season, season_for_date
 from engine.stats.aggregates import player_aggregates
@@ -152,7 +152,8 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime) -> R
                                  "n_eligible_games": n.n_eligible_games, "closing_at": n.closing_at.isoformat(),
                                  "is_phantom": n.is_phantom, "updated_at": now.isoformat()} for n in nights])
 
-    picks = [PickRow(p["id"], p["player_id"], _d(p["date"]), p["mode"], p["season"]) for p in repo.load_picks(season)]
+    picks = [PickRow(p["id"], p["player_id"], _d(p["date"]), p["mode"], p["season"], bool(p.get("is_x2")))
+             for p in repo.load_picks(season)]
     second_chances = [SecondChance(s["pick_id"], s["player_id"], _d(s["bought_on"]), _d(s["expires_on"]))
                       for s in repo.load_second_chances()]
     decision_inputs, _profiles = build_decision_inputs(
@@ -181,10 +182,10 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime) -> R
         repo.replace_recommendations(today, rows)
         result.recommendations = len(rows)
 
-    plan_rows = [{"generated_at": now.isoformat(), "night": night.isoformat(), "player_id": c.player_id,
-                  "is_x2": False, "projection": round(c.projection, 1), "p_play": round(c.p_play, 3),
-                  "value": round(c.value, 1), "explanation": plan_explanation(c)}
-                 for night, c in decision.plan.items() if (night - today).days < HORIZON_DAYS]
+    plan_rows = [{"generated_at": now.isoformat(), "night": night.isoformat(), "player_id": e.cell.player_id,
+                  "is_x2": e.is_x2, "projection": round(e.cell.projection, 1), "p_play": round(e.cell.p_play, 3),
+                  "value": round(e.cell.value, 1), "explanation": plan_explanation(e.cell)}
+                 for night, e in decision.plan.items() if (night - today).days < HORIZON_DAYS]
     repo.write_plan(plan_rows, keep_since=now - PLAN_RETENTION)
     result.plan_nights = len(plan_rows)
     return result
