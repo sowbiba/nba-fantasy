@@ -99,7 +99,11 @@ export default function PushControls() {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
         if (sub) {
-          await unsubscribePush(sub.endpoint);
+          const result = await unsubscribePush(sub.endpoint);
+          if (!result.ok) {
+            setError(result.error);
+            return;
+          }
           await sub.unsubscribe();
         }
         setStatus("disabled");

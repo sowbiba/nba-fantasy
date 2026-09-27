@@ -20,12 +20,16 @@ export default async function DeckPage() {
   const plan = (planRes.data || []) as PlanRow[];
   const picks = (picksRes.data || []) as PickRow[];
   const ids = [...new Set([...plan.map((p) => p.player_id), ...picks.map((p) => p.player_id)])];
-  const playersRes = ids.length ? await supabase.from("players").select("*").in("id", ids) : { data: [] };
+  const playersRes = ids.length ? await supabase.from("players").select("*").in("id", ids) : { data: [], error: null };
   const players = new Map(((playersRes.data || []) as Player[]).map((p) => [p.id, p]));
 
   // Match de l'équipe du joueur suggéré, pour réserver en un clic.
-  const gamesRes = await supabase.from("games").select("id, date, home_team, away_team").gte("date", today).lte("date", until);
+  const gamesRes = await supabase.from("games").select("id, date, home_team, away_team")
+    .gte("date", today).lte("date", until)
+    // Miroir de ELIGIBLE_TYPES (engine/rules/game_types.py, R4).
+    .in("game_type", ["regular", "cup_final", "playoffs"]);
   const games = (gamesRes.data || []) as { id: string; date: string; home_team: string; away_team: string }[];
+  const dataError = [nightsRes, planRes, picksRes, playersRes, gamesRes].some((r) => r.error);
 
   return (
     <div className="px-4 py-5 animate-fade-in">
@@ -33,8 +37,13 @@ export default async function DeckPage() {
         DE<span className="flame-text">CK</span>
       </h1>
       <p className="text-[11px] text-[color:var(--color-text-mute)] mt-1 uppercase tracking-[0.18em]">
-        14 prochaines soirées · suggestions du plan (indicatives)
+        Les soirées des 14 prochains jours · suggestions du plan (indicatives)
       </p>
+      {dataError && (
+        <p role="alert" className="mt-3 rounded-[var(--radius-card-sm)] border border-[color:var(--color-crimson)]/40 bg-[color:var(--color-crimson)]/10 px-3 py-2 text-sm text-[color:var(--color-crimson)]">
+          Données indisponibles pour le moment, réessaie dans quelques minutes.
+        </p>
+      )}
       <div className="mt-4 flex flex-col gap-2">
         {nights.map((n) => {
           const pick = picks.find((p) => p.date === n.date);
@@ -49,7 +58,7 @@ export default async function DeckPage() {
               suggestion={s && sPlayer && sGame ? { playerId: sPlayer.id, name: sPlayer.name, team: sPlayer.team, gameId: sGame.id, projection: s.projection, explanation: s.explanation } : null} />
           );
         })}
-        {nights.length === 0 && <p className="text-sm text-[color:var(--color-text-mute)]">Aucune soirée TTFL dans les 14 prochains jours.</p>}
+        {nights.length === 0 && !dataError && <p className="text-sm text-[color:var(--color-text-mute)]">Aucune soirée TTFL dans les 14 prochains jours.</p>}
       </div>
     </div>
   );

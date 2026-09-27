@@ -27,6 +27,7 @@ export default async function PicksPage() {
     supabase.from("nights").select("date").eq("season", season).lt("date", today)
       .eq("is_phantom", false).gt("n_eligible_games", 0).order("date", { ascending: false }),
   ]);
+  const dataError = [statsRes, picksRes, scRes, nightRes, pastNightsRes].some((r) => r.error);
   const stats = ((statsRes.data || [])[0] ?? null) as Stats | null;
   const scByPick = new Map(((scRes.data || []) as { pick_id: number; bought_on: string; expires_on: string }[])
     .map((s) => [s.pick_id, { bought_on: s.bought_on, expires_on: s.expires_on }]));
@@ -58,6 +59,12 @@ export default async function PicksPage() {
         )}
       </div>
       <p className="text-[11px] text-[color:var(--color-text-mute)] mt-1 uppercase tracking-[0.18em]">Saison {season}</p>
+
+      {dataError && (
+        <p role="alert" className="mt-3 rounded-[var(--radius-card-sm)] border border-[color:var(--color-crimson)]/40 bg-[color:var(--color-crimson)]/10 px-3 py-2 text-sm text-[color:var(--color-crimson)]">
+          Données indisponibles pour le moment, réessaie dans quelques minutes.
+        </p>
+      )}
 
       <div className="grid grid-cols-3 gap-2 mt-4">
         {[

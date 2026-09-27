@@ -33,7 +33,7 @@ async function getData() {
   const pick = (pickRes.data as Pick | null) ?? null;
 
   const ids = [...new Set([...recs.map((r) => r.player_id), ...(pick ? [pick.player_id] : [])])];
-  const playersRes = ids.length ? await supabase.from("players").select("*").in("id", ids) : { data: [] };
+  const playersRes = ids.length ? await supabase.from("players").select("*").in("id", ids) : { data: [], error: null };
   const players = new Map(((playersRes.data || []) as Player[]).map((p) => [p.id, p]));
 
   const recsWithPlayersBase = recs
@@ -51,13 +51,15 @@ async function getData() {
   // restreinte aux adversaires du soir pour rester légère.
   const season = night?.season;
   let defenders = new Map<string, ReturnType<typeof topDefender>>();
+  let matchupError = null;
   if (season && recsWithPlayersBase.length) {
     const opponents = [...new Set(recsWithPlayersBase.map(opponentOf))];
-    const { data } = await supabase.from("matchup_season")
+    const { data, error } = await supabase.from("matchup_season")
       .select("player_id, opponent_team, def_player_name, minutes, points, games")
       .eq("season", season)
       .in("player_id", recsWithPlayersBase.map((r) => r.player_id))
       .in("opponent_team", opponents);
+    matchupError = error;
     const byKey = new Map<string, MatchupSeasonRow[]>();
     for (const r of (data || []) as (MatchupSeasonRow & { player_id: number; opponent_team: string })[]) {
       const k = `${r.player_id}:${r.opponent_team}`;
@@ -69,15 +71,17 @@ async function getData() {
     ...r, defender: defenders.get(`${r.player_id}:${opponentOf(r)}`) ?? null,
   }));
 
+  const dataError = [nightRes, gamesRes, recsRes, pickRes, playersRes].some((r) => r.error) || !!matchupError;
+
   return {
-    deck, night, games, recsWithPlayers, pick,
+    deck, night, games, recsWithPlayers, pick, dataError,
     pickPlayer: pick ? players.get(pick.player_id) ?? null : null,
     sync: (syncRes.data?.[0] || null) as SyncLog | null,
   };
 }
 
 export default async function TonightPage() {
-  const { deck, night, games, recsWithPlayers, pick, pickPlayer, sync } = await getData();
+  const { deck, night, games, recsWithPlayers, pick, pickPlayer, sync, dataError } = await getData();
   const state = homeState({ hasNight: !!night && night.n_eligible_games > 0, recCount: recsWithPlayers.length, hasPick: !!pick });
   const top3 = recsWithPlayers.slice(0, 3);
   const month = Number(deck.slice(5, 7));
@@ -108,11 +112,19 @@ export default async function TonightPage() {
         </div>
       </header>
 
+      {dataError && (
+        <div className="px-4">
+          <p role="alert" className="rounded-[var(--radius-card-sm)] border border-[color:var(--color-crimson)]/40 bg-[color:var(--color-crimson)]/10 px-3 py-2 text-sm text-[color:var(--color-crimson)]">
+            Données indisponibles pour le moment, réessaie dans quelques minutes.
+          </p>
+        </div>
+      )}
+
       {pick && pickPlayer ? (
         <MyPickCard key={`${pick.id}-${pick.is_x2}`} date={deck} playerId={pickPlayer.id} playerName={pickPlayer.name} team={pickPlayer.team}
                     isX2={pick.is_x2} x2Allowed={pick.mode === "regular" && X2_MONTHS.has(month)} closingAt={night?.closing_at ?? ""} />
       ) : (
-        <NoPickBanner hasGamesTonight={state !== "no_games"} />
+        !dataError && <NoPickBanner hasGamesTonight={state !== "no_games"} />
       )}
 
       <SyncStatus sync={sync} />
@@ -132,7 +144,7 @@ export default async function TonightPage() {
         </div>
         <div className="flex flex-col gap-3 stagger">
           {top3.map((rec) => <RecommendationCard key={rec.id} rec={rec} />)}
-          {top3.length === 0 && (
+          {top3.length === 0 && !dataError && (
             <div className="surface p-8 text-center">
               <div className="font-display text-2xl text-[color:var(--color-text-mute)] mb-1">
                 {state === "no_games" ? "Pas de soirée TTFL" : "Aucune reco"}

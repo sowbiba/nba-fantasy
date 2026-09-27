@@ -22,7 +22,13 @@ export default function CorrectionPanel({
 
   useEffect(() => {
     let cancelled = false;
-    playersForNight(date).then((data) => { if (!cancelled) setPlayers(data); });
+    playersForNight(date)
+      .then((data) => { if (!cancelled) setPlayers(data); })
+      .catch(() => {
+        if (cancelled) return;
+        setPlayers([]);
+        setError("Impossible de charger les joueurs, réessaie dans quelques minutes.");
+      });
     return () => { cancelled = true; };
   }, [date]);
 

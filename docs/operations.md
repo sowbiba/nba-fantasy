@@ -4,39 +4,33 @@
 
 | Besoin | Source | Auth |
 |--------|--------|------|
-| Box scores, scoreboard du jour | `cdn.nba.com` | Headers User-Agent + Referer |
-| Stats avancées, splits, game logs historiques | `nba_api` (Python wrapper de stats.nba.com) | Aucune |
+| Scoreboard du jour (statuts, scores), box score en direct | ESPN `site.api.espn.com` (scoreboard + summary) | Aucune |
+| Calendrier (35 jours à venir), historique de la saison (box scores) | `nba_api` (Python wrapper de stats.nba.com), depuis le PC local uniquement | Aucune |
 | Blessures et statuts joueurs | ESPN `/nba/injuries` (endpoint global) | Aucune |
-| Calendrier des playoffs | `cdn.nba.com/staticData/scheduleLeagueV2.json` | Aucune |
+
+`cdn.nba.com` n'est plus appelé par aucun job (`daily_sync`, `local_nightly`) depuis 2026-09 : il renvoie 403 partout (PC comme GitHub Actions). Le code (`engine/io/nba.py`) reste dans le repo mais n'est plus utilisé. Voir `docs/reactivation-saison.md`.
 
 ---
 
 ## Rythme de synchronisation (cron)
 
-Le sync principal tourne via **GitHub Actions** (`.github/workflows/daily-sync.yml`) **4 fois par jour** (07 h / 12 h / 17 h / 22 h, heure de Paris). Un cron local complète à 23 h 50 pour le refresh des rosters (`stats.nba.com` bloque les IPs GitHub). Hors saison, les deux sont désactivés.
+Le sync principal tourne via **GitHub Actions** (`.github/workflows/daily-sync.yml`) : 3 passages dans la journée (07 h / 12 h / 17 h, heure de Paris) puis un passage **toutes les heures de 18 h à 23 h** (blessures, P(joue), plan) pendant que les matchs se jouent en Europe. Un cron local complète à 23 h 50 pour les effectifs et le calendrier (`stats.nba.com` bloque les IPs GitHub). Hors saison, les deux sont désactivés.
 
-| Heure | Rôle |
-|-------|------|
-| **07 h** | Résultats de la veille (box scores), MAJ des actual_score des picks, MAJ des standings séries. Refresh team_defense 1x/jour. |
-| **12 h** | Schedule du soir confirmé. Premières injury reports. Recos préliminaires. |
-| **17 h** | Injury updates finaux (GTD résolus). **Recos définitives du soir.** |
-| **22 h** | Late scratches, changements de dernière minute. Update recos si besoin. |
+Les horaires du yml sont en UTC (l'heure du cron GitHub Actions) : `0 5,10,15 * * *` (07/12/17 h Paris) et `0 16-21 * * *` (18 h→23 h Paris, toutes les heures). Cette correspondance n'est correcte qu'en heure d'été (CEST = UTC+2) : **après le passage à l'heure d'hiver (25/10, CET = UTC+1), chaque run arrive une heure plus tôt côté Paris.** Pour garder l'alignement, passer à `"0 6,11,16 * * *"` / `"0 17-22 * * *"` (voir le commentaire en tête de `daily-sync.yml`).
 
-À chaque sync, le cron :
+`daily_sync` (GitHub Actions) n'appelle plus `cdn.nba.com` (403 partout) : les statuts/scores du jour et de la veille viennent d'ESPN.
 
-1. Fetch le scoreboard du jour (cdn.nba.com)
-2. Reload le schedule (30 jours à venir)
-3. Re-seed les séries playoffs (idempotent, extrait les wins depuis `seriesText`)
-4. (7h uniquement) Recalcule team_defense depuis les game_logs
-5. Fetch les blessures ESPN (tous les teams)
-6. Update aggregates pour les joueurs qui jouent ce soir
-7. Score tous les joueurs disponibles
-8. Applique la couche stratégie
-9. Génère les argumentaires (top 50)
-10. Push les recommandations vers Supabase
-11. Calcule le plan hebdomadaire optimal et le push
+1. Scoreboard ESPN de J-1 et J (statuts, scores) → mise à jour de `games`
+2. Score les picks non encore scorés dont le match est réglé (`score_picks`)
+3. Fetch les blessures ESPN (tous les teams) et met à jour `players`
+4. Recalcule les agrégats/profils des joueurs actifs, le facteur défense
+5. Reconstruit les soirées (`nights`) sur la fenêtre chargée par `local_nightly`
+6. Applique la couche stratégie et génère les recommandations + argumentaires du soir
+7. Calcule le plan 30 jours et le push
 
-Le refresh des **rosters** (nba_api) est à part : rafraîchi chaque nuit par le run local de 23 h 50 uniquement (stats.nba.com bloque les IPs GitHub).
+Chaque étape réseau peut échouer sans faire tomber le job (décision sur les données en base, échec noté dans les `warnings` du log).
+
+Le run local (`local_nightly`, cron 23 h 50, PC) est à part : effectifs des 30 équipes, calendrier (35 jours à venir, stats.nba.com), historique de la saison via `LeagueGameLog` (seule source de box scores, le CDN NBA n'est plus utilisé), puis `score_picks` sur les picks concernés par ce chargement, et les matchups bruts défenseur/joueur.
 
 Logs : `/tmp/ttfl-local.log`
 
@@ -66,9 +60,9 @@ nba-fantasy/
 │   │   ├── picks/                     # Mes picks (2 onglets)
 │   │   ├── strategy/page.tsx          # Stratégie + plan hebdo
 │   │   ├── injuries/                  # Blessés par équipe
-│   │   └── api/                       # Route handlers (server-side)
+│   │   └── api/                       # Route handlers (server-side : reminders, live-box-score)
 │   ├── src/components/                # RecommendationCard, BottomNav, etc.
-│   ├── src/lib/supabase.ts            # Client Supabase
+│   ├── src/lib/supabase/              # Clients Supabase (public/server/admin)
 │   └── src/types/index.ts             # Types TypeScript partagés
 ├── supabase/
 │   ├── schema.sql                     # Schema initial
@@ -115,13 +109,15 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_xxx
 ```
 
+**Attention : `web/.env.local` pointe la prod. En `npm run dev`, un pick ou une correction écrit en production.**
+
 ### Exécution
 
 ```bash
 # Sync manuel (tel que GitHub Actions)
 source venv/bin/activate && python -m engine.jobs.daily_sync
 
-# Job local (effectifs, box scores stats.nba.com, tel que le cron local)
+# Job local (effectifs, calendrier stats.nba.com, LeagueGameLog, tel que le cron local)
 python -m engine.jobs.local_nightly
 
 # Chargement d'une saison complète (une fois) :
@@ -130,7 +126,7 @@ python -m engine.jobs.local_nightly
 # Tests
 python -m pytest tests/ -v
 
-# Frontend dev
+# Frontend dev — écrit en prod (voir l'avertissement ci-dessus)
 cd web && npm run dev
 
 # Deploy Vercel
@@ -139,7 +135,7 @@ cd web && npx vercel --prod
 
 ### Crontab local (complément du GitHub Action)
 
-Un seul run local par jour, dédié au refresh des rosters (stats.nba.com bloque les IPs GitHub) :
+Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.com bloque les IPs GitHub) :
 
 ```
 50 23 * * * cd /home/isow/workspace/perso/nba-fantasy && ./venv/bin/python -m engine.jobs.local_nightly >> /tmp/ttfl-local.log 2>&1 || { echo "$(date '+\%F \%T') TTFL local KO" >> /home/isow/ttfl-sync-failures.log; DISPLAY=:0 notify-send -u critical "TTFL local KO" 2>/dev/null; }
@@ -156,3 +152,23 @@ docker stop ttfl-pg
 ```
 
 Sans `TEST_DATABASE_URL`, ces tests sont ignorés. En CI, un service Postgres les fait tourner à chaque push.
+
+## Rappels (Web Push + Telegram)
+
+Deux rappels par soirée si activés : oubli de pick (−2 h puis −30 min avant `closing_at`) et alerte blessure/indisponibilité du joueur pické. Web Push en priorité, Telegram en secours si `notifyAll` ne délivre rien.
+
+**Variables d'environnement** (Vercel, jamais commitées) :
+
+| Variable | Rôle |
+|----------|------|
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Clé publique VAPID, exposée au navigateur pour `pushManager.subscribe` |
+| `VAPID_PRIVATE_KEY` | Clé privée VAPID, côté serveur uniquement (`web/src/lib/notify.ts`) |
+| `REMINDERS_SECRET` | Secret Bearer attendu par `POST /api/reminders` (comparaison à temps constant) |
+| `TELEGRAM_BOT_TOKEN` | Token du bot Telegram, secours si aucun push n'est délivré |
+| `TELEGRAM_CHAT_ID` | Chat Telegram cible pour le secours |
+
+**Stockage** : migration 024 (`push_subscriptions`, `reminders_sent`), accès par la clé service uniquement (RLS activée, pas de policy). `web/public/sw.js` est le service worker écrit à la main (pas de génération) qui reçoit les push et affiche la notification.
+
+**Déclenchement** : `supabase/manual/reminders_cron.sql`, à exécuter une fois en prod après avoir créé le secret dans Vault (`select vault.create_secret('<valeur REMINDERS_SECRET>', 'reminders_secret');`). Il installe un job `pg_cron` (`ttfl-reminders`, toutes les 15 min) qui `POST` sur `https://ttfl-advisor.vercel.app/api/reminders` avec `Authorization: Bearer <secret Vault>`. La route (`web/src/app/api/reminders/route.ts`) répond `{ sent: n }`, `401` si le secret ne correspond pas, `500` si `REMINDERS_SECRET` ou `SUPABASE_SERVICE_KEY` est absente côté serveur — elle ne doit jamais planter, `pg_cron` l'appelle sans surveillance.
+
+**Test manuel** : se connecter (menu Picks → Connexion), aller sur `/rappels`, « Activer les rappels », puis « Envoyer une notification de test ». Sur iPhone, l'app doit d'abord être ajoutée à l'écran d'accueil (Web Push indisponible dans Safari hors PWA installée).
