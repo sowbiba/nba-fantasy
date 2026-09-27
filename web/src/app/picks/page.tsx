@@ -4,7 +4,6 @@ import { createAuthClient } from "@/lib/supabase/server";
 import { isOwnerEmail } from "@/lib/auth";
 import { deckDate, seasonForDate } from "@/lib/date";
 import PicksHistory, { HistoryRow } from "./PicksHistory";
-import SignOutButton from "@/components/SignOutButton";
 
 export const revalidate = 0;
 
@@ -52,13 +51,8 @@ export default async function PicksPage() {
         <h1 className="font-display text-4xl leading-none tracking-wide text-white">
           MES <span className="flame-text">PICKS</span>
         </h1>
-        {signedIn ? (
-          <div className="flex items-center gap-3">
-            <Link href="/rappels" className="text-xs underline text-[color:var(--color-text-soft)]">Rappels</Link>
-            <SignOutButton />
-          </div>
-        ) : (
-          <Link href="/connexion" className="text-xs underline text-[color:var(--color-text-soft)]">Connexion</Link>
+        {signedIn && (
+          <Link href="/rappels" className="text-xs underline text-[color:var(--color-text-soft)]">Rappels</Link>
         )}
       </div>
       <p className="text-[11px] text-[color:var(--color-text-mute)] mt-1 uppercase tracking-[0.18em]">Saison {season}</p>

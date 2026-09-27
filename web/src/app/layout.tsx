@@ -48,20 +48,22 @@ export default async function RootLayout({
         <ServiceWorker />
         <PullToRefresh />
         <div
-          className="fixed top-0 right-0 z-40 pointer-events-none"
+          className="fixed inset-x-0 top-0 z-40 pointer-events-none"
           style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
         >
-          <div className="pointer-events-auto px-4 py-2">
-            {owner ? (
-              <SignOutButton />
-            ) : (
-              <Link
-                href="/connexion"
-                className="text-[11px] uppercase tracking-[0.15em] text-[color:var(--color-text-mute)] underline"
-              >
-                Mode connecté
-              </Link>
-            )}
+          <div className="max-w-lg mx-auto flex justify-end">
+            <div className="pointer-events-auto px-4 py-2">
+              {owner ? (
+                <SignOutButton />
+              ) : (
+                <Link
+                  href="/connexion"
+                  className="text-[11px] uppercase tracking-[0.15em] text-[color:var(--color-text-mute)] underline"
+                >
+                  Mode connecté
+                </Link>
+              )}
+            </div>
           </div>
         </div>
         <main className="max-w-lg mx-auto pb-24">{children}</main>
