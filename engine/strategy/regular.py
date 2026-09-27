@@ -1,7 +1,8 @@
 """Décision du soir et plan 30 jours (S1, S2, S3 : soirée x2 du mois).
 
 Reco du soir (L1) = best-available trié par valeur S1. Le plan est indicatif
-jusqu'à sa validation par backtest (L2, règle d'activation de la spec §7).
+jusqu'à sa validation par backtest (L2, règle d'activation de la spec §7,
+voir engine.strategy.config.TONIGHT_SOURCE).
 Les règles de disponibilité viennent de engine.rules : en PO, le même
 calcul applique automatiquement le pick-and-drop et les éliminations (la
 stratégie PO dédiée arrive en L3).
@@ -17,6 +18,7 @@ from engine.stats.availability_prob import HARD_OUT_STATUSES, future_p_play, p_p
 from engine.stats.profile import PlayerProfile
 from engine.stats.projection import GameContext, project, rest_days
 from engine.stats.team_defense import opp_factor
+from engine.strategy.config import TONIGHT_SOURCE
 from engine.strategy.planner import Cell, PlanEntry, solve
 from engine.strategy.value import X2_MONTHS, future_value, lock_value, tonight_value, x2_gain
 
@@ -93,7 +95,7 @@ def _x2_months(inputs: DecisionInputs, horizon: dict[date, Night]) -> dict[tuple
             if m[1] in X2_MONTHS and m not in inputs.x2_used_months}
 
 
-def decide(inputs: DecisionInputs) -> Decision:
+def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: float | None = None) -> Decision:
     today = inputs.today
     nights = {n.date: n for n in inputs.nights
               if not n.is_phantom and n.n_eligible_games > 0 and 0 <= (n.date - today).days < HORIZON_DAYS}
@@ -175,10 +177,10 @@ def decide(inputs: DecisionInputs) -> Decision:
     planner_cells: list[Cell] = []
     for k, pid, d, projection, p, ctx in raw:
         if k == 0:
-            reco_value = tonight_value(p, projection, lock_value(future_ev[pid]))
-            plan_value = future_value(0, p, projection)
+            reco_value = tonight_value(p, projection, lock_value(future_ev[pid], decay))
+            plan_value = future_value(0, p, projection, decay)
         else:
-            reco_value = plan_value = future_value(k, p, projection)
+            reco_value = plan_value = future_value(k, p, projection, decay)
         cell = Cell(pid, d, projection, p, reco_value, ctx)
         cells.append(cell)
         gain = x2_gain(p, projection, inputs.profiles[pid].stddev) if nights[d].mode == "regular" else 0.0
@@ -203,6 +205,24 @@ def decide(inputs: DecisionInputs) -> Decision:
         for c in tonight_cells[:TOP_RECOMMENDATIONS]:
             best = max(future_cells[c.player_id], key=lambda f: f.value, default=None)
             recommendations.append(Recommendation(
-                cell=c, lock_value=lock_value(future_ev[c.player_id]),
+                cell=c, lock_value=lock_value(future_ev[c.player_id], decay),
                 locked_until=today + timedelta(days=COOLDOWN_DAYS), best_future=best))
+
+        if tonight_source == "plan":
+            plan_entry = plan.get(today)
+            if plan_entry is not None:
+                plan_pid = plan_entry.cell.player_id
+                idx = next((i for i, r in enumerate(recommendations) if r.cell.player_id == plan_pid), None)
+                if idx is not None:
+                    recommendations.insert(0, recommendations.pop(idx))
+                else:
+                    # Filtré hors du top (TOP_RECOMMENDATIONS) : reconstruire sa
+                    # recommandation (même cellule S1 que les autres recos).
+                    reco_cell = next((c for c in tonight_cells if c.player_id == plan_pid), None)
+                    if reco_cell is not None:
+                        best = max(future_cells[plan_pid], key=lambda f: f.value, default=None)
+                        recommendations.insert(0, Recommendation(
+                            cell=reco_cell, lock_value=lock_value(future_ev[plan_pid], decay),
+                            locked_until=today + timedelta(days=COOLDOWN_DAYS), best_future=best))
+                        del recommendations[TOP_RECOMMENDATIONS:]
     return Decision(tonight, recommendations, plan)

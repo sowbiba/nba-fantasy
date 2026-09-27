@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta
 
+import pytest
+
 from engine.rules.availability import PickRow, SeriesRow
 from engine.rules.calendar import PARIS, Night
 from engine.stats.profile import PlayerProfile
@@ -50,6 +52,16 @@ def test_decide_reco_du_soir_triee_par_valeur_et_filtre_minutes():
     assert ids == sorted(ids, key=lambda pid: -next(r.cell.value for r in d.recommendations if r.cell.player_id == pid))
 
 
+def test_decide_decay_parametrable_change_le_lock_value():
+    d_default = decide(_inputs())
+    d_decay = decide(_inputs(), decay=0.5)
+    star_default = next(r for r in d_default.recommendations if r.cell.player_id == 1)
+    star_decay = next(r for r in d_decay.recommendations if r.cell.player_id == 1)
+    # Seule soirée future du fixture : J+20 -> lock_value = decay**20 * ev.
+    assert 0 < star_decay.lock_value < star_default.lock_value
+    assert star_decay.lock_value == pytest.approx(star_default.lock_value * (0.5 / 0.985) ** 20)
+
+
 def test_decide_lock_value_et_meilleur_futur():
     d = decide(_inputs())
     star = next(r for r in d.recommendations if r.cell.player_id == 1)
@@ -62,6 +74,20 @@ def test_decide_plan_joue_la_star_a_son_meilleur_soir():
     d = decide(_inputs())
     assert d.plan[TODAY + timedelta(days=20)].cell.player_id == 1
     assert d.plan[TODAY].cell.player_id == 2
+
+
+def test_decide_tonight_source_best_available_par_defaut():
+    # Le meilleur choix S1 du soir (joueur 1) diffère de plan[today] (joueur 2).
+    d = decide(_inputs())
+    assert d.plan[TODAY].cell.player_id == 2
+    assert d.recommendations[0].cell.player_id == 1
+
+
+def test_decide_tonight_source_plan_place_le_joueur_du_plan_en_tete():
+    d = decide(_inputs(), tonight_source="plan")
+    ids = [r.cell.player_id for r in d.recommendations]
+    assert ids == [2, 1]  # joueur du plan en tête, le reste garde l'ordre par valeur
+    assert ids.count(2) == 1  # ne doit apparaître qu'une seule fois
 
 
 def test_decide_exclut_cooldown_et_out():
