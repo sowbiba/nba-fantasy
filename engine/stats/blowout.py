@@ -5,19 +5,19 @@ Quand un gros écart de points est attendu, les titulaires jouent moins
 passés : pour chaque match joué (minutes > 0) d'un match terminé avant la
 date de décision, `ratio = minutes / moyenne de minutes du joueur (même
 saison)` est régressé (moindres carrés simples, avec constante) sur
-`z = max(0, |écart final| − t)`, séparément pour les titulaires (moyenne ≥
-28 min) et les autres. Le seuil `t` de chaque groupe est choisi dans
-`THRESHOLD_GRID` (plus petite somme des carrés des résidus) ; la pente est
-bornée (baisse titulaires ∈ [0 ; 0,02]/pt, hausse remplaçants ∈ [0 ; 0,03]/pt).
+`z = max(0, |écart attendu d'avant-match| − t)` (`elo.pregame_margins` :
+ce qu'on savait avant ce match, la même grandeur que celle à laquelle le
+facteur est appliqué — spec §2 corrigée le 2026-09-28 ; l'écart final, bien
+plus dispersé, rendait le facteur quasi nul), séparément pour les
+titulaires (moyenne ≥ 28 min) et les autres. Le seuil `t` de chaque groupe
+est choisi dans `THRESHOLD_GRID` (plus petite somme des carrés des
+résidus) ; la pente est bornée (baisse titulaires ∈ [0 ; 0,02]/pt, hausse
+remplaçants ∈ [0 ; 0,03]/pt). Un groupe de moins de `MIN_SAMPLE`
+matchs-joueur reste neutre (pente nulle).
 
 Application (`factor`) avec l'écart ATTENDU (Elo corrigé des absents) :
 titulaire `1 − a × max(0, |écart| − t)`, remplaçant `1 + b × max(0, |écart| − t)`,
 borné à [0,85 ; 1,15].
-
-Limite connue : la pente est mesurée sur l'écart final (dispersion large)
-mais appliquée à l'écart attendu (Elo : rarement plus de ~12 pts) ; avec le
-même seuil, le facteur quitte peu 1,0. C'est la formule de la spec ; la
-règle d'activation (backtest dans les deux modes) tranche.
 
 Aucune fuite : seuls les logs ET les matchs de date strictement antérieure
 à `before` sont utilisés.
@@ -26,16 +26,17 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 
-from engine.stats.elo import as_date, is_countable
+from engine.stats.elo import EloParams, pregame_margins
 from engine.stats.profile import GameLog
 
 STARTER_MINUTES = 28.0
 MIN_GAMES_FOR_AVERAGE = 5            # moyenne de minutes trop bruitée en dessous
-THRESHOLD_GRID = (0.0, 5.0, 10.0, 15.0, 20.0)
+MIN_SAMPLE = 200                     # matchs-joueur minimum par groupe pour quitter le modèle neutre
+THRESHOLD_GRID = (0.0, 2.0, 4.0, 6.0, 8.0)   # écart attendu (Elo) : rarement plus de ~15 pts
 STARTER_SLOPE_BOUNDS = (0.0, 0.02)
 BENCH_SLOPE_BOUNDS = (0.0, 0.03)
 FACTOR_BOUNDS = (0.85, 1.15)
-DEFAULT_THRESHOLD = 10.0
+DEFAULT_THRESHOLD = 8.0
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ def _fit(points: list[tuple[float, float]]) -> tuple[float, float] | None:
     t choisi dans THRESHOLD_GRID par SSE minimale. None si aucun seuil
     n'offre de variance en z (pas assez de données)."""
     n = len(points)
-    if n < 2:
+    if n < max(2, MIN_SAMPLE):
         return None
     best: tuple[float, float, float] | None = None   # (sse, pente, seuil)
     sy = sum(r for _, r in points)
@@ -84,13 +85,13 @@ def _fit(points: list[tuple[float, float]]) -> tuple[float, float] | None:
     return best[1], best[2]
 
 
-def calibrate(logs: list[GameLog], games: list[dict], before: date) -> BlowoutModel:
-    """Modèle calibré sur les logs et matchs terminés de date < `before`.
-    Modèle neutre (pentes nulles) pour un groupe sans données exploitables."""
-    margin_by_game: dict[str, float] = {}
-    for g in games:
-        if is_countable(g) and as_date(g["date"]) < before:
-            margin_by_game[str(g.get("id"))] = abs(g["home_score"] - g["away_score"])
+def calibrate(logs: list[GameLog], games: list[dict], before: date, p: EloParams = EloParams()) -> BlowoutModel:
+    """Modèle calibré sur les logs et matchs terminés de date < `before`
+    (écart attendu d'avant-match de chacun, signe indifférent : même valeur
+    du point de vue des deux équipes). Modèle neutre (pentes nulles) pour
+    un groupe sans données exploitables ou de moins de `MIN_SAMPLE`
+    matchs-joueur."""
+    margin_by_game = {gid: abs(m) for gid, m in pregame_margins(games, before, p).items()}
 
     played = [l for l in logs if l.date < before and l.minutes > 0]
     totals: dict[tuple[int, str], list[float]] = defaultdict(lambda: [0.0, 0])

@@ -34,7 +34,7 @@ def build_decision_inputs(
     second_chances: list[SecondChance],
     series_rows: list[dict],
     nights: list[Night],
-    blowout: bool = BLOWOUT_ENABLED,
+    blowout: bool = BLOWOUT_ENABLED,   # lu à l'import : monkeypatcher config ne change pas ce défaut, passer blowout=
     elo_params: EloParams = EloParams(),
 ) -> tuple[DecisionInputs, dict[int, PlayerProfile]]:
     """Profils (S6, role_scales), défense, recent_logs, lignes de séries :
@@ -84,7 +84,7 @@ def build_decision_inputs(
     if blowout:
         margins = expected_margins(today=today, players=players, games=games, season_games=season_games,
                                    logs=logs, p=elo_params)
-        model = calibrate(logs, season_games, today)
+        model = calibrate(logs, season_games, today, elo_params)
 
     inputs = DecisionInputs(today=today, nights=nights, games=games, players=players,
                             profiles=profiles, recent_logs=recent_logs, defense=defense,

@@ -139,6 +139,44 @@ def ratings_before(games: list[dict], before: date, p: EloParams) -> dict[str, f
     return ratings
 
 
+def pregame_margins(games: list[dict], before: date, p: EloParams) -> dict[str, float]:
+    """Écart attendu d'AVANT-MATCH (domicile − extérieur, avantage du terrain
+    inclus, sans correction blessures) de chaque match terminé et comptable
+    de date < `before`, par id. Même rejeu chronologique que
+    `ratings_before`, mais l'écart est relevé avant `apply_game` et les
+    notes sont figées par date : les matchs d'un même soir ne se voient pas
+    (l'écart d'un match du soir D = celui qu'aurait donné
+    `ratings_before(games, D, p)`)."""
+    eligible = [g for g in games if is_countable(g) and as_date(g["date"]) < before]
+    eligible.sort(key=lambda g: (as_date(g["date"]), g["id"]))
+
+    ratings: dict[str, float] = {}
+    current_season: str | None = None
+    out: dict[str, float] = {}
+    i = 0
+    while i < len(eligible):
+        day = as_date(eligible[i]["date"])
+        j = i
+        while j < len(eligible) and as_date(eligible[j]["date"]) == day:
+            j += 1
+        batch = eligible[i:j]
+        # Même règle de retour vers la moyenne que ratings_before (la saison
+        # d'un soir est celle de sa date).
+        season = game_season(batch[0])
+        if current_season is None:
+            current_season = season
+        elif season != current_season:
+            apply_season_carryover(ratings, p)
+            current_season = season
+        for g in batch:
+            out[str(g["id"])] = expected_margin(ratings.get(g["home_team"], START_RATING),
+                                                ratings.get(g["away_team"], START_RATING), p)
+        for g in batch:
+            apply_game(ratings, g, p)
+        i = j
+    return out
+
+
 def team_shares(logs: list[GameLog], team: str, before: date, window: int = 15) -> dict[int, float]:
     """Part de chaque joueur dans la production de l'équipe (minutes ×
     TTFL/min moyen == somme des TTFL, sur ses `window` derniers matchs

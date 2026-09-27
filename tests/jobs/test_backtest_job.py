@@ -219,3 +219,7 @@ def test_run_blowout_ajoute_la_ligne_ecart_de_force_dans_les_deux_modes():
     plain = run(data, NIGHTS[0], NIGHTS[-1])
     assert all(r.label != BLOWOUT_LABEL for r in plain["rows"])
     assert BLOWOUT_LABEL not in render_report(SEASON, NIGHTS[0], NIGHTS[-1], [], plain)
+    # Limite : Elo et calibration du backtest = saison courante seulement.
+    assert "Écart de force : dans le backtest, l'Elo et la calibration du facteur n'utilisent que " \
+           "la saison courante" in report
+    assert "Écart de force : dans le backtest" not in render_report(SEASON, NIGHTS[0], NIGHTS[-1], [], plain)

@@ -252,3 +252,56 @@ def test_predict_equipe_inconnue_note_par_defaut_1500():
     assert result.home_rating == 1500.0
     assert result.away_rating == 1500.0
     assert result.home_win_prob == pytest.approx(win_prob(1500.0, 1500.0, p))
+
+
+# --- pregame_margins (calibration du facteur d'écart, L3a §2) ---------------
+
+from datetime import timedelta  # noqa: E402
+
+from engine.stats.elo import expected_margin, pregame_margins, ratings_before, START_RATING  # noqa: E402
+
+
+def _random_season(seed=7):
+    rng = random.Random(seed)
+    teams = [f"T{i}" for i in range(8)]
+    games = []
+    for k in range(40):
+        d = date(2025, 11, 1) + timedelta(days=k)
+        order = teams[:]
+        rng.shuffle(order)
+        for j in range(4):   # 4 matchs le même soir
+            hs, as_ = rng.randint(85, 130), rng.randint(85, 130)
+            games.append(_game(f"g{k:02d}{j}", d, order[2 * j], order[2 * j + 1],
+                               home_score=hs, away_score=as_ if as_ != hs else as_ + 1, season="2025-26"))
+    # Saison suivante : le retour vers la moyenne doit être appliqué pareil.
+    games.append(_game("n1", date(2026, 10, 25), "T0", "T1"))
+    games.append(_game("n2", date(2026, 10, 26), "T2", "T0"))
+    return games
+
+
+def test_pregame_margins_egal_ratings_before_du_soir_de_chaque_match():
+    games = _random_season()
+    p = EloParams()
+    before = date(2027, 1, 1)
+    pre = pregame_margins(games, before, p)
+    assert set(pre) == {g["id"] for g in games}
+    for g in games:
+        r = ratings_before(games, g["date"], p)
+        assert pre[g["id"]] == pytest.approx(expected_margin(r.get(g["home_team"], START_RATING),
+                                                             r.get(g["away_team"], START_RATING), p))
+
+
+def test_pregame_margins_ordre_d_un_soir_sans_effet_et_rien_a_partir_de_before():
+    games = _random_season()
+    p = EloParams()
+    before = date(2025, 11, 20)
+    pre = pregame_margins(games, before, p)
+    assert all(g["date"] < before for g in games if g["id"] in pre)
+    assert len(pre) == sum(1 for g in games if g["date"] < before) < len(games)
+    # Ids renommés dans l'ordre inverse : l'ordre de rejeu au sein d'un soir s'inverse.
+    rename = {g["id"]: f"z{len(games) - i:04d}" for i, g in enumerate(games)}
+    pre2 = pregame_margins([{**g, "id": rename[g["id"]]} for g in games], before, p)
+    back = {orig: pre2[new] for orig, new in rename.items() if new in pre2}
+    assert back.keys() == pre.keys()
+    for k in pre:
+        assert back[k] == pytest.approx(pre[k])

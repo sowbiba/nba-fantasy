@@ -262,6 +262,11 @@ def render_report(season: str, start: date, end: date, decays: list[float], data
                  "diffère de celle de son match, donc pas de décalage d'un jour.")
     lines.append("- Pas de seconde chance dans les simulations (les secondes chances réelles portent sur "
                  "mes propres picks) : léger biais en défaveur des stratégies simulées.")
+    if any(r.label == BLOWOUT_LABEL for r in rows):
+        lines.append("- Écart de force : dans le backtest, l'Elo et la calibration du facteur n'utilisent que "
+                     "la saison courante (la saison 2024-25 n'est pas en base : Elo parti de 1500 en début de "
+                     "saison, logs de la saison précédente sans écart attendu), alors qu'en production "
+                     "`daily_sync` dispose aussi de la saison précédente.")
     lines.append("- Saison régulière uniquement (R14, R10) : les soirées de playoffs, s'il y en a dans la "
                  "fenêtre, sont exclues du calcul.")
     lines.append("")
