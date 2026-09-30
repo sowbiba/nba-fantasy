@@ -13,6 +13,7 @@ PRIVATE_SELECTS = {
     "series_forecast": "select * from series_forecast",
     "team_outlook": "select * from team_outlook",
     "player_team_rank": "select * from player_team_rank",
+    "season_pronos": "select * from season_pronos",
 }
 
 PUBLIC_SELECTS = {
@@ -68,6 +69,10 @@ def _seed(pg):
     )
     pg.execute(
         "insert into player_team_rank (player_id, team, save_rank) values (1, 'DEN', 1)"
+    )
+    pg.execute(
+        "insert into season_pronos (season, name, name_key, wins, token_hash) values "
+        "('2026-27', 'Ibra', 'ibra', '{}', 'x')"
     )
 
 

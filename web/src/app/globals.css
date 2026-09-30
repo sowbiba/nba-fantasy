@@ -52,7 +52,7 @@ html, body {
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-family: var(--font-body), "Space Grotesk", system-ui, sans-serif;
+  font-family: var(--font-body), var(--font-body-ext), "Space Grotesk", system-ui, sans-serif;
   overscroll-behavior-y: contain;
 }
 
@@ -86,15 +86,15 @@ main {
 
 /* ---------------------------- typography -------------------------------- */
 .font-display {
-  font-family: var(--font-display), "Bebas Neue", "Oswald", sans-serif;
+  font-family: var(--font-display), var(--font-display-ext), "Bebas Neue", "Oswald", sans-serif;
   letter-spacing: 0.02em;
   font-weight: 400;
 }
 .font-body {
-  font-family: var(--font-body), "Space Grotesk", system-ui, sans-serif;
+  font-family: var(--font-body), var(--font-body-ext), "Space Grotesk", system-ui, sans-serif;
 }
 .font-mono-num {
-  font-family: var(--font-body), "Space Grotesk", system-ui, sans-serif;
+  font-family: var(--font-body), var(--font-body-ext), "Space Grotesk", system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
 }
 

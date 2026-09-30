@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, deckDate, weekStart, frDayMonth, frLongDate, parisTime, seasonForDate } from "./date";
+import { addDays, deckDate, weekStart, frDayMonth, frLongDate, parisDateTime, parisTime, seasonForDate } from "./date";
 
 describe("deckDate", () => {
   it("prend la date de Paris, pas celle de l'heure de l'Est", () => {
@@ -39,5 +39,12 @@ describe("weekStart", () => {
   });
   it("traverse un changement de mois", () => {
     expect(weekStart("2026-11-01")).toBe("2026-10-26");
+  });
+});
+
+describe("parisDateTime", () => {
+  it("jour, mois et heure de Paris (heure d'été, changement de jour)", () => {
+    expect(parisDateTime("2026-10-01T10:05:00Z")).toBe("1 octobre à 12:05");
+    expect(parisDateTime("2026-10-20T23:00:00Z")).toBe("21 octobre à 01:00");
   });
 });

@@ -15,7 +15,16 @@ const SRC_DIR = fileURLToPath(new URL("..", import.meta.url));
 const EXCLUDED = [join(SRC_DIR, "lib", "viewer.ts"), join(SRC_DIR, "app", "actions.ts")];
 const EXCLUDED_DIRS = [join(SRC_DIR, "app", "api", "reminders")];
 
-const PRIVATE_TABLES = ["picks", "recommendations", "plan_latest", "player_watchlist", "second_chances", "team_elo", "game_predictions"];
+const PRIVATE_TABLES = [
+  "picks",
+  "recommendations",
+  "plan_latest",
+  "player_watchlist",
+  "second_chances",
+  "team_elo",
+  "game_predictions",
+  "season_pronos",
+];
 const PRIVATE_RPCS = ["period_stats", "player_calendar"];
 
 // `\s*` (qui matche aussi les retours à la ligne) entre `supabase`, `.` et
