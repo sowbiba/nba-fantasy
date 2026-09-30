@@ -147,7 +147,7 @@ export default async function ScoreByDayPage({
   );
 }
 
-const COLS: { key: keyof DayRow; label: string; title: string }[] = [
+const STATS: { key: keyof DayRow; label: string; title: string }[] = [
   { key: "minutes", label: "Min", title: "Minutes" },
   { key: "pts", label: "Pts", title: "Points" },
   { key: "reb", label: "Reb", title: "Rebonds" },
@@ -155,43 +155,70 @@ const COLS: { key: keyof DayRow; label: string; title: string }[] = [
   { key: "stl", label: "Int", title: "Interceptions" },
   { key: "blk", label: "Ctr", title: "Contres" },
   { key: "tov", label: "BP", title: "Balles perdues" },
-  { key: "fg", label: "Tirs", title: "Tirs réussis / tentés" },
-  { key: "tp", label: "3pts", title: "Tirs à 3 points réussis / tentés" },
-  { key: "ft", label: "LF", title: "Lancers francs réussis / tentés" },
 ];
+
+// Tirs réussis (M) / tentés (T), une colonne chacun, regroupés sous un
+// en-tête commun.
+const SHOTS: { label: string; title: string; made: keyof DayRow; att: keyof DayRow }[] = [
+  { label: "Tirs", title: "Tirs", made: "fgm", att: "fga" },
+  { label: "3 pts", title: "Tirs à 3 points", made: "tpm", att: "tpa" },
+  { label: "LF", title: "Lancers francs", made: "ftm", att: "fta" },
+];
+
+// Colonne joueur figée à gauche pendant le défilement horizontal (fond
+// opaque pour masquer les colonnes qui passent dessous).
+const stickyCell = "sticky left-0 z-[1] bg-[color:var(--color-ink)]";
+const th = "font-semibold py-1 px-1.5 text-right";
+const td = "text-right py-1.5 px-1.5 whitespace-nowrap";
 
 function DayTable({ rows }: { rows: DayRow[] }) {
   return (
-    <div className="overflow-x-auto -mx-4 px-4">
-      <table className="w-full text-xs border-collapse min-w-[640px]">
-        <thead>
-          <tr className="text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-text-mute)]">
-            <th scope="col" className="text-left font-semibold py-1.5 pr-2 w-7">#</th>
-            <th scope="col" className="text-left font-semibold py-1.5 pr-2">Joueur</th>
-            <th scope="col" className="text-right font-semibold py-1.5 px-1.5 text-white">TTFL</th>
-            {COLS.map((c) => (
-              <th key={c.key} scope="col" title={c.title} className="text-right font-semibold py-1.5 px-1.5">
+    <div className="overflow-x-auto -mx-4">
+      <table className="w-full text-xs border-collapse min-w-[720px] [&_tr>*:last-child]:pr-4">
+        <thead className="text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-text-mute)]">
+          <tr>
+            <th scope="col" rowSpan={2} className={`${stickyCell} text-left font-semibold py-1 pl-4 pr-2 align-bottom`}>
+              # Joueur
+            </th>
+            <th scope="col" rowSpan={2} className={`${th} text-white align-bottom`}>TTFL</th>
+            {STATS.map((c) => (
+              <th key={c.key} scope="col" rowSpan={2} title={c.title} className={`${th} align-bottom`}>
                 {c.label}
               </th>
             ))}
+            {SHOTS.map((g) => (
+              <th key={g.label} scope="colgroup" colSpan={2} title={g.title} className="font-semibold py-1 px-1.5 text-center border-b border-white/10">
+                {g.label}
+              </th>
+            ))}
+          </tr>
+          <tr>
+            {SHOTS.flatMap((g) => [
+              <th key={`${g.label}-m`} scope="col" title={`${g.title} réussis`} className={th}>M</th>,
+              <th key={`${g.label}-t`} scope="col" title={`${g.title} tentés`} className={th}>T</th>,
+            ])}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={r.playerId} className="font-mono-num border-b border-white/[0.03]">
-              <td className="py-1.5 pr-2 text-[color:var(--color-text-mute)]">{i + 1}</td>
-              <td className="py-1.5 pr-2 whitespace-nowrap">
+              <td className={`${stickyCell} py-1.5 pl-4 pr-2 whitespace-nowrap`}>
+                <span className="inline-block w-6 text-[color:var(--color-text-mute)]">{i + 1}</span>
                 <span className="text-[color:var(--color-text)]">{r.name}</span>
-                <span className="ml-1.5 text-[10px] text-[color:var(--color-text-dim)]">
+                <span className="block pl-6 text-[10px] text-[color:var(--color-text-dim)]">
                   {r.team} {r.home ? "vs" : "@"} {r.opponent}
                 </span>
               </td>
-              <td className="text-right py-1.5 px-1.5 font-bold text-white">{r.ttfl}</td>
-              {COLS.map((c) => (
-                <td key={c.key} className="text-right py-1.5 px-1.5 text-[color:var(--color-text-soft)] whitespace-nowrap">
+              <td className={`${td} font-bold text-white`}>{r.ttfl}</td>
+              {STATS.map((c) => (
+                <td key={c.key} className={`${td} text-[color:var(--color-text-soft)]`}>
                   {r[c.key]}
                 </td>
               ))}
+              {SHOTS.flatMap((g) => [
+                <td key={`${g.label}-m`} className={`${td} text-[color:var(--color-text)]`}>{r[g.made]}</td>,
+                <td key={`${g.label}-t`} className={`${td} text-[color:var(--color-text-mute)]`}>{r[g.att]}</td>,
+              ])}
             </tr>
           ))}
         </tbody>

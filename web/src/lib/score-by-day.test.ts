@@ -59,9 +59,9 @@ function log(p: Partial<DayLogInput>): DayLogInput {
 }
 
 describe("toDayRows", () => {
-  it("adversaire, domicile/extérieur et tirs formatés", () => {
+  it("adversaire, domicile/extérieur, tirs réussis et tentés séparés", () => {
     const [home] = toDayRows([log({})]);
-    expect(home).toMatchObject({ opponent: "LAL", home: true, fg: "8/15", tp: "2/6", ft: "2/2" });
+    expect(home).toMatchObject({ opponent: "LAL", home: true, fgm: 8, fga: 15, tpm: 2, tpa: 6, ftm: 2, fta: 2 });
     const [away] = toDayRows([log({ team: "LAL" })]);
     expect(away).toMatchObject({ opponent: "BOS", home: false });
   });
