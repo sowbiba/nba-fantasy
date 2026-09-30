@@ -22,11 +22,6 @@ type Row = {
 
 export type FetchScoresResult = { rows: ScoreRow[]; available: boolean };
 
-// Largement au-dessus du nombre de joueurs possible sur une saison
-// (~500-600) : sert aussi à détecter une troncature silencieuse par le
-// cap par défaut de PostgREST (1000 lignes) — voir le log plus bas.
-const ROW_LIMIT = 2000;
-
 function mapRow(r: Row): ScoreRow {
   return {
     playerId: r.player_id,
@@ -48,24 +43,32 @@ function mapRow(r: Row): ScoreRow {
  *  lever une exception — page et export affichent alors un état "Données
  *  indisponibles" au lieu de planter. */
 export async function fetchScores(type: GameType, minGames: number, team: string | null): Promise<FetchScoresResult> {
+  // `count: "exact"` fait compter le total de lignes correspondantes côté
+  // Postgres, indépendamment du nombre de lignes réellement renvoyées : un
+  // `.limit()` client ne suffit pas à détecter une troncature, PostgREST
+  // plafonne de toute façon la page à son `max-rows` serveur (1000 par
+  // défaut) quelle que soit la limite demandée — comparer `count` à
+  // `data.length` est le seul moyen fiable de la détecter.
   let query = supabase
     .from("player_ttfl_season")
-    .select("player_id, name, team, games, avg_ttfl, total_ttfl, top_score, top_date, top_opponent")
+    .select("player_id, name, team, games, avg_ttfl, total_ttfl, top_score, top_date, top_opponent", {
+      count: "exact",
+    })
     .eq("season", SEASON)
     .eq("game_type", type)
-    .gte("games", minGames)
-    .limit(ROW_LIMIT);
+    .gte("games", minGames);
   if (team) query = query.eq("team", team);
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error || !data) {
     if (error) console.error("player_ttfl_season indisponible :", error.message ?? error);
     return { rows: [], available: false };
   }
-  if (data.length >= ROW_LIMIT) {
-    console.error(
-      `player_ttfl_season : ${data.length} lignes renvoyées (limite ${ROW_LIMIT} atteinte, données possiblement tronquées)`,
-    );
+  if (count !== null && count > data.length) {
+    // Improbable (≤ ~600 joueurs possibles sur une saison) mais on le
+    // journalise plutôt que de servir des données incomplètes sans le
+    // savoir.
+    console.error(`player_ttfl_season : ${count} lignes au total, seulement ${data.length} renvoyées (troncature)`);
   }
   return { rows: (data as Row[]).map(mapRow), available: true };
 }

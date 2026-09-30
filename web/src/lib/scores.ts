@@ -196,7 +196,16 @@ export function csvField(raw: string): string {
 const CSV_HEADER = ["Joueur", "Équipe", "Matchs", "Moyenne TTFL", "Top", "Date du top", "Adversaire du top"];
 
 /** Construit le CSV complet (BOM UTF-8 + en-tête FR + lignes), séparateur
- *  `;`, fin de ligne CRLF, décimale virgule (Excel FR). */
+ *  `;`, fin de ligne CRLF, décimale virgule (Excel FR).
+ *
+ *  La garde anti-formule (`csvField`) n'est appliquée qu'aux champs texte
+ *  (nom, équipe, adversaire) — jamais aux champs numériques : un score
+ *  TTFL peut être négatif (tirs manqués et pertes de balle retranchent des
+ *  points ; un score de banc en fin de match peut être négatif), et un `-`
+ *  en tête n'est alors pas une formule mais un signe. Préfixer une
+ *  apostrophe corromprait la valeur affichée dans Excel (`'-3,5` au lieu
+ *  de `-3,5`). Les champs numériques n'ont jamais besoin de guillemets
+ *  (chiffres, virgule, signe `-` uniquement — jamais `;`/`"`/CR/LF). */
 export function buildScoresCsv(rows: ScoreRow[]): string {
   const lines = [CSV_HEADER.map(csvField).join(";")];
   for (const r of rows) {
@@ -204,10 +213,10 @@ export function buildScoresCsv(rows: ScoreRow[]): string {
       [
         csvField(r.name),
         csvField(r.team),
-        csvField(String(r.games)),
-        csvField(decimalComma(r.avgTtfl)),
-        csvField(String(r.topScore)),
-        csvField(dateFrCourt(r.topDate)),
+        String(r.games),
+        decimalComma(r.avgTtfl),
+        String(r.topScore),
+        dateFrCourt(r.topDate),
         csvField(r.topOpponent),
       ].join(";"),
     );

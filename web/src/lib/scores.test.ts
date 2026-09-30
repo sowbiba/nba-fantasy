@@ -227,6 +227,14 @@ describe("buildScoresCsv", () => {
     const lines = csv.slice(1).split("\r\n");
     expect(lines[1].startsWith("\"'=HYPERLINK")).toBe(true);
   });
+
+  it("ne corrompt pas une moyenne ou un top score négatifs (la garde anti-formule ne s'applique qu'aux champs texte)", () => {
+    // Un score TTFL peut être négatif (tirs manqués/pertes de balle en fin
+    // de banc) : le `-` en tête est un signe, pas une formule à neutraliser.
+    const csv = buildScoresCsv([row({ avgTtfl: -3.5, topScore: -2 })]);
+    const lines = csv.slice(1).split("\r\n");
+    expect(lines[1]).toBe("Jayson Tatum;BOS;40;-3,5;-2;03/11;NYK");
+  });
 });
 
 describe("csvFilename", () => {
