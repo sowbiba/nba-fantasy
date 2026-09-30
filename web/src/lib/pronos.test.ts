@@ -5,6 +5,7 @@ import {
   isClosed,
   leagueWinsTotal,
   nameKey,
+  sanitizeName,
   standingsFromWins,
   validateWins,
 } from "./pronos";
@@ -22,6 +23,22 @@ describe("TEAMS", () => {
   });
 });
 
+describe("sanitizeName", () => {
+  it("retire les caractères de contrôle et de format (espaces de largeur nulle)", () => {
+    expect(sanitizeName("Jean​Dupont")).toBe("JeanDupont"); // U+200B zero-width space
+    expect(sanitizeName("Jean\u0000Dupont")).toBe("JeanDupont"); // caractère de contrôle
+  });
+
+  it("normalise NFKC (formes visuellement équivalentes)", () => {
+    // U+FF21 (A pleine chasse) → "A" après NFKC.
+    expect(sanitizeName("ＡBC")).toBe("ABC");
+  });
+
+  it("trim et réduit les espaces internes multiples", () => {
+    expect(sanitizeName("  Jean   Dupont  ")).toBe("Jean Dupont");
+  });
+});
+
 describe("nameKey", () => {
   it("ignore la casse et les espaces (bords + doublons internes)", () => {
     expect(nameKey("Jean Dupont")).toBe(nameKey("  jean   dupont  "));
@@ -30,6 +47,10 @@ describe("nameKey", () => {
 
   it("distingue des noms réellement différents", () => {
     expect(nameKey("Jean Dupont")).not.toBe(nameKey("Jean Dupond"));
+  });
+
+  it("ignore les espaces de largeur nulle (contournement de doublon)", () => {
+    expect(nameKey("Jean Dupont")).toBe(nameKey("Jean​ Dupont"));
   });
 });
 
@@ -63,6 +84,27 @@ describe("validateWins", () => {
     expect(validateWins(null).ok).toBe(false);
     expect(validateWins("BOS:60").ok).toBe(false);
     expect(validateWins([1, 2, 3]).ok).toBe(false);
+  });
+
+  it("ne convertit aucune valeur : seul un vrai number JS est accepté (mineur 4)", () => {
+    expect(validateWins({ BOS: "50" }).ok).toBe(false); // chaîne numérique
+    expect(validateWins({ BOS: null }).ok).toBe(false);
+    expect(validateWins({ BOS: "" }).ok).toBe(false);
+    expect(validateWins({ BOS: true }).ok).toBe(false);
+    expect(validateWins({ BOS: false }).ok).toBe(false);
+    expect(validateWins({ BOS: undefined }).ok).toBe(false);
+  });
+
+  it("refuse plus de 30 équipes", () => {
+    const wins = Object.fromEntries(TEAMS.map((t) => [t.code, 41]));
+    expect(validateWins(wins)).toEqual({ ok: true, wins });
+    const tooMany = { ...wins, EXTRA: 10 };
+    const result = validateWins(tooMany);
+    // EXTRA n'est de toute façon pas une équipe connue → refusé, mais la
+    // garde sur le nombre de clés protège aussi une carte hypothétique de
+    // 31 clés qui réutiliserait des codes connus (impossible avec des clés
+    // d'objet uniques, mais défense en profondeur explicite).
+    expect(result.ok).toBe(false);
   });
 });
 

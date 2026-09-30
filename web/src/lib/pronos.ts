@@ -45,11 +45,24 @@ const TEAM_CODES = new Set(TEAMS.map((t) => t.code));
 
 export const LEAGUE_EXPECTED_WINS = 82 * 15; // 1230, une info affichée (pas un blocage).
 
-/** Clé d'unicité du nom (casse et espaces ignorés — « Jean  Dupont » ===
- *  « jean dupont »). Le trim + la collapse des espaces internes évitent
- *  qu'un simple double-espace crée un doublon invisible. */
+/** Nettoie un nom saisi avant validation/stockage (revue round 1, mineur
+ *  5) : normalisation Unicode NFKC (des formes visuellement équivalentes
+ *  deviennent identiques), suppression des caractères de contrôle et de
+ *  format (catégories Unicode Cc/Cf — espaces de largeur nulle inclus,
+ *  invisibles mais qui casseraient sinon la comparaison de noms), espaces
+ *  de bord retirés, espaces internes multiples réduits à un seul. */
+export function sanitizeName(name: string): string {
+  return name
+    .normalize("NFKC")
+    .replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/** Clé d'unicité du nom (casse ignorée en plus du nettoyage ci-dessus —
+ *  « Jean  Dupont » === « jean dupont »). */
 export function nameKey(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
+  return sanitizeName(name).toLowerCase();
 }
 
 export type WinsMap = Record<string, number>;
@@ -58,22 +71,29 @@ export type ValidateWinsResult = { ok: true; wins: WinsMap } | { ok: false; erro
 
 /** Valide une carte de victoires envoyée par le client (saisie partielle
  *  autorisée pendant l'enregistrement automatique) : clés = équipes
- *  connues, valeurs = entiers 0-82. Rejette toute équipe ou valeur hors
- *  bornes avec un message clair plutôt que de silencieusement l'ignorer. */
+ *  connues (au plus 30, une par équipe), valeurs = *nombres* entiers 0-82.
+ *  Rejette toute équipe ou valeur hors bornes avec un message clair plutôt
+ *  que de silencieusement l'ignorer. Pas de coercition (revue round 1,
+ *  mineur 4) : `null`, `""`, `true/false` ou une chaîne numérique
+ *  ("50") sont refusés plutôt que lus comme 0/0/1/50 — seul un `number`
+ *  JS est accepté, ce que `JSON.parse` produit pour un nombre JSON. */
 export function validateWins(wins: unknown): ValidateWinsResult {
   if (wins === null || typeof wins !== "object" || Array.isArray(wins)) {
     return { ok: false, error: "Format de pronostic invalide." };
   }
+  const entries = Object.entries(wins as Record<string, unknown>);
+  if (entries.length > TEAMS.length) {
+    return { ok: false, error: "Trop d'équipes dans le pronostic." };
+  }
   const out: WinsMap = {};
-  for (const [team, raw] of Object.entries(wins as Record<string, unknown>)) {
+  for (const [team, raw] of entries) {
     if (!TEAM_CODES.has(team)) {
       return { ok: false, error: `Équipe inconnue : ${team}.` };
     }
-    const value = typeof raw === "number" ? raw : Number(raw);
-    if (!Number.isInteger(value) || value < 0 || value > 82) {
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0 || raw > 82) {
       return { ok: false, error: `Nombre de victoires invalide pour ${team} (entre 0 et 82 attendu).` };
     }
-    out[team] = value;
+    out[team] = raw;
   }
   return { ok: true, wins: out };
 }
