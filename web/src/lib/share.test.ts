@@ -106,3 +106,12 @@ describe("sharePronoImage", () => {
     expect(nav.share).not.toHaveBeenCalled();
   });
 });
+
+describe("shareFilename", () => {
+  it("nom de fichier ascii, sans accents ni caractères spéciaux", async () => {
+    const { shareFilename } = await import("./share");
+    expect(shareFilename("Jean Dupont")).toBe("prono-jean-dupont.png");
+    expect(shareFilename("Élodie  O'Neil ✨")).toBe("prono-elodie-o-neil.png");
+    expect(shareFilename("✨✨")).toBe("prono.png");
+  });
+});

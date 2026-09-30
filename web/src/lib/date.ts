@@ -51,3 +51,10 @@ export function parisTime(isoTimestamp: string): string {
     hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris",
   });
 }
+
+/** « 1 octobre à 12:00 » (heure de Paris) — horodatage d'un prono. */
+export function parisDateTime(isoTimestamp: string): string {
+  const d = new Date(isoTimestamp);
+  const day = d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Europe/Paris" });
+  return `${day} à ${parisTime(isoTimestamp)}`;
+}

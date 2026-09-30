@@ -66,3 +66,15 @@ export async function sharePronoImage(opts: {
     return "opened";
   }
 }
+
+/** « prono-jean-dupont.png » : ascii seulement (les applis de partage
+ *  gèrent mal les noms de fichiers accentués). */
+export function shareFilename(name: string): string {
+  const slug = name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug ? `prono-${slug}.png` : "prono.png";
+}
