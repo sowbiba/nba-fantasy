@@ -61,7 +61,7 @@ export default function PronoEditor({
   );
 
   const isClosed = closed || closedNow;
-  const editable = !isClosed && token !== null;
+  const editable = !isClosed && typeof token === "string";
 
   // Ne jamais perdre la dernière saisie : envoi immédiat quand l'onglet est
   // masqué/fermé ou que l'on quitte la page.
@@ -80,7 +80,7 @@ export default function PronoEditor({
   }, [autosave]);
 
   function update(next: WinsMap) {
-    if (!editable || token === null) return;
+    if (!editable || typeof token !== "string") return;
     setWins(next);
     autosave.schedule({ token, wins: next });
   }
@@ -120,7 +120,7 @@ export default function PronoEditor({
       <div className="mt-3 min-h-5 text-xs">
         {isClosed ? (
           <p className="text-[color:var(--color-text-soft)]">Les pronos sont clos : lecture seule.</p>
-        ) : token === null ? (
+        ) : token === undefined ? null : token === null ? (
           <p className="text-[color:var(--color-text-soft)]">Ce prono appartient à {name}.</p>
         ) : (
           <SaveIndicator state={saveState} />

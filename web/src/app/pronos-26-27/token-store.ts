@@ -36,10 +36,11 @@ function subscribe(onChange: () => void): () => void {
   return () => window.removeEventListener("storage", onChange);
 }
 
-export function useStoredToken(id: string): string | null {
-  return useSyncExternalStore(
+/** `undefined` = pas encore lu (serveur/hydratation), `null` = absent. */
+export function useStoredToken(id: string): string | null | undefined {
+  return useSyncExternalStore<string | null | undefined>(
     subscribe,
     () => readToken(id),
-    () => null,
+    () => undefined,
   );
 }
