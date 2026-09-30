@@ -6,8 +6,14 @@ const getPronoCore = vi.fn();
 vi.mock("@/app/pronos-26-27/core", () => ({ getPronoCore: (id: unknown) => getPronoCore(id) }));
 
 import { GET } from "./route";
+import { TEAMS } from "@/lib/pronos";
 
 const ID = "11111111-1111-4111-8111-111111111111";
+
+// Prono complet : 30 équipes, 1230 victoires (condition de l'image).
+const COMPLETE: Record<string, number> = Object.fromEntries(TEAMS.map((t) => [t.code, 41]));
+COMPLETE.BOS = 60;
+COMPLETE.WAS = 22;
 
 function ctx(id: string) {
   return { params: Promise.resolve({ id }) };
@@ -19,7 +25,7 @@ function detail(name: string) {
   return {
     id: ID,
     name,
-    wins: { BOS: 60, NYK: 55, OKC: 64, DEN: 52 },
+    wins: COMPLETE,
     updatedAt: "2026-10-01T10:00:00Z",
     createdAt: "2026-10-01T09:00:00Z",
   };
@@ -58,7 +64,7 @@ describe("GET /pronos-26-27/[id]/image", () => {
     getPronoCore.mockResolvedValue({
       id: ID,
       name: "Jean Dupont — Élan <b>ÉÀÇ</b>",
-      wins: { BOS: 60, NYK: 55, OKC: 64, DEN: 52 },
+      wins: COMPLETE,
       updatedAt: "2026-10-01T10:00:00Z",
       createdAt: "2026-10-01T09:00:00Z",
     });
@@ -81,6 +87,18 @@ describe("GET /pronos-26-27/[id]/image", () => {
     getPronoCore.mockResolvedValue(detail("🏀🔥✨"));
     await expectPng(await GET(req, ctx(ID)));
   }, 30_000);
+
+  it("prono incomplet (équipes manquantes ou victoires non distribuées) : 409, pas d'image", async () => {
+    const partial = { BOS: 60, NYK: 55 };
+    const underCap = { ...COMPLETE, BOS: 59 }; // 30 équipes mais 1229 victoires
+    for (const wins of [partial, underCap, {}]) {
+      getPronoCore.mockResolvedValue({ ...detail("Jean"), wins });
+      const res = await GET(req, ctx(ID));
+      expect(res.status).toBe(409);
+      expect(res.headers.get("content-type")).toMatch(/text\/plain/);
+      expect(await res.text()).toMatch(/1 230 victoires/);
+    }
+  });
 
   it("getPronoCore renvoie null (prono absent ou id rejeté par core) : 404, id brut transmis tel quel", async () => {
     getPronoCore.mockResolvedValue(null);

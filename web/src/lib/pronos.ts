@@ -48,7 +48,7 @@ const TEAM_CODES = new Set(TEAMS.map((t) => t.code));
  *  seule (plutôt qu'une regex couplée au libellé). */
 export const CLOSED_ERROR = "Les pronostics sont clos (le premier match de la saison a commencé).";
 
-export const LEAGUE_EXPECTED_WINS = 82 * 15; // 1230, une info affichée (pas un blocage).
+export const LEAGUE_EXPECTED_WINS = 82 * 15; // 1230 : plafond du total saisi, exigé pile pour l'image.
 
 /** Nettoie un nom saisi avant validation/stockage (revue round 1, mineur
  *  5) : normalisation Unicode NFKC (des formes visuellement équivalentes
@@ -100,31 +100,59 @@ export function validateWins(wins: unknown): ValidateWinsResult {
     }
     out[team] = raw;
   }
+  // Plafond ligue : 30 × 82 / 2 = 1230 victoires au total, jamais plus
+  // (sinon des défaites « inventées » ailleurs). Saisie partielle permise
+  // en dessous.
+  if (leagueWinsTotal(out) > LEAGUE_EXPECTED_WINS) {
+    return { ok: false, error: `Le total dépasse ${LEAGUE_EXPECTED_WINS.toLocaleString("fr-FR")} victoires.` };
+  }
   return { ok: true, wins: out };
 }
 
-/** Total des victoires saisies (info affichée : attendu 1230 à saisie
- *  complète, mais jamais bloquant — cf. conception). */
+/** Total des victoires saisies : plafonné à 1230 (validateWins) et exigé
+ *  exactement à 1230 pour l'image de partage (isComplete). */
 export function leagueWinsTotal(wins: WinsMap): number {
   return Object.values(wins).reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
 }
 
-export type StandingsRow = { team: string; wins: number; losses: number };
+/** Victoires restant à distribuer (jamais négatif). */
+export function remainingWins(wins: WinsMap): number {
+  return Math.max(0, LEAGUE_EXPECTED_WINS - leagueWinsTotal(wins));
+}
+
+/** Maximum saisissable pour `team` sans dépasser 1230 au total (ni 82). */
+export function maxWinsFor(wins: WinsMap, team: string): number {
+  const others = leagueWinsTotal(wins) - (wins[team] ?? 0);
+  return Math.max(0, Math.min(82, LEAGUE_EXPECTED_WINS - others));
+}
+
+/** Prono complet : les 30 équipes saisies et les 1230 victoires
+ *  distribuées — condition pour générer l'image de partage. */
+export function isComplete(wins: WinsMap): boolean {
+  return TEAMS.every((t) => wins[t.code] !== undefined) && leagueWinsTotal(wins) === LEAGUE_EXPECTED_WINS;
+}
+
+/** `filled` = équipe saisie ; une équipe vide s'affiche « — » et se range
+ *  en fin de classement. */
+export type StandingsRow = { team: string; wins: number; losses: number; filled: boolean };
 
 export type Standings = Record<Conference, StandingsRow[]>;
 
 /** Classement en direct par conférence à partir d'une carte de victoires
- *  (saisie partielle : équipe absente = 0-82). Tri par victoires
- *  décroissantes, égalité départagée par ordre alphabétique du code
- *  équipe (conception validée). */
+ *  (saisie partielle : équipe absente = non saisie, rangée après les
+ *  équipes saisies). Tri par victoires décroissantes, égalité départagée
+ *  par ordre alphabétique du code équipe (conception validée). */
 export function standingsFromWins(wins: WinsMap, teams: Team[] = TEAMS): Standings {
   const byConf: Standings = { Est: [], Ouest: [] };
   for (const t of teams) {
+    const filled = wins[t.code] !== undefined;
     const w = wins[t.code] ?? 0;
-    byConf[t.conference].push({ team: t.code, wins: w, losses: 82 - w });
+    byConf[t.conference].push({ team: t.code, wins: w, losses: 82 - w, filled });
   }
   for (const conf of Object.keys(byConf) as Conference[]) {
-    byConf[conf].sort((a, b) => (b.wins !== a.wins ? b.wins - a.wins : a.team.localeCompare(b.team)));
+    byConf[conf].sort((a, b) =>
+      a.filled !== b.filled ? (a.filled ? -1 : 1) : b.wins !== a.wins ? b.wins - a.wins : a.team.localeCompare(b.team),
+    );
   }
   return byConf;
 }

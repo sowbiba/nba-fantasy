@@ -3,6 +3,9 @@ import {
   LEAGUE_EXPECTED_WINS,
   TEAMS,
   isClosed,
+  isComplete,
+  maxWinsFor,
+  remainingWins,
   leagueWinsTotal,
   nameKey,
   sanitizeName,
@@ -126,11 +129,11 @@ describe("standingsFromWins", () => {
     { code: "LAL", conference: "Ouest" as const },
   ];
 
-  it("équipe absente de la carte = 0 victoire / 82 défaites", () => {
-    const s = standingsFromWins({ BOS: 55 }, teams);
+  it("équipe absente = non saisie (filled false), rangée après les équipes saisies", () => {
+    const s = standingsFromWins({ MIA: 0 }, teams);
     expect(s.Est).toEqual([
-      { team: "BOS", wins: 55, losses: 27 },
-      { team: "MIA", wins: 0, losses: 82 },
+      { team: "MIA", wins: 0, losses: 82, filled: true },
+      { team: "BOS", wins: 0, losses: 82, filled: false },
     ]);
   });
 
@@ -144,6 +147,38 @@ describe("standingsFromWins", () => {
     const s = standingsFromWins({}, teams);
     expect(s.Est).toHaveLength(2);
     expect(s.Ouest).toHaveLength(2);
+  });
+});
+
+describe("plafond et complétude (1230 victoires)", () => {
+  const full = Object.fromEntries(TEAMS.map((t) => [t.code, 41])); // 30 × 41 = 1230
+
+  it("validateWins refuse un total > 1230, accepte 1230 pile et une saisie partielle", () => {
+    expect(validateWins(full).ok).toBe(true);
+    expect(validateWins({ BOS: 70 }).ok).toBe(true);
+    const over = validateWins({ ...full, BOS: 42 });
+    expect(over.ok).toBe(false);
+    if (!over.ok) expect(over.error).toMatch(/dépasse/);
+  });
+
+  it("remainingWins et maxWinsFor bornent la saisie", () => {
+    expect(remainingWins({})).toBe(1230);
+    expect(remainingWins(full)).toBe(0);
+    expect(maxWinsFor({}, "BOS")).toBe(82);
+    expect(maxWinsFor(full, "BOS")).toBe(41); // sa propre valeur reste permise
+    const nearly = { ...full, BOS: 30 }; // 1219 : 11 restantes
+    expect(maxWinsFor(nearly, "BOS")).toBe(41); // 30 + 11
+    expect(maxWinsFor(nearly, "LAL")).toBe(52); // 41 + 11
+    expect(maxWinsFor({ ...full, LAL: 82 }, "DEN")).toBe(0); // autres = 1230 → 0 ; jamais négatif
+    expect(maxWinsFor({ ...full, LAL: 82, BOS: 82 }, "DEN")).toBe(0);
+  });
+
+  it("isComplete exige les 30 équipes et 1230 victoires", () => {
+    expect(isComplete(full)).toBe(true);
+    expect(isComplete({ ...full, BOS: 40 })).toBe(false);
+    const { BOS: _b, ...missing } = full;
+    void _b;
+    expect(isComplete({ ...missing, LAL: 82 })).toBe(false); // 1230 mais 29 équipes
   });
 });
 
