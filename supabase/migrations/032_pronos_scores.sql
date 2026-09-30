@@ -47,7 +47,7 @@ create trigger season_pronos_set_updated_at before update on season_pronos
 drop view if exists player_ttfl_season;
 
 create view player_ttfl_season with (security_invoker = true) as
-with logs as (
+with logs as not materialized (
   select
     g.season,
     g.game_type,
@@ -92,7 +92,7 @@ top_game as (
       season, game_type, player_id, ttfl_score, date, opponent,
       row_number() over (
         partition by season, game_type, player_id
-        order by ttfl_score desc, date asc, game_id asc
+        order by ttfl_score desc nulls last, date asc, game_id asc
       ) as rn
     from logs
   ) ranked
