@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Bebas_Neue, Space_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
 import HeaderControl from "@/components/HeaderControl";
@@ -7,18 +7,27 @@ import PullToRefresh from "@/components/PullToRefresh";
 import ServiceWorker from "@/components/ServiceWorker";
 import { getViewer } from "@/lib/viewer";
 
-const display = Bebas_Neue({
+// Fonts self-hébergées (SIL OFL) : voir src/app/fonts/OFL-*.txt.
+// Téléchargées depuis Google Fonts (fichiers non subsettés par next/font/google
+// mais couvrant latin + latin-ext, nécessaires pour les noms de joueurs
+// accentués comme Jokić/Dončić/Nurkić), embarquées pour que le build n'ait
+// plus besoin du réseau.
+const display = localFont({
+  src: "./fonts/bebas-neue-400.woff",
   weight: "400",
-  subsets: ["latin"],
   display: "swap",
   variable: "--font-display",
 });
 
-const body = Space_Grotesk({
-  subsets: ["latin"],
+const body = localFont({
+  src: [
+    { path: "./fonts/space-grotesk-400.woff", weight: "400" },
+    { path: "./fonts/space-grotesk-500.woff", weight: "500" },
+    { path: "./fonts/space-grotesk-600.woff", weight: "600" },
+    { path: "./fonts/space-grotesk-700.woff", weight: "700" },
+  ],
   display: "swap",
   variable: "--font-body",
-  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
