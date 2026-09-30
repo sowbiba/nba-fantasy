@@ -76,9 +76,12 @@ export type DayRow = {
   stl: number;
   blk: number;
   tov: number;
-  fg: string;
-  tp: string;
-  ft: string;
+  fgm: number;
+  fga: number;
+  tpm: number;
+  tpa: number;
+  ftm: number;
+  fta: number;
   ttfl: number;
 };
 
@@ -105,9 +108,12 @@ export function toDayRows(logs: DayLogInput[]): DayRow[] {
         stl: l.stl,
         blk: l.blk,
         tov: l.tov,
-        fg: `${l.fgm}/${l.fga}`,
-        tp: `${l.tpm}/${l.tpa}`,
-        ft: `${l.ftm}/${l.fta}`,
+        fgm: l.fgm,
+        fga: l.fga,
+        tpm: l.tpm,
+        tpa: l.tpa,
+        ftm: l.ftm,
+        fta: l.fta,
         ttfl: l.ttfl_score,
       };
     })
