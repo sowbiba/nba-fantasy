@@ -4,6 +4,7 @@ import { ImageResponse } from "next/og";
 import { getPronoCore } from "@/app/pronos-26-27/core";
 import { LEAGUE_EXPECTED_WINS, leagueWinsTotal, standingsFromWins, type Conference, type StandingsRow } from "@/lib/pronos";
 import { standingsTint, standingsZone } from "@/lib/display";
+import { imageSafeName } from "@/lib/image-text";
 
 // Image partageable d'un prono (bouton « Partager ») : nom + classement
 // projeté des deux conférences. Rendu satori (next/og) : le nom est un
@@ -100,6 +101,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     });
   }
 
+  // Nom réduit aux glyphes des polices locales : aucun caractère ne doit
+  // déclencher le téléchargement d'une police/emoji de repli par satori
+  // (voir @/lib/image-text). Les codes équipes sont de l'ASCII fixe.
+  const displayName = imageSafeName(prono.name);
   const standings = standingsFromWins(prono.wins);
   const total = leagueWinsTotal(prono.wins);
 
@@ -128,13 +133,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
               display: "flex",
               fontFamily: "Bebas Neue",
               // 30 caractères max : réduit pour les noms longs (une seule ligne).
-              fontSize: prono.name.length > 18 ? 64 : 96,
+              fontSize: displayName.length > 18 ? 64 : 96,
               lineHeight: 1,
               marginTop: 12,
               color: COLORS.text,
             }}
           >
-            {prono.name}
+            {displayName}
           </div>
           <div style={{ display: "flex", fontSize: 22, color: COLORS.mute, marginTop: 8, marginBottom: 36 }}>
             Bilans projetés en saison régulière
