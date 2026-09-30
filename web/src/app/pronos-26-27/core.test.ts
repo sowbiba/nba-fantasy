@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { describe, expect, it } from "vitest";
-import { createPronoCore, getPronoCore, listPronosCore, savePronoCore, type ProNoDeps } from "./core";
+import { createPronoCore, getClosure, getPronoCore, listPronosCore, savePronoCore, type ProNoDeps } from "./core";
 
 // Client service factice, injectable via le paramètre `deps` de chaque
 // fonction *Core (jamais exposé sur les server actions publiques — voir
@@ -279,6 +279,32 @@ describe("listPronosCore / getPronoCore", () => {
       wins: { BOS: 50 },
       updatedAt: "2026-10-05T00:00:00Z",
       createdAt: "2026-10-01T00:00:00Z",
+    });
+  });
+});
+
+describe("getClosure", () => {
+  it("ouvert avant l'échéance, échéance renvoyée en ISO", async () => {
+    await expect(getClosure({ now: FUTURE, deadline: DEADLINE })).resolves.toEqual({
+      closed: false,
+      deadline: "2026-10-20T23:00:00.000Z",
+    });
+  });
+
+  it("clos à l'échéance et après", async () => {
+    expect((await getClosure({ now: DEADLINE, deadline: DEADLINE })).closed).toBe(true);
+    expect((await getClosure({ now: AFTER_DEADLINE_NOW, deadline: DEADLINE })).closed).toBe(true);
+  });
+
+  it("client public en échec : repli sur l'échéance fixe, jamais d'exception", async () => {
+    const broken = {
+      from: () => {
+        throw new Error("boom");
+      },
+    } as unknown as ProNoDeps["publicDb"];
+    await expect(getClosure({ now: FUTURE, publicDb: broken })).resolves.toEqual({
+      closed: false,
+      deadline: "2026-10-20T23:00:00.000Z",
     });
   });
 });

@@ -75,6 +75,17 @@ async function getDeadline(deps: Deps): Promise<Date> {
   return resolveDeadline(deps.publicDb);
 }
 
+/** État de clôture pour l'affichage des pages (formulaire de création,
+ *  mode saisie/lecture). Lecture seule, sans effet : la clôture qui fait
+ *  foi reste celle vérifiée par createPronoCore/savePronoCore à chaque
+ *  écriture. Volontairement ABSENT de actions.ts (pas un point d'entrée
+ *  RPC) — appelé directement par les server components. */
+export async function getClosure(deps: Deps = {}): Promise<{ closed: boolean; deadline: string }> {
+  const now = deps.now ?? new Date();
+  const deadline = await getDeadline(deps);
+  return { closed: isClosedPure(now, deadline), deadline: deadline.toISOString() };
+}
+
 /** Client service, ou erreur générique si SUPABASE_SERVICE_KEY manque en
  *  environnement : ne jamais laisser adminClient() planter une action avec
  *  une exception non gérée (miroir de getAdmin() dans app/actions.ts). */
