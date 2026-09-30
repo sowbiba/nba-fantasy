@@ -127,7 +127,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
             style={{
               display: "flex",
               fontFamily: "Bebas Neue",
-              fontSize: 96,
+              // 30 caractères max : réduit pour les noms longs (une seule ligne).
+              fontSize: prono.name.length > 18 ? 64 : 96,
               lineHeight: 1,
               marginTop: 12,
               color: COLORS.text,

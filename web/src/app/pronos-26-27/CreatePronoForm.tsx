@@ -53,7 +53,7 @@ export default function CreatePronoForm() {
           maxLength={30}
           required
           autoComplete="nickname"
-          placeholder="Ton nom (2 à 30 caractères)"
+          placeholder="Ton nom"
           className="flex-1 min-w-0 h-11 px-3 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface-3)] border border-[color:var(--color-line)] text-[color:var(--color-text)] placeholder:text-[color:var(--color-text-dim)] focus:outline-none focus:border-[color:var(--color-flame)]"
         />
         <button
