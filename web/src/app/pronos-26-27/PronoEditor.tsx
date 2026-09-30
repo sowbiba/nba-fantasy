@@ -6,7 +6,10 @@ import {
   CLOSED_ERROR,
   LEAGUE_EXPECTED_WINS,
   TEAMS,
+  isComplete,
   leagueWinsTotal,
+  maxWinsFor,
+  remainingWins,
   standingsFromWins,
   type Conference,
   type WinsMap,
@@ -20,14 +23,12 @@ import PronoStandings from "./PronoStandings";
 const CONFERENCES: Conference[] = ["Est", "Ouest"];
 const STEPPER_BASE = 41; // premier appui sur −/+ d'une équipe vide : part de 41 (bilan à l'équilibre)
 
-function clampWins(n: number): number {
-  return Math.max(0, Math.min(82, Math.round(n)));
-}
-
+// Borne une saisie à [0, max de l'équipe] : 82, et jamais au-delà des
+// 1230 victoires de la ligue (le serveur refuse aussi tout dépassement).
 function withTeam(wins: WinsMap, team: string, value: number | null): WinsMap {
   const next = { ...wins };
   if (value === null) delete next[team];
-  else next[team] = clampWins(value);
+  else next[team] = Math.max(0, Math.min(maxWinsFor(wins, team), Math.round(value)));
   return next;
 }
 
@@ -125,8 +126,10 @@ export default function PronoEditor({
   // rendre un png au serveur), au montage puis ~1 s après chaque
   // « Enregistré ». Jamais pendant une saisie en attente/en cours ni après
   // une erreur (l'image ne refléterait pas la saisie affichée).
+  const complete = isComplete(wins);
+
   useEffect(() => {
-    if (!canFileShare) return;
+    if (!canFileShare || !complete) return;
     if (saveStatus !== "idle" && saveStatus !== "saved") return;
     const version = imageVersionRef.current;
     const timer = setTimeout(
@@ -138,7 +141,7 @@ export default function PronoEditor({
       saveStatus === "idle" ? 0 : 1000,
     );
     return () => clearTimeout(timer);
-  }, [canFileShare, saveStatus, imageUrl, filename]);
+  }, [canFileShare, complete, saveStatus, imageUrl, filename]);
 
   function update(next: WinsMap) {
     if (!editable || typeof token !== "string") return;
@@ -156,7 +159,7 @@ export default function PronoEditor({
   const standings = standingsFromWins(wins);
   const total = leagueWinsTotal(wins);
   const filled = Object.keys(wins).length;
-  const offTarget = total !== LEAGUE_EXPECTED_WINS;
+  const remaining = remainingWins(wins);
 
   function onShare() {
     // PREMIÈRE instruction, sans await avant : navigator.share doit partir
@@ -208,15 +211,19 @@ export default function PronoEditor({
         style={{ top: "env(safe-area-inset-top, 0px)" }}
       >
         <div className="font-mono-num text-xs leading-tight">
-          <div className={offTarget ? "text-[color:var(--color-gold)]" : "text-[color:var(--color-text)]"}>
+          <div className={complete ? "text-[color:var(--color-text)]" : "text-[color:var(--color-gold)]"}>
             {total} / {LEAGUE_EXPECTED_WINS.toLocaleString("fr-FR")} victoires
           </div>
           <div className="text-[10px] text-[color:var(--color-text-mute)]">
             {filled}/30 équipes
-            {offTarget && filled === 30 ? ` · écart ${total > LEAGUE_EXPECTED_WINS ? "+" : ""}${total - LEAGUE_EXPECTED_WINS}` : ""}
+            {remaining > 0 ? ` · ${remaining} à distribuer` : ""}
           </div>
         </div>
-        {canFileShare ? (
+        {!complete ? (
+          <span className="text-[10px] text-right leading-tight text-[color:var(--color-text-mute)] max-w-[9rem]">
+            Image dispo une fois les 30 équipes saisies et les 1 230 victoires distribuées
+          </span>
+        ) : canFileShare ? (
           <div className="flex items-center gap-2">
             {showImageLink && imageLink}
             <button type="button" onClick={onShare} className={shareBtn}>
@@ -227,10 +234,10 @@ export default function PronoEditor({
           imageLink
         )}
       </div>
-      {offTarget && filled === 30 && (
+      {editable && remaining === 0 && !complete && (
         <p className="mt-2 text-[11px] text-[color:var(--color-text-mute)]">
-          Sur une saison, la ligue totalise {LEAGUE_EXPECTED_WINS.toLocaleString("fr-FR")} victoires : ton total
-          s&apos;en écarte (simple info, rien n&apos;est bloqué).
+          Les {LEAGUE_EXPECTED_WINS.toLocaleString("fr-FR")} victoires de la ligue sont toutes distribuées : baisse une
+          équipe pour en donner à une autre.
         </p>
       )}
 
@@ -247,6 +254,7 @@ export default function PronoEditor({
                     key={t.code}
                     team={t.code}
                     value={wins[t.code]}
+                    max={maxWinsFor(wins, t.code)}
                     onChange={(v) => setTeam(t.code, v)}
                   />
                 ))}
@@ -299,10 +307,13 @@ function SaveIndicator({ state, onRetry }: { state: AutosaveState | null; onRetr
 function TeamInput({
   team,
   value,
+  max,
   onChange,
 }: {
   team: string;
   value: number | undefined;
+  /** Plus haute valeur permise (82, ou moins si la ligue approche 1230). */
+  max: number;
   onChange: (v: number | null) => void;
 }) {
   const base = value ?? STEPPER_BASE;
@@ -338,7 +349,7 @@ function TeamInput({
         type="button"
         aria-label={`Une victoire de plus pour ${team}`}
         className={stepBtn}
-        disabled={value === 82}
+        disabled={value !== undefined ? value >= max : max === 0}
         onClick={() => onChange(value === undefined ? STEPPER_BASE : base + 1)}
       >
         +

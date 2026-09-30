@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
 import { getPronoCore } from "@/app/pronos-26-27/core";
-import { LEAGUE_EXPECTED_WINS, leagueWinsTotal, standingsFromWins, type Conference, type StandingsRow } from "@/lib/pronos";
+import { LEAGUE_EXPECTED_WINS, isComplete, leagueWinsTotal, standingsFromWins, type Conference, type StandingsRow } from "@/lib/pronos";
 import { standingsTint, standingsZone } from "@/lib/display";
 import { imageSafeName } from "@/lib/image-text";
 
@@ -83,7 +83,7 @@ function ConferenceColumn({ conference, rows }: { conference: Conference; rows: 
           >
             <div style={{ display: "flex", width: 44, fontSize: 24, color: COLORS.mute }}>{String(rank)}</div>
             <div style={{ display: "flex", flex: 1, fontSize: 30, fontWeight: 700, color: COLORS.text }}>{r.team}</div>
-            <div style={{ display: "flex", fontSize: 28, color: COLORS.soft }}>{`${r.wins}-${r.losses}`}</div>
+            <div style={{ display: "flex", fontSize: 28, color: COLORS.soft }}>{r.filled ? `${r.wins}-${r.losses}` : "—"}</div>
           </div>
         );
       })}
@@ -97,6 +97,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!prono) {
     return new Response("Prono introuvable", {
       status: 404,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+
+  // Image réservée aux pronos complets (30 équipes, 1230 victoires
+  // distribuées) : pas d'image partagée d'un prono à moitié saisi.
+  if (!isComplete(prono.wins)) {
+    return new Response("Prono incomplet : distribue les 1 230 victoires pour générer l'image.", {
+      status: 409,
       headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
     });
   }

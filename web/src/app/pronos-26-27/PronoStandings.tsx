@@ -34,8 +34,8 @@ export default function PronoStandings({ conference, rows }: { conference: Confe
               >
                 <td className="py-1.5 pr-2 text-[color:var(--color-text-mute)]">{rank}</td>
                 <td className="py-1.5 pr-2 font-bold text-white">{r.team}</td>
-                <td className="text-right py-1.5 px-1.5 text-[color:var(--color-text)]">{r.wins}</td>
-                <td className="text-right py-1.5 pl-1.5 text-[color:var(--color-text-soft)]">{r.losses}</td>
+                <td className="text-right py-1.5 px-1.5 text-[color:var(--color-text)]">{r.filled ? r.wins : "—"}</td>
+                <td className="text-right py-1.5 pl-1.5 text-[color:var(--color-text-soft)]">{r.filled ? r.losses : "—"}</td>
               </tr>
             );
           })}
