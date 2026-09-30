@@ -1,12 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { sharePronoImage, supportsFileShare, type ShareNavigator } from "./share";
+import { fetchShareFile, shareCachedFile, shareFilename, supportsFileShare, type ShareNavigator } from "./share";
 
 const IMAGE_URL = "/pronos-26-27/11111111-1111-4111-8111-111111111111/image";
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
-
-function okFetch() {
-  return vi.fn(async () => new Response(PNG, { status: 200, headers: { "content-type": "image/png" } }));
-}
+const pngFile = () => new File([PNG], "prono-jean.png", { type: "image/png" });
 
 function fileNav(share: ShareNavigator["share"] = vi.fn(async () => {})): ShareNavigator {
   return { canShare: (d) => Array.isArray(d.files) && d.files.length > 0, share };
@@ -22,94 +19,91 @@ describe("supportsFileShare", () => {
   });
   it("faux si canShare refuse les fichiers ou lève une exception", () => {
     expect(supportsFileShare({ share: async () => {}, canShare: () => false }, probe)).toBe(false);
-    expect(
-      supportsFileShare({
-        share: async () => {},
-        canShare: () => {
-          throw new TypeError("nope");
-        },
-      }, probe),
-    ).toBe(false);
+    const throwing = {
+      share: async () => {},
+      canShare: () => {
+        throw new TypeError("nope");
+      },
+    };
+    expect(supportsFileShare(throwing, probe)).toBe(false);
   });
   it("vrai si canShare accepte un fichier png", () => {
     expect(supportsFileShare(fileNav(), probe)).toBe(true);
   });
 });
 
-describe("sharePronoImage", () => {
-  const base = { imageUrl: IMAGE_URL, title: "Prono de Jean", filename: "prono-jean.png" };
-
-  it("sans partage de fichier : ouvre l'image tout de suite, sans fetch (geste utilisateur préservé)", async () => {
-    const fetchImpl = okFetch();
-    const openUrl = vi.fn();
-    const promise = sharePronoImage({ ...base, nav: {}, fetchImpl, openUrl });
-    // Appel synchrone, avant tout await : sinon les bloqueurs de pop-up refusent.
-    expect(openUrl).toHaveBeenCalledWith(IMAGE_URL);
-    await expect(promise).resolves.toBe("opened");
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  it("partage de fichier possible : récupère l'image (sans cache) et partage un File png", async () => {
-    const fetchImpl = okFetch();
+describe("shareCachedFile (appelé en première instruction du clic, sans await avant share)", () => {
+  it("fichier prêt et partageable : navigator.share appelé de façon SYNCHRONE avec le File", async () => {
     const share = vi.fn(async () => {});
-    const openUrl = vi.fn();
-    await expect(sharePronoImage({ ...base, nav: fileNav(share), fetchImpl, openUrl })).resolves.toBe("shared");
-    expect(fetchImpl).toHaveBeenCalledWith(IMAGE_URL, { cache: "no-store" });
-    expect(openUrl).not.toHaveBeenCalled();
-    const data = (share.mock.calls[0] as unknown as [ShareData])[0];
-    expect(data.title).toBe("Prono de Jean");
-    expect(data.files).toHaveLength(1);
-    const file = data.files![0];
-    expect(file.name).toBe("prono-jean.png");
-    expect(file.type).toBe("image/png");
-    expect(new Uint8Array(await file.arrayBuffer())).toEqual(PNG);
+    const file = pngFile();
+    const attempt = shareCachedFile(fileNav(share), file, "Prono de Jean");
+    // Pas encore d'await : l'appel a déjà eu lieu (activation utilisateur préservée).
+    expect(share).toHaveBeenCalledTimes(1);
+    expect(share).toHaveBeenCalledWith({ files: [file], title: "Prono de Jean" });
+    expect(attempt.kind).toBe("share");
+    if (attempt.kind === "share") await expect(attempt.done).resolves.toBe("shared");
   });
 
-  it("annulation par l'utilisateur (AbortError) : rien d'autre", async () => {
-    const share = vi.fn(async () => {
+  it("pas de fichier prêt : lien « Ouvrir l'image », share jamais appelé", () => {
+    const share = vi.fn(async () => {});
+    expect(shareCachedFile(fileNav(share), null, "t")).toEqual({ kind: "link" });
+    expect(share).not.toHaveBeenCalled();
+  });
+
+  it("partage de fichier non supporté : lien", () => {
+    expect(shareCachedFile({}, pngFile(), "t")).toEqual({ kind: "link" });
+    expect(shareCachedFile(undefined, pngFile(), "t")).toEqual({ kind: "link" });
+  });
+
+  it("annulation (AbortError) → cancelled ; autre refus (NotAllowedError) → failed", async () => {
+    const abort = vi.fn(async () => {
       throw new DOMException("annulé", "AbortError");
     });
-    const openUrl = vi.fn();
-    await expect(sharePronoImage({ ...base, nav: fileNav(share), fetchImpl: okFetch(), openUrl })).resolves.toBe(
-      "cancelled",
-    );
-    expect(openUrl).not.toHaveBeenCalled();
-  });
+    const a = shareCachedFile(fileNav(abort), pngFile(), "t");
+    if (a.kind !== "share") throw new Error("attendu share");
+    await expect(a.done).resolves.toBe("cancelled");
 
-  it("échec du partage (autre erreur) : repli sur l'ouverture de l'image", async () => {
-    const share = vi.fn(async () => {
+    const denied = vi.fn(async () => {
       throw new DOMException("refusé", "NotAllowedError");
     });
-    const openUrl = vi.fn();
-    await expect(sharePronoImage({ ...base, nav: fileNav(share), fetchImpl: okFetch(), openUrl })).resolves.toBe(
-      "opened",
-    );
-    expect(openUrl).toHaveBeenCalledWith(IMAGE_URL);
+    const d = shareCachedFile(fileNav(denied), pngFile(), "t");
+    if (d.kind !== "share") throw new Error("attendu share");
+    await expect(d.done).resolves.toBe("failed");
   });
 
-  it("image indisponible (HTTP en erreur ou réseau) : repli sur l'ouverture", async () => {
-    const openUrl = vi.fn();
+  it("share qui lève de façon synchrone : lien, jamais d'exception", () => {
+    const nav: ShareNavigator = {
+      canShare: () => true,
+      share: () => {
+        throw new TypeError("boom");
+      },
+    };
+    expect(shareCachedFile(nav, pngFile(), "t")).toEqual({ kind: "link" });
+  });
+});
+
+describe("fetchShareFile (pré-chargement de l'image)", () => {
+  it("récupère l'image sans cache et renvoie un File png nommé", async () => {
+    const fetchImpl = vi.fn(async () => new Response(PNG, { status: 200, headers: { "content-type": "image/png" } }));
+    const file = await fetchShareFile({ imageUrl: IMAGE_URL, filename: "prono-jean.png", fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledWith(IMAGE_URL, { cache: "no-store" });
+    expect(file?.name).toBe("prono-jean.png");
+    expect(file?.type).toBe("image/png");
+    expect(new Uint8Array(await file!.arrayBuffer())).toEqual(PNG);
+  });
+
+  it("HTTP en erreur ou réseau indisponible : null, jamais d'exception", async () => {
     const bad = vi.fn(async () => new Response("x", { status: 500 }));
-    await expect(sharePronoImage({ ...base, nav: fileNav(), fetchImpl: bad, openUrl })).resolves.toBe("opened");
+    await expect(fetchShareFile({ imageUrl: IMAGE_URL, filename: "p.png", fetchImpl: bad })).resolves.toBeNull();
     const offline = vi.fn(async () => {
       throw new TypeError("réseau");
     });
-    await expect(sharePronoImage({ ...base, nav: fileNav(), fetchImpl: offline, openUrl })).resolves.toBe("opened");
-    expect(openUrl).toHaveBeenCalledTimes(2);
-  });
-
-  it("canShare refuse le vrai fichier : repli sur l'ouverture", async () => {
-    let calls = 0;
-    const nav: ShareNavigator = { share: vi.fn(async () => {}), canShare: () => ++calls === 1 };
-    const openUrl = vi.fn();
-    await expect(sharePronoImage({ ...base, nav, fetchImpl: okFetch(), openUrl })).resolves.toBe("opened");
-    expect(nav.share).not.toHaveBeenCalled();
+    await expect(fetchShareFile({ imageUrl: IMAGE_URL, filename: "p.png", fetchImpl: offline })).resolves.toBeNull();
   });
 });
 
 describe("shareFilename", () => {
-  it("nom de fichier ascii, sans accents ni caractères spéciaux", async () => {
-    const { shareFilename } = await import("./share");
+  it("nom de fichier ascii, sans accents ni caractères spéciaux", () => {
     expect(shareFilename("Jean Dupont")).toBe("prono-jean-dupont.png");
     expect(shareFilename("Élodie  O'Neil ✨")).toBe("prono-elodie-o-neil.png");
     expect(shareFilename("✨✨")).toBe("prono.png");

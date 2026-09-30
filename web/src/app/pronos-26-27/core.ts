@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomBytes, createHash, timingSafeEqual } from "crypto";
 import { adminClient } from "@/lib/supabase/admin";
-import { nameKey, sanitizeName, validateWins, isClosed as isClosedPure, type WinsMap } from "@/lib/pronos";
+import { CLOSED_ERROR, nameKey, sanitizeName, validateWins, isClosed as isClosedPure, type WinsMap } from "@/lib/pronos";
 
 // Logique métier des pronos 2026-27, isolée dans un module `server-only` et
 // SÉPARÉE des exports "use server" de actions.ts (revue round 1, critique
@@ -160,7 +160,7 @@ export async function createPronoCore(
   const now = deps.now ?? new Date();
   const deadline = await getDeadline(deps);
   if (isClosedPure(now, deadline)) {
-    return { ok: false, error: "Les pronostics sont clos (le premier match de la saison a commencé)." };
+    return { ok: false, error: CLOSED_ERROR };
   }
 
   const admin = getAdmin(deps);
@@ -220,7 +220,7 @@ export async function savePronoCore(
   const now = deps.now ?? new Date();
   const deadline = await getDeadline(deps);
   if (isClosedPure(now, deadline)) {
-    return { ok: false, error: "Les pronostics sont clos (le premier match de la saison a commencé)." };
+    return { ok: false, error: CLOSED_ERROR };
   }
 
   const validated = validateWins(wins);

@@ -7,10 +7,12 @@
 // - un seul envoi à la fois : une saisie arrivée pendant un envoi est
 //   renvoyée juste après (la dernière gagne), jamais perdue ;
 // - un échec laisse l'état « erreur » ; la saisie suivante renvoie la
-//   carte complète (chaque envoi contient tout le prono).
+//   carte complète (chaque envoi contient tout le prono) ; après un échec
+//   RÉSEAU, la valeur reste en attente et `flush()` la renvoie telle quelle.
 
 export type AutosaveStatus = "pending" | "saving" | "saved" | "error";
-export type AutosaveState = { status: AutosaveStatus; error?: string };
+/** `retryable` : échec réseau, la valeur est gardée et `flush()` la renvoie. */
+export type AutosaveState = { status: AutosaveStatus; error?: string; retryable?: boolean };
 
 type SaveResult = { ok: true } | { ok: false; error: string };
 
@@ -28,7 +30,7 @@ export function createAutosave<T>(opts: {
   let current: AutosaveState | null = null;
 
   function emit(next: AutosaveState) {
-    if (current && current.status === next.status && current.error === next.error) return;
+    if (current && current.status === next.status && current.error === next.error && current.retryable === next.retryable) return;
     current = next;
     opts.onState(next);
   }
@@ -44,6 +46,7 @@ export function createAutosave<T>(opts: {
     if (inflight || !latest) return;
     inflight = true;
     let lastError: string | null = null;
+    let retryable = false;
     while (latest) {
       clearTimer();
       const { value } = latest;
@@ -52,12 +55,22 @@ export function createAutosave<T>(opts: {
       try {
         const r = await opts.save(value);
         lastError = r.ok ? null : r.error;
+        retryable = false;
       } catch {
         lastError = NETWORK_ERROR;
+        retryable = true;
+        // Échec réseau (pas une erreur métier) : on garde la valeur pour un
+        // nouvel essai (flush, bouton « Réessayer », retour en ligne), sauf
+        // si une saisie plus récente est déjà en attente. Pas de relance
+        // automatique en boucle ici.
+        if (!latest) {
+          latest = { value };
+          break;
+        }
       }
     }
     inflight = false;
-    emit(lastError ? { status: "error", error: lastError } : { status: "saved" });
+    emit(lastError ? { status: "error", error: lastError, ...(retryable ? { retryable: true } : {}) } : { status: "saved" });
   }
 
   return {

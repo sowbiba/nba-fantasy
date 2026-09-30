@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import AppChrome from "@/components/AppChrome";
+import AppChrome, { AppMain } from "@/components/AppChrome";
 import BottomNav from "@/components/BottomNav";
 import HeaderControl from "@/components/HeaderControl";
 import PullToRefresh from "@/components/PullToRefresh";
@@ -58,15 +58,12 @@ export default async function RootLayout({
         <AppChrome>
           <PullToRefresh />
         </AppChrome>
-        <main
-          className="max-w-lg mx-auto pb-24"
-          style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
-        >
+        <AppMain>
           <AppChrome>
             <HeaderControl owner={owner} />
           </AppChrome>
           {children}
-        </main>
+        </AppMain>
         <AppChrome>
           <BottomNav owner={owner} />
         </AppChrome>

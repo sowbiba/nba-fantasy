@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
+  CLOSED_ERROR,
   LEAGUE_EXPECTED_WINS,
   TEAMS,
   leagueWinsTotal,
@@ -11,7 +12,7 @@ import {
   type WinsMap,
 } from "@/lib/pronos";
 import { createAutosave, type AutosaveState } from "@/lib/autosave";
-import { shareFilename, sharePronoImage } from "@/lib/share";
+import { fetchShareFile, shareCachedFile, shareFilename, supportsFileShare } from "@/lib/share";
 import { saveProno } from "./actions";
 import { useStoredToken } from "./token-store";
 import PronoStandings from "./PronoStandings";
@@ -32,6 +33,20 @@ function withTeam(wins: WinsMap, team: string, value: number | null): WinsMap {
 
 type SavePayload = { token: string; wins: WinsMap };
 
+// Capacité statique du navigateur : partager un fichier png via Web Share.
+// Lue via useSyncExternalStore (false au rendu serveur, puis la vraie valeur).
+let fileShareSupport: boolean | null = null;
+function readFileShareSupport(): boolean {
+  if (fileShareSupport === null) {
+    fileShareSupport = supportsFileShare(navigator, new File([], "prono.png", { type: "image/png" }));
+  }
+  return fileShareSupport;
+}
+const noSubscribe = () => () => {};
+
+const shareBtn =
+  "h-9 px-4 inline-flex items-center rounded-full border border-[color:var(--color-line)] text-xs font-semibold text-[color:var(--color-text)] active:bg-white/5";
+
 export default function PronoEditor({
   id,
   name,
@@ -48,17 +63,36 @@ export default function PronoEditor({
   // revalide la page serveur (nouveau `initialWins`), qu'on ignore
   // volontairement pour ne jamais écraser une saisie en cours.
   const [wins, setWins] = useState<WinsMap>(initialWins);
+  // Copie à jour pour les gestionnaires d'événements (jamais lue au rendu) :
+  // chaque modification part de la dernière carte, pas de celle du rendu.
+  const winsRef = useRef<WinsMap>(initialWins);
   const [saveState, setSaveState] = useState<AutosaveState | null>(null);
   const [closedNow, setClosedNow] = useState(false);
-  const [autosave] = useState(() =>
-    createAutosave<SavePayload>({
+  const [showImageLink, setShowImageLink] = useState(false);
+  const [autosave] = useState(() => {
+    const a = createAutosave<SavePayload>({
       save: (p) => saveProno(id, p.token, p.wins),
       onState: (s) => {
         setSaveState(s);
-        if (s.status === "error" && s.error && /clos/i.test(s.error)) setClosedNow(true);
+        if (s.status === "error" && s.error === CLOSED_ERROR) {
+          setClosedNow(true);
+          a.cancel();
+        }
       },
-    }),
-  );
+    });
+    return a;
+  });
+
+  const imageUrl = `/pronos-26-27/${id}/image`;
+  const shareTitle = `Prono NBA 2026-27 de ${name}`;
+  const filename = shareFilename(name);
+  const canFileShare = useSyncExternalStore(noSubscribe, readFileShareSupport, () => false);
+  // Image pré-chargée pour un partage synchrone au clic (iOS exige
+  // navigator.share sans await avant). `imageVersion` invalide le fichier à
+  // chaque saisie : il n'est tenu pour frais qu'une fois l'état « Enregistré ».
+  const shareFileRef = useRef<File | null>(null);
+  const imageVersionRef = useRef(0);
+  const saveStatus = saveState?.status ?? "idle";
 
   const isClosed = closed || closedNow;
   const editable = !isClosed && typeof token === "string";
@@ -79,10 +113,44 @@ export default function PronoEditor({
     };
   }, [autosave]);
 
+  // Nouvel essai automatique au retour du réseau (après un échec réseau).
+  useEffect(() => {
+    const onOnline = () => autosave.flush();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [autosave]);
+
+  // Pré-chargement de l'image de partage : seulement si le navigateur sait
+  // partager un fichier (sinon on n'affiche qu'un lien, inutile de faire
+  // rendre un png au serveur), au montage puis ~1 s après chaque
+  // « Enregistré ». Jamais pendant une saisie en attente/en cours ni après
+  // une erreur (l'image ne refléterait pas la saisie affichée).
+  useEffect(() => {
+    if (!canFileShare) return;
+    if (saveStatus !== "idle" && saveStatus !== "saved") return;
+    const version = imageVersionRef.current;
+    const timer = setTimeout(
+      () => {
+        void fetchShareFile({ imageUrl, filename, fetchImpl: (url, init) => fetch(url, init) }).then((file) => {
+          if (file && imageVersionRef.current === version) shareFileRef.current = file;
+        });
+      },
+      saveStatus === "idle" ? 0 : 1000,
+    );
+    return () => clearTimeout(timer);
+  }, [canFileShare, saveStatus, imageUrl, filename]);
+
   function update(next: WinsMap) {
     if (!editable || typeof token !== "string") return;
+    winsRef.current = next;
+    imageVersionRef.current += 1;
+    shareFileRef.current = null;
     setWins(next);
     autosave.schedule({ token, wins: next });
+  }
+
+  function setTeam(team: string, value: number | null) {
+    update(withTeam(winsRef.current, team, value));
   }
 
   const standings = standingsFromWins(wins);
@@ -91,18 +159,26 @@ export default function PronoEditor({
   const offTarget = total !== LEAGUE_EXPECTED_WINS;
 
   function onShare() {
+    // PREMIÈRE instruction, sans await avant : navigator.share doit partir
+    // pendant l'activation utilisateur du clic (iOS Safari).
+    const attempt = shareCachedFile(navigator, shareFileRef.current, shareTitle);
     autosave.flush();
-    void sharePronoImage({
-      imageUrl: `/pronos-26-27/${id}/image`,
-      title: `Prono NBA 2026-27 de ${name}`,
-      filename: shareFilename(name),
-      nav: typeof navigator !== "undefined" ? navigator : undefined,
-      fetchImpl: (url, init) => fetch(url, init),
-      openUrl: (url) => {
-        window.open(url, "_blank", "noopener");
-      },
+    if (attempt.kind === "link") {
+      // Image pas encore prête (saisie en cours) : lien à cliquer, jamais de
+      // window.open hors geste utilisateur (bloqué comme pop-up).
+      setShowImageLink(true);
+      return;
+    }
+    void attempt.done.then((outcome) => {
+      if (outcome === "failed") setShowImageLink(true);
     });
   }
+
+  const imageLink = (
+    <a href={imageUrl} target="_blank" rel="noopener" className={shareBtn}>
+      Ouvrir l&apos;image
+    </a>
+  );
 
   return (
     <div className="px-4 pt-5 pb-10 animate-fade-in">
@@ -123,7 +199,7 @@ export default function PronoEditor({
         ) : token === undefined ? null : token === null ? (
           <p className="text-[color:var(--color-text-soft)]">Ce prono appartient à {name}.</p>
         ) : (
-          <SaveIndicator state={saveState} />
+          <SaveIndicator state={saveState} onRetry={() => autosave.flush()} />
         )}
       </div>
 
@@ -140,13 +216,16 @@ export default function PronoEditor({
             {offTarget && filled === 30 ? ` · écart ${total > LEAGUE_EXPECTED_WINS ? "+" : ""}${total - LEAGUE_EXPECTED_WINS}` : ""}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onShare}
-          className="h-9 px-4 rounded-full border border-[color:var(--color-line)] text-xs font-semibold text-[color:var(--color-text)] active:bg-white/5"
-        >
-          Partager
-        </button>
+        {canFileShare ? (
+          <div className="flex items-center gap-2">
+            {showImageLink && imageLink}
+            <button type="button" onClick={onShare} className={shareBtn}>
+              Partager
+            </button>
+          </div>
+        ) : (
+          imageLink
+        )}
       </div>
       {offTarget && filled === 30 && (
         <p className="mt-2 text-[11px] text-[color:var(--color-text-mute)]">
@@ -168,7 +247,7 @@ export default function PronoEditor({
                     key={t.code}
                     team={t.code}
                     value={wins[t.code]}
-                    onChange={(v) => update(withTeam(wins, t.code, v))}
+                    onChange={(v) => setTeam(t.code, v)}
                   />
                 ))}
               </div>
@@ -182,7 +261,7 @@ export default function PronoEditor({
   );
 }
 
-function SaveIndicator({ state }: { state: AutosaveState | null }) {
+function SaveIndicator({ state, onRetry }: { state: AutosaveState | null; onRetry: () => void }) {
   if (!state) {
     return <p className="text-[color:var(--color-text-mute)]">Ton prono · enregistrement automatique</p>;
   }
@@ -190,6 +269,14 @@ function SaveIndicator({ state }: { state: AutosaveState | null }) {
     return (
       <p role="alert" className="text-[color:var(--color-crimson)]">
         {state.error}
+        {state.retryable && (
+          <>
+            {" "}
+            <button type="button" onClick={onRetry} className="underline underline-offset-2 font-semibold">
+              Réessayer
+            </button>
+          </>
+        )}
       </p>
     );
   }

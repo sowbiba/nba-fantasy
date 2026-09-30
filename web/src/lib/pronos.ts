@@ -43,6 +43,11 @@ export const TEAMS: Team[] = [
 
 const TEAM_CODES = new Set(TEAMS.map((t) => t.code));
 
+/** Message renvoyé par createProno/saveProno après la clôture. Constante
+ *  partagée : l'éditeur la compare par égalité pour passer en lecture
+ *  seule (plutôt qu'une regex couplée au libellé). */
+export const CLOSED_ERROR = "Les pronostics sont clos (le premier match de la saison a commencé).";
+
 export const LEAGUE_EXPECTED_WINS = 82 * 15; // 1230, une info affichée (pas un blocage).
 
 /** Nettoie un nom saisi avant validation/stockage (revue round 1, mineur
