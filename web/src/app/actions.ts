@@ -179,6 +179,27 @@ export async function correctPick(input: { date: string; playerId: number | null
   return { ok: true };
 }
 
+/** Correction du x2 d'une soirée passée (posé sur TrashTalk, oublié ici) :
+ *  lève la fermeture en base (correct_x2), jamais les contraintes x2. */
+export async function correctX2(input: { date: string; value: boolean }): Promise<ActionResult> {
+  const denied = await owner();
+  if (denied) return denied;
+  const today = deckDate();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || input.date >= today) {
+    return { ok: false, error: "Seules les soirées passées se corrigent ici." };
+  }
+  if (seasonForDate(input.date) !== seasonForDate(today)) {
+    return { ok: false, error: "Seules les soirées de la saison en cours se corrigent." };
+  }
+  const admin = getAdmin();
+  if ("err" in admin) return admin.err;
+  const { db } = admin;
+  const { error } = await db.rpc("correct_x2", { p_date: input.date, p_value: input.value });
+  if (error) return { ok: false, error: pickErrorMessage(error) };
+  refresh();
+  return { ok: true };
+}
+
 /** Effectif actuel (players.active) des équipes qui jouent un match éligible
  *  ce soir-là, pour choisir le joueur à corriger ou à réserver (Deck). Limite connue et acceptée :
  *  un joueur transféré depuis se corrige en base à la demande. */

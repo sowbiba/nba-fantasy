@@ -9,13 +9,9 @@ import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import MyPickCard from "@/components/MyPickCard";
 import { deckDate, frLongDate, parisTime } from "@/lib/date";
-import { HARD_OUT_STATUSES, homeState, topDefender, x2Hint, x2HintText } from "@/lib/display";
+import { HARD_OUT_STATUSES, homeState, topDefender, x2AllowedOn, x2Hint, x2HintText } from "@/lib/display";
 
 export const revalidate = 0;
-
-// Affichage seulement (R10) : la base refuse un x2 hors fenêtre (check
-// picks_x2_window, migration 021), ce set ne fait que masquer le bouton.
-const X2_MONTHS = new Set([11, 12, 1, 2, 3, 4]);
 
 type PlanRow = { night: string; player_id: number; is_x2: boolean };
 
@@ -161,8 +157,7 @@ export default async function TonightPage() {
   const { deck, night, games, recsWithPlayers, pick, pickPlayer, plan, planPlayer, sync, dataError, predictions } = await getData();
   const state = homeState({ hasNight: !!night && night.n_eligible_games > 0, recCount: recsWithPlayers.length, hasPick: !!pick });
   const top3 = recsWithPlayers.slice(0, 3);
-  const month = Number(deck.slice(5, 7));
-  const x2Allowed = (pick ? pick.mode === "regular" : night?.mode === "regular") && X2_MONTHS.has(month);
+  const x2Allowed = x2AllowedOn(deck, pick ? pick.mode : night?.mode);
   // R10 (informatif) : avec un pick, le moteur replanifie sur ce pick ; on ne suit le plan
   // que si son joueur est bien le pick (voir x2Hint).
   const hint = x2Hint({

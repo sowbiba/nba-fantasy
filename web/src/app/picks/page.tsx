@@ -19,7 +19,7 @@ export default async function PicksPage() {
 
   const [statsRes, picksRes, scRes, nightRes, pastNightsRes] = await Promise.all([
     db!.rpc("period_stats", { p_season: season, p_mode: "regular", p_until: today }),
-    db!.from("picks").select("id, date, player_id, actual_score, is_x2, players(name, team)").eq("season", season).order("date", { ascending: false }),
+    db!.from("picks").select("id, date, player_id, actual_score, is_x2, mode, players(name, team)").eq("season", season).order("date", { ascending: false }),
     // Filtré par saison courante (jointure sur picks.season) : second_chances n'a pas sa propre colonne season (migration 018).
     db!.from("second_chances").select("pick_id, bought_on, expires_on, picks!inner(season)").eq("picks.season", season),
     supabase.from("nights").select("closing_at").eq("date", today).maybeSingle(),
@@ -32,10 +32,10 @@ export default async function PicksPage() {
   const scByPick = new Map(((scRes.data || []) as { pick_id: number; bought_on: string; expires_on: string }[])
     .map((s) => [s.pick_id, { bought_on: s.bought_on, expires_on: s.expires_on }]));
   const todayClosingAt = (nightRes.data as { closing_at: string } | null)?.closing_at ?? null;
-  type Row = { id: number; date: string; player_id: number; actual_score: number | null; is_x2: boolean; players: { name: string; team: string } | null };
+  type Row = { id: number; date: string; player_id: number; actual_score: number | null; is_x2: boolean; mode: "regular" | "playoffs"; players: { name: string; team: string } | null };
   const rows: HistoryRow[] = ((picksRes.data || []) as unknown as Row[]).map((p) => ({
     id: p.id, date: p.date, player_id: p.player_id, player_name: p.players?.name ?? `#${p.player_id}`,
-    team: p.players?.team ?? "", actual_score: p.actual_score, is_x2: p.is_x2, second_chance: scByPick.get(p.id) ?? null,
+    team: p.players?.team ?? "", actual_score: p.actual_score, is_x2: p.is_x2, mode: p.mode, second_chance: scByPick.get(p.id) ?? null,
   }));
   const pickedDates = new Set(rows.map((r) => r.date));
   // M1 (final review) : si la requête picks a échoué, ne pas synthétiser de
@@ -43,7 +43,7 @@ export default async function PicksPage() {
   // pick, et "Corriger" y remplacerait un vrai pick par un nouveau.
   const noPickRows: HistoryRow[] = picksRes.error ? [] : ((pastNightsRes.data || []) as { date: string }[])
     .filter((n) => !pickedDates.has(n.date))
-    .map((n) => ({ id: null, date: n.date, player_id: null, player_name: null, team: "", actual_score: null, is_x2: false, second_chance: null }));
+    .map((n) => ({ id: null, date: n.date, player_id: null, player_name: null, team: "", actual_score: null, is_x2: false, mode: null, second_chance: null }));
   const allRows = [...rows, ...noPickRows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   return (
