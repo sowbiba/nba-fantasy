@@ -5,6 +5,7 @@ import Link from "next/link";
 import { savePick } from "@/app/actions";
 import { frLongDate, parisTime } from "@/lib/date";
 import { HARD_OUT_STATUSES, isClosed } from "@/lib/display";
+import NightPlayerPicker from "./NightPlayerPicker";
 
 export type DeckNightProps = {
   date: string; closingAt: string; nGames: number; isPhantom: boolean; isToday: boolean;
@@ -15,6 +16,7 @@ export type DeckNightProps = {
 export default function DeckNight(p: DeckNightProps) {
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [choosing, setChoosing] = useState(false);
   const closed = isClosed(p.closingAt);
 
   const reserve = () => {
@@ -77,6 +79,16 @@ export default function DeckNight(p: DeckNightProps) {
         </div>
       ) : (
         <p className="mt-1 text-xs text-[color:var(--color-text-mute)]">Pas encore de suggestion.</p>
+      )}
+      {!closed && (
+        <button onClick={() => { setMsg(null); setChoosing((c) => !c); }}
+                className="mt-1 text-[11px] underline text-[color:var(--color-text-mute)]">
+          {choosing ? "Annuler" : p.pick ? "Changer de joueur" : "Autre joueur"}
+        </button>
+      )}
+      {choosing && !closed && (
+        <NightPlayerPicker date={p.date} current={p.pick ? { playerId: p.pick.playerId, name: p.pick.name } : null}
+          onDone={(name) => { setChoosing(false); setMsg(`${name} réservé. Pense à le reporter sur trashtalk.co.`); }} />
       )}
       {msg && <p role="alert" className="mt-1 text-xs text-[color:var(--color-text-soft)]">{msg}</p>}
     </div>

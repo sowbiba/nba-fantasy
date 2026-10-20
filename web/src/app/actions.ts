@@ -180,20 +180,21 @@ export async function correctPick(input: { date: string; playerId: number | null
 }
 
 /** Effectif actuel (players.active) des équipes qui jouent un match éligible
- *  ce soir-là, pour choisir le joueur à corriger. Limite connue et acceptée :
+ *  ce soir-là, pour choisir le joueur à corriger ou à réserver (Deck). Limite connue et acceptée :
  *  un joueur transféré depuis se corrige en base à la demande. */
-export async function playersForNight(date: string): Promise<{ id: number; name: string; team: string }[]> {
+export async function playersForNight(date: string): Promise<{ id: number; name: string; team: string; gameId: string }[]> {
   if (await owner()) return [];
   const admin = getAdmin();
   if ("err" in admin) return [];
   const { db } = admin;
-  const { data: games } = await db.from("games").select("home_team, away_team")
+  const { data: games } = await db.from("games").select("id, home_team, away_team")
     .eq("date", date).in("game_type", ["regular", "cup_final", "playoffs"]);
-  const teams = [...new Set((games ?? []).flatMap((g) => [g.home_team, g.away_team]))];
-  if (!teams.length) return [];
+  // Match de chaque équipe ce soir-là (nécessaire à savePick depuis le Deck).
+  const gameByTeam = new Map((games ?? []).flatMap((g) => [[g.home_team, g.id], [g.away_team, g.id]] as [string, string][]));
+  if (!gameByTeam.size) return [];
   const { data } = await db.from("players").select("id, name, team")
-    .in("team", teams).eq("active", true).order("name");
-  return data ?? [];
+    .in("team", [...gameByTeam.keys()]).eq("active", true).order("name");
+  return (data ?? []).map((p) => ({ ...p, gameId: gameByTeam.get(p.team)! }));
 }
 
 /** Abonnement Web Push (tâche 7) : upsert sur endpoint, pour permettre un
