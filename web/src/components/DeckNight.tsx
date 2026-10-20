@@ -4,11 +4,12 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { savePick } from "@/app/actions";
 import { frLongDate, parisTime } from "@/lib/date";
-import { HARD_OUT_STATUSES, isClosed } from "@/lib/display";
+import { HARD_OUT_STATUSES, isClosed, x2AllowedOn } from "@/lib/display";
 import NightPlayerPicker from "./NightPlayerPicker";
+import X2Toggle from "./X2Toggle";
 
 export type DeckNightProps = {
-  date: string; closingAt: string; nGames: number; isPhantom: boolean; isToday: boolean;
+  date: string; closingAt: string; nGames: number; isPhantom: boolean; isToday: boolean; mode: "regular" | "playoffs";
   pick: { playerId: number; name: string; team: string; injury: string | null; isX2: boolean } | null;
   suggestion: { playerId: number; name: string; team: string; gameId: string; projection: number; explanation: string; isX2: boolean } | null;
 };
@@ -48,9 +49,12 @@ export default function DeckNight(p: DeckNightProps) {
             {p.pick.name}
           </Link>{" "}
           <span className="text-[11px] text-[color:var(--color-text-mute)]">
-            {p.pick.team}{p.pick.isX2 ? " · x2" : ""}
+            {p.pick.team}{p.pick.isX2 && (closed || !x2AllowedOn(p.date, p.mode)) ? " · x2" : ""}
             {p.suggestion?.isX2 && !p.pick.isX2 && p.suggestion.playerId === p.pick.playerId ? " · plan : x2 ce soir-là" : ""}
           </span>
+          {!closed && x2AllowedOn(p.date, p.mode) && (
+            <span className="ml-1 align-middle"><X2Toggle key={`${p.pick.playerId}:${p.pick.isX2}`} date={p.date} isX2={p.pick.isX2} /></span>
+          )}
           {p.pick.injury && HARD_OUT_STATUSES.has(p.pick.injury) && !closed && (
             <p className="text-xs text-[color:var(--color-crimson)]">⚠️ {p.pick.injury} : remplace-le avant la fermeture.</p>
           )}

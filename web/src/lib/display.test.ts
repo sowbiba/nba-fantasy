@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bestFirstIsDescending,
+  x2AllowedOn,
   displayedSortDir,
   formatPointDiff,
   homeState,
@@ -306,5 +307,18 @@ describe("sortStandings", () => {
     ];
     expect(sortStandings(stringy, "pct", "asc").map((r) => r.team)).toEqual(["P", "Q"]);
     expect(sortStandings(stringy, "point_diff", "asc").map((r) => r.team)).toEqual(["P", "Q"]);
+  });
+});
+
+describe("x2AllowedOn (R10)", () => {
+  it("saison régulière, novembre à avril", () => {
+    expect(x2AllowedOn("2026-11-01", "regular")).toBe(true);
+    expect(x2AllowedOn("2027-04-30", "regular")).toBe(true);
+  });
+  it("refusé hors fenêtre, en playoffs ou sans mode", () => {
+    expect(x2AllowedOn("2026-10-30", "regular")).toBe(false);
+    expect(x2AllowedOn("2027-05-02", "regular")).toBe(false);
+    expect(x2AllowedOn("2027-04-20", "playoffs")).toBe(false);
+    expect(x2AllowedOn("2026-12-01", null)).toBe(false);
   });
 });

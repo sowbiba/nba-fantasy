@@ -59,7 +59,7 @@ export default async function DeckPage() {
           const sGame = sPlayer ? games.find((g) => g.date === n.date && (g.home_team === sPlayer.team || g.away_team === sPlayer.team)) : undefined;
           return (
             <DeckNight key={n.date} date={n.date} closingAt={n.closing_at} nGames={n.n_eligible_games}
-              isPhantom={n.is_phantom} isToday={n.date === today}
+              isPhantom={n.is_phantom} isToday={n.date === today} mode={n.mode}
               pick={pick && pickPlayer ? { playerId: pickPlayer.id, name: pickPlayer.name, team: pickPlayer.team, injury: pickPlayer.injury_status, isX2: pick.is_x2 } : null}
               suggestion={s && sPlayer && sGame ? { playerId: sPlayer.id, name: sPlayer.name, team: sPlayer.team, gameId: sGame.id, projection: s.projection, explanation: s.explanation, isX2: s.is_x2 } : null} />
           );

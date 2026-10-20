@@ -17,6 +17,15 @@ export function recMeta(rec: RecS1) {
   };
 }
 
+// Affichage seulement (R10) : la base refuse un x2 hors fenêtre (check
+// picks_x2_window, migration 021), ceci ne fait que masquer le bouton.
+const X2_MONTHS = new Set([11, 12, 1, 2, 3, 4]);
+
+/** R10 : x2 possible en saison régulière, de novembre à avril. */
+export function x2AllowedOn(date: string, mode: "regular" | "playoffs" | null | undefined): boolean {
+  return mode === "regular" && X2_MONTHS.has(Number(date.slice(5, 7)));
+}
+
 /** Points affichés pour un pick scoré : score réel × 2 si x2, sinon tel quel. */
 export function pickPoints(actualScore: number | null, isX2: boolean): number | null {
   return actualScore === null ? null : actualScore * (isX2 ? 2 : 1);

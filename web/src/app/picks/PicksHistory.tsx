@@ -4,12 +4,13 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { addSecondChance, cancelPick } from "@/app/actions";
 import { frDayMonth, frLongDate } from "@/lib/date";
-import { isClosed, pickPoints } from "@/lib/display";
+import { isClosed, pickPoints, x2AllowedOn } from "@/lib/display";
+import X2Toggle from "@/components/X2Toggle";
 import CorrectionPanel from "./CorrectionPanel";
 
 export type HistoryRow = {
   id: number | null; date: string; player_id: number | null; player_name: string | null; team: string;
-  actual_score: number | null; is_x2: boolean; second_chance: { bought_on: string; expires_on: string } | null;
+  actual_score: number | null; is_x2: boolean; mode: "regular" | "playoffs" | null; second_chance: { bought_on: string; expires_on: string } | null;
 };
 
 export default function PicksHistory({ rows, today, todayClosingAt }: { rows: HistoryRow[]; today: string; todayClosingAt: string | null }) {
@@ -48,6 +49,8 @@ export default function PicksHistory({ rows, today, todayClosingAt }: { rows: Hi
           const cancellable = r.id !== null && r.player_id !== null && r.date >= today && r.actual_score === null && !closedToday;
           // Correction (tâche 5) : uniquement les soirées déjà passées, avec ou sans pick.
           const correctable = r.date < today;
+          // x2 : soirée ouverte (setX2) ou passée en correction (correct_x2).
+          const x2Editable = r.id !== null && x2AllowedOn(r.date, r.mode) && (r.date < today || (r.date >= today && !closedToday));
           return (
             <li key={r.id ?? r.date} className="flex flex-col gap-1 px-3 py-2 rounded-[var(--radius-card-sm)] bg-[color:var(--color-surface)] border border-white/5">
               <div className="flex items-center justify-between gap-3">
@@ -62,7 +65,8 @@ export default function PicksHistory({ rows, today, todayClosingAt }: { rows: Hi
                   <div className="text-[11px] text-[color:var(--color-text-mute)] capitalize">
                     {r.date > today ? `réservé · ${frLongDate(r.date)}` : frLongDate(r.date)}
                   </div>
-                  <div className="mt-1 flex gap-3">
+                  <div className="mt-1 flex items-start gap-3">
+                    {x2Editable && r.date >= today && <X2Toggle key={`${r.date}:${r.is_x2}`} date={r.date} isX2={r.is_x2} />}
                     {cancellable && (
                       <button onClick={() => cancel(r)} disabled={pending}
                               className="text-[10px] underline text-[color:var(--color-text-soft)]">
@@ -80,7 +84,7 @@ export default function PicksHistory({ rows, today, todayClosingAt }: { rows: Hi
                 <div className="text-right shrink-0">
                   <div className="font-display text-xl leading-none font-mono-num text-[color:var(--color-text)]">
                     {r.player_id === null ? "0" : points === null ? "—" : points}
-                    {r.is_x2 && <span className="ml-1 text-xs text-[color:var(--color-gold)]">x2</span>}
+                {r.is_x2 && <span className="ml-1 text-xs text-[color:var(--color-gold)]">x2</span>}
                   </div>
                   {r.id !== null && r.actual_score === 0 && !r.second_chance && (
                     <button onClick={() => secondChance(r.id!)} disabled={pending}
@@ -96,7 +100,14 @@ export default function PicksHistory({ rows, today, todayClosingAt }: { rows: Hi
                 </div>
               </div>
               {correctingDate === r.date && (
-                <CorrectionPanel date={r.date} currentPlayerId={r.player_id} onDone={() => setCorrectingDate(null)} />
+                <>
+                  {x2Editable && (
+                    <div className="mt-1 flex items-center gap-2 text-[11px] text-[color:var(--color-text-mute)]">
+                      x2 posé ce soir-là ? <X2Toggle key={`${r.date}:${r.is_x2}`} date={r.date} isX2={r.is_x2} correction />
+                    </div>
+                  )}
+                  <CorrectionPanel date={r.date} currentPlayerId={r.player_id} onDone={() => setCorrectingDate(null)} />
+                </>
               )}
             </li>
           );
