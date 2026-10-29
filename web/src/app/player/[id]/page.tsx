@@ -5,10 +5,41 @@ import { ProsBlock, ConsBlock, VerdictBlock } from "@/components/ProsCons";
 import BackButton from "./BackButton";
 import WatchlistStar from "./WatchlistStar";
 import PickControls, { CalendarNight } from "./PickControls";
-import { deckDate, addDays, frLongDate } from "@/lib/date";
+import { deckDate, addDays, frLongDate, seasonForDate } from "@/lib/date";
 import { HARD_OUT_STATUSES, recMeta } from "@/lib/display";
+import LastGames, { LastGame } from "@/components/LastGames";
 
 const TEAM_CODE = /^[A-Z]{2,4}$/;
+
+type LogRow = Omit<LastGame, "opponent"> & { games: { home_team: string; away_team: string } | null };
+
+/** 5 derniers matchs éligibles (R4) de la saison en cours : game_logs est
+ *  publique, lue avec le client anon dans les deux modes. */
+async function getLastGames(playerId: number): Promise<{ games: LastGame[]; error: boolean }> {
+  const { data, error } = await supabase.from("game_logs")
+    .select("game_id, date, is_home, minutes, pts, reb, ast, stl, blk, tov, fgm, fga, tpm, tpa, ftm, fta, ttfl_score, games!inner(home_team, away_team, game_type, season)")
+    .eq("player_id", playerId)
+    // Miroir de ELIGIBLE_TYPES (engine/rules/game_types.py, R4).
+    .in("games.game_type", ["regular", "cup_final", "playoffs"])
+    .eq("games.season", seasonForDate(deckDate()))
+    .order("date", { ascending: false })
+    .limit(5);
+  const games = ((data || []) as unknown as LogRow[]).map(({ games: g, ...l }) => ({
+    ...l, opponent: g ? (l.is_home ? g.away_team : g.home_team) : null,
+  }));
+  return { games, error: !!error };
+}
+
+function LastGamesSection({ games }: { games: LastGame[] }) {
+  return (
+    <section className="mt-6">
+      <h2 className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--color-text-mute)] mb-2">
+        5 derniers matchs
+      </h2>
+      <LastGames games={games} />
+    </section>
+  );
+}
 
 // Mode public (tâche 5) : en-tête, 5 derniers/saison/floor·ceiling et
 // « Prochains matchs » (30 jours) depuis `games` — aucune donnée TTFL
@@ -30,10 +61,11 @@ async function getPublicData(playerId: number) {
     gamesError = !!error;
   }
 
-  return { player, games, dataError: !!playerError || gamesError };
+  const last = await getLastGames(playerId);
+  return { player, games, lastGames: last.games, dataError: !!playerError || gamesError || last.error };
 }
 
-function PublicPlayerPage({ player, games }: { player: Player; games: Game[] }) {
+function PublicPlayerPage({ player, games, lastGames }: { player: Player; games: Game[]; lastGames: LastGame[] }) {
   return (
     <div className="px-4 py-4 animate-fade-in">
       <BackButton />
@@ -72,6 +104,8 @@ function PublicPlayerPage({ player, games }: { player: Player; games: Game[] }) 
             ` · retour estimé ${new Date(player.injury_return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Europe/Paris" })}`}
         </p>
       )}
+
+      <LastGamesSection games={lastGames} />
 
       <section className="mt-6">
         <h2 className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--color-text-mute)] mb-2">
@@ -138,7 +172,7 @@ async function getData(playerId: number) {
   const db = await ownerDb();
   const emptySingle: { data: null; error: null } = { data: null, error: null };
   const emptyList: { data: never[]; error: null } = { data: [], error: null };
-  const [playerRes, recRes, calRes, watchlistRes, picksRes] = await Promise.all([
+  const [playerRes, recRes, calRes, watchlistRes, picksRes, last] = await Promise.all([
     supabase.from("players").select("*").eq("id", playerId).single(),
     db
       ? db.from("recommendations").select("*").eq("player_id", playerId).eq("date", today).maybeSingle()
@@ -153,6 +187,7 @@ async function getData(playerId: number) {
     db
       ? db.from("picks").select("date, player_id, players(name)").gte("date", today).lte("date", until)
       : emptyList,
+    getLastGames(playerId),
   ]);
   type PickWithPlayer = { date: string; player_id: number; players: { name: string } | null };
   const picksByDate: Record<string, { playerId: number; name: string }> = {};
@@ -166,6 +201,7 @@ async function getData(playerId: number) {
     nights: (calRes.data || []) as CalendarNight[],
     watchlist: (watchlistRes.data as WatchlistEntry | null) ?? null,
     picksByDate,
+    lastGames: last.games,
   };
 }
 
@@ -179,7 +215,7 @@ export default async function PlayerPage({
 
   const { owner } = await getViewer();
   if (!owner) {
-    const { player, games, dataError } = await getPublicData(playerId);
+    const { player, games, lastGames, dataError } = await getPublicData(playerId);
     if (!player) {
       return (
         <div className="px-4 py-12 text-center">
@@ -200,12 +236,12 @@ export default async function PlayerPage({
             </p>
           </div>
         )}
-        <PublicPlayerPage player={player} games={games} />
+        <PublicPlayerPage player={player} games={games} lastGames={lastGames} />
       </>
     );
   }
 
-  const { today, player, rec, nights, watchlist, picksByDate } = await getData(playerId);
+  const { today, player, rec, nights, watchlist, picksByDate, lastGames } = await getData(playerId);
 
   if (!player) {
     return (
@@ -359,6 +395,8 @@ export default async function PlayerPage({
             ` · retour estimé ${new Date(player.injury_return_date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Europe/Paris" })}`}
         </p>
       )}
+
+      <LastGamesSection games={lastGames} />
 
       {/* ----------------- soirées à venir ----------------- */}
       <section className="mt-6">

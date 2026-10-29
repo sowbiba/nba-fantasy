@@ -62,8 +62,9 @@ export default async function PicksPage() {
         </p>
       )}
 
-      <div className="grid grid-cols-3 gap-2 mt-4">
+      <div className="grid grid-cols-4 gap-2 mt-4">
         {[
+          { label: "Total", value: stats?.total ?? 0 },
           { label: "Moyenne", value: stats?.average ?? "—" },
           { label: "Soirées", value: stats?.nights ?? 0 },
           { label: "Zéros", value: stats?.zeros ?? 0 },
