@@ -1,4 +1,4 @@
-"""Job local (PC, cron 23h50) : tout ce qui passe par stats.nba.com, dont les
+"""Job local (PC, cron 23h50 et 9h00) : tout ce qui passe par stats.nba.com, dont les
 IP GitHub sont bloquées.
 
 - effectifs des 30 équipes (+ désactivation des joueurs coupés, seulement si

@@ -30,7 +30,7 @@ Les horaires du yml sont en UTC (l'heure du cron GitHub Actions) : `0 5,10,15 * 
 
 Chaque étape réseau peut échouer sans faire tomber le job (décision sur les données en base, échec noté dans les `warnings` du log).
 
-Le run local (`local_nightly`, cron 23 h 50, PC) est à part : effectifs des 30 équipes, calendrier (35 jours à venir, stats.nba.com), historique de la saison via `LeagueGameLog` (seule source de box scores, le CDN NBA n'est plus utilisé), puis `score_picks` sur les picks concernés par ce chargement, et les matchups bruts défenseur/joueur.
+Le run local (`local_nightly`, cron 23 h 50 et 9 h 00, PC) est à part : effectifs des 30 équipes, calendrier (35 jours à venir, stats.nba.com), historique de la saison via `LeagueGameLog` (seule source de box scores, le CDN NBA n'est plus utilisé), puis `score_picks` sur les picks concernés par ce chargement, et les matchups bruts défenseur/joueur.
 
 Logs : `/tmp/ttfl-local.log`
 
@@ -142,11 +142,14 @@ cd web && npx vercel --prod
 
 ### Crontab local (complément du GitHub Action)
 
-Un seul run local par jour, dédié aux effectifs et au calendrier (stats.nba.com bloque les IPs GitHub) :
+Deux runs locaux par jour (stats.nba.com bloque les IPs GitHub) : effectifs, calendrier et surtout box scores (`LeagueGameLog`), seule source des scores des picks. Le run de 23 h 50 passe avant la fin des matchs US de la nuit ; celui de 9 h 00 (ajouté le 2026-10-31) les charge et score les picks le matin même, au lieu du soir suivant.
 
 ```
-50 23 * * * cd /home/isow/workspace/perso/nba-fantasy && ./venv/bin/python -m engine.jobs.local_nightly >> /tmp/ttfl-local.log 2>&1 || { echo "$(date '+\%F \%T') TTFL local KO" >> /home/isow/ttfl-sync-failures.log; DISPLAY=:0 notify-send -u critical "TTFL local KO" 2>/dev/null; }
+50 23 * * * cd /home/isow/workspace/perso/nba-fantasy && ./venv/bin/python -m engine.jobs.local_nightly >> /tmp/ttfl-local.log 2>&1 || { echo "$(date '+\%F \%T') TTFL local KO" >> /home/isow/ttfl-sync-failures.log; DISPLAY=:0 notify-send -u critical "TTFL local KO" "voir /tmp/ttfl-local.log" 2>/dev/null; }
+0 9 * * * (même commande)
 ```
+
+Pick non scoré dans la journée : lancer `./venv/bin/python -m engine.jobs.local_nightly` à la main (idempotent).
 
 ## Backtest
 
