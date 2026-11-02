@@ -28,7 +28,7 @@ fatigue = 0.96 si 2e soir d'un back-to-back sinon 1.0   # B2B_FACTOR
 
 - **`ttfl_per_min`** : efficacité pondérée par récence (poids `0.9^i`, `RECENCY`) sur les 15 derniers matchs joués (`EFFICIENCY_GAMES`) ;
 - **`exp_minutes`** : minutes de rôle, même pondération, sur les 8 derniers matchs joués (`ROLE_GAMES`) ;
-- un **prior saison précédente fondu** (S6) : à `PRIOR_K = 10` matchs joués cette saison, le prior et la saison en cours pèsent autant (`n / (n + PRIOR_K)`). Sans historique du tout (rookie), fallback `ROOKIE_TTFL_PER_MIN = 0.55` et `ROOKIE_MINUTES = 12.0` ;
+- un **prior saison précédente fondu** (S6) : à `PRIOR_K = 10` matchs joués cette saison, le prior et la saison en cours pèsent autant (`n / (n + PRIOR_K)`). Sans historique du tout (rookie), fallback `ROOKIE_TTFL_PER_MIN = 0.55` et `ROOKIE_MINUTES = 12.0`, mais seulement tant qu'il n'a pas joué : dès son premier match, ses minutes de rôle sont prises telles quelles (sans prior), et son efficacité est fondue avec un prior court (`ROOKIE_PRIOR_K = 3`). Corrigé le 2026-11-02 : avec le prior long (12 min, `PRIOR_K = 10`), les rookies titulaires (30+ min, 27-33 TTFL de moyenne) étaient projetés à 10-15 et ne sortaient jamais du top 50 ;
 - le prior de minutes est mis à l'échelle de l'effectif actuel par `role_scales` (une équipe qui a perdu sa star redistribue les minutes, un effectif encombré les partage), borné à `[0.85, 1.15]` (`ROLE_SCALE_BOUNDS`) ;
 - **`stddev`** (régularité) sur les 20 derniers scores TTFL disponibles ;
 - **`availability_rate`** : taux de présence sur les 15 derniers logs (tous, DNP inclus), borné à `[0.5, 1.0]` (`PRESENCE_BOUNDS`), défaut `0.9` sans historique.

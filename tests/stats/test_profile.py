@@ -3,7 +3,7 @@ from datetime import date, timedelta
 import pytest
 
 from engine.stats.profile import (
-    GameLog, PRIOR_K, ROOKIE_MINUTES, ROOKIE_TTFL_PER_MIN, build_profile, prior_minutes, role_scales,
+    GameLog, PRIOR_K, ROOKIE_MINUTES, ROOKIE_PRIOR_K, ROOKIE_TTFL_PER_MIN, build_profile, prior_minutes, role_scales,
 )
 
 
@@ -37,9 +37,30 @@ def test_melange_prior_et_saison_courante():
 def test_dnp_exclus_de_l_efficacite_mais_comptes_dans_la_presence():
     current = _logs(1, "2026-27", [(0, 0), (30, 60), (0, 0), (30, 60)])
     p = build_profile(1, current, [])
-    w = 2 / (2 + PRIOR_K)
+    w = 2 / (2 + ROOKIE_PRIOR_K)
     assert p.ttfl_per_min == pytest.approx(w * 2.0 + (1 - w) * ROOKIE_TTFL_PER_MIN)
     assert p.availability_rate == pytest.approx(0.5)
+
+
+def test_rookie_titulaire_minutes_reelles_sans_prior():
+    # Rookie sans saison précédente qui joue 32 min dès ses débuts : ses
+    # minutes de rôle sont prises telles quelles (pas de prior à 12 min),
+    # l'efficacité ne garde qu'un prior court (ROOKIE_PRIOR_K).
+    current = _logs(1, "2026-27", [(32, 32)] * 6)          # 1.0 TTFL/min, 32 min
+    p = build_profile(1, current, [])
+    w = 6 / (6 + ROOKIE_PRIOR_K)
+    assert p.exp_minutes == pytest.approx(32.0)
+    assert p.ttfl_per_min == pytest.approx(w * 1.0 + (1 - w) * ROOKIE_TTFL_PER_MIN)
+
+
+def test_joueur_avec_saison_precedente_garde_le_prior_long():
+    # Le prior court ne concerne que les rookies : avec une saison
+    # précédente, minutes et efficacité restent fondues avec PRIOR_K.
+    prior = _logs(1, "2025-26", [(20, 20)] * 5)
+    current = _logs(1, "2026-27", [(32, 32)] * 6)
+    p = build_profile(1, current, prior)
+    w = 6 / (6 + PRIOR_K)
+    assert p.exp_minutes == pytest.approx(w * 32.0 + (1 - w) * 20.0)
 
 
 def test_recence_le_match_recent_pese_plus():
