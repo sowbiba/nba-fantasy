@@ -17,6 +17,7 @@ PRESENCE_GAMES = 15          # fenêtre du taux de présence (tous les logs)
 PRIOR_K = 10                 # à 10 matchs joués, prior et saison pèsent autant
 ROOKIE_TTFL_PER_MIN = 0.55
 ROOKIE_MINUTES = 12.0
+ROOKIE_PRIOR_K = 3           # rookie : prior d'efficacité court (le prior générique ne dit rien du joueur)
 TEAM_MINUTES = 240.0
 ROTATION_SIZE = 10
 ROLE_SCALE_BOUNDS = (0.85, 1.15)
@@ -115,15 +116,25 @@ def build_profile(player_id: int, current_logs: list[GameLog], prior_logs: list[
     if prior_played:
         prior_eff = sum(l.ttfl for l in prior_played) / sum(l.minutes for l in prior_played)
         prior_min = mean(l.minutes for l in prior_played) * role_scale
+        prior_k = PRIOR_K
     else:
         prior_eff, prior_min = ROOKIE_TTFL_PER_MIN, ROOKIE_MINUTES
+        prior_k = ROOKIE_PRIOR_K
 
     n = len(played)
-    weight = n / (n + PRIOR_K)
+    weight = n / (n + prior_k)
     eff_current = _efficiency(played)
     min_current = _role_minutes(played)
     ttfl_per_min = prior_eff if eff_current is None else weight * eff_current + (1 - weight) * prior_eff
-    exp_minutes = prior_min if min_current is None else weight * min_current + (1 - weight) * prior_min
+    if min_current is None:
+        exp_minutes = prior_min
+    elif not prior_played:
+        # Rookie : le rôle se lit dès les premiers matchs, et le prior de
+        # 12 min (fin de banc) écrasait les titulaires (≈ 15 projetés pour
+        # 30+ réels sur les rookies 2026-27).
+        exp_minutes = min_current
+    else:
+        exp_minutes = weight * min_current + (1 - weight) * prior_min
 
     sample = [l.ttfl for l in (played or _recent_first(prior_played))][:20]
     stddev = pstdev(sample) if len(sample) >= 3 else 0.0
