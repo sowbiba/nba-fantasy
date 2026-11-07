@@ -5,6 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // est testé ici, donc mocké en no-op.
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
+// Client public hors ligne : resolveDeadline retombe sur l'échéance fixe
+// (2026-10-20 23:00Z) sans réseau. Sans ce mock, le test dépendait de
+// l'environnement : en CI (URL http://localhost) la requête restait bloquée
+// sous les faux timers (timeout 5 s) ; en local, elle interrogeait la prod.
+vi.mock("@/lib/supabase/public", () => ({
+  supabase: { from: () => { throw new Error("hors ligne (test)"); } },
+}));
+
 import { createProno, saveProno } from "./actions";
 
 // Revue round 1, critique 1 : `deps` (horloge/échéance/client injectés)

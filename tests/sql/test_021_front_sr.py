@@ -3,6 +3,10 @@ import pytest
 
 
 def _seed(pg):
+    # Ces tests ne portent pas sur la fermeture des soirées : sans ce
+    # contournement (local à la transaction, comme correct_pick), ils cassent
+    # dès que les soirées de novembre 2026 sont passées (night_closed).
+    pg.execute("select set_config('ttfl.correction', 'on', true)")
     pg.execute("insert into players (id, name, team, position) values (1, 'Jokic', 'DEN', 'C'), (2, 'Murray', 'DEN', 'G')")
     pg.execute(
         "insert into games (id, date, home_team, away_team) values "
