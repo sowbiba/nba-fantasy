@@ -160,9 +160,13 @@ def parse_league_game_log(rows: list[dict]) -> tuple[dict[str, dict], list[dict]
             is_home, other = False, matchup.split(" @ ")[-1].strip()
         game_date = _parse_date(str(r["GAME_DATE"]))
         gid = str(r["GAME_ID"])
-        games[gid] = {"id": gid, "date": game_date,
-                      "home_team": team if is_home else other,
-                      "away_team": other if is_home else team, "status": "final"}
+        game = games.setdefault(gid, {"id": gid, "date": game_date,
+                                      "home_team": team if is_home else other,
+                                      "away_team": other if is_home else team, "status": "final",
+                                      "home_score": 0, "away_score": 0})
+        # Score final = somme des points des joueurs : un match passé « final »
+        # ici ne doit pas garder le score écrit en direct par une synchro de nuit.
+        game["home_score" if is_home else "away_score"] += int(r["PTS"] or 0)
         logs.append({
             "player_id": int(r["PLAYER_ID"]), "game_id": gid, "date": game_date, "team": team,
             "minutes": _minutes(r.get("MIN")), "fouls": int(r.get("PF") or 0), "is_home": is_home,

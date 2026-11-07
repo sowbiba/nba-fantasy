@@ -81,13 +81,22 @@ LGL = [
 def test_parse_league_game_log():
     games, logs, players = parse_league_game_log(LGL)
     assert games == {"0022500010": {"id": "0022500010", "date": "2025-10-22", "home_team": "DEN",
-                                    "away_team": "GSW", "status": "final"}}
+                                    "away_team": "GSW", "status": "final", "home_score": 30, "away_score": 25}}
     jokic = next(l for l in logs if l["player_id"] == 1)
     assert (jokic["team"], jokic["is_home"], jokic["minutes"], jokic["fouls"]) == ("DEN", True, 35, 2)
     assert jokic["ttfl_score"] == 30 + 12 + 10 + 1 + 1 + 12 + 2 + 4 - 3 - 8 - 3 - 1
     curry = next(l for l in logs if l["player_id"] == 2)
     assert (curry["is_home"], curry["minutes"]) == (False, 31)
     assert players[2] == {"id": 2, "name": "Curry", "team": "GSW"}
+
+
+def test_parse_league_game_log_score_final_somme_des_points():
+    """Un match marqué final doit porter son score final : sinon le score
+    écrit en direct par une synchro de nuit reste (BOS 79-45 « Final », 07/11)."""
+    rows = LGL + [dict(LGL[0], PLAYER_ID=3, PLAYER_NAME="Murray", PTS=21),
+                  dict(LGL[1], PLAYER_ID=4, PLAYER_NAME="Green", PTS=0, MIN=0)]
+    games, _, _ = parse_league_game_log(rows)
+    assert (games["0022500010"]["home_score"], games["0022500010"]["away_score"]) == (51, 25)
 
 
 def test_parse_league_game_log_format_date_texte():
