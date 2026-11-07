@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Game } from "@/types";
 import { winPctPair } from "@/lib/display";
+import { useLiveGames } from "./useLiveGames";
 
 interface Props {
   games: Game[];
@@ -13,8 +14,10 @@ interface Props {
   predictions?: Record<string, number>;
 }
 
-export default function GamesCollapsible({ games, defaultOpen = false, predictions }: Props) {
+export default function GamesCollapsible({ games: dbGames, defaultOpen = false, predictions }: Props) {
   const [open, setOpen] = useState(defaultOpen);
+  const games = useLiveGames(dbGames);
+  const liveCount = games.filter((g) => g.status === "live").length;
 
   const formatTipOff = (tipOff: string | null) => {
     if (!tipOff) return "";
@@ -58,6 +61,12 @@ export default function GamesCollapsible({ games, defaultOpen = false, predictio
             <span className="font-display text-2xl leading-none text-[color:var(--color-flame)] font-mono-num">
               {games.length}
             </span>
+            {liveCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-[9px] font-bold tracking-[0.15em] uppercase text-[color:var(--color-flame)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--color-flame)] animate-live-dot" />
+                {liveCount} en direct
+              </span>
+            )}
           </div>
         </div>
         <svg
@@ -122,7 +131,10 @@ export default function GamesCollapsible({ games, defaultOpen = false, predictio
                   {game.status === "final" ? (
                     <span className="text-[9px] uppercase tracking-[0.15em] text-[color:var(--color-text-mute)]">Final</span>
                   ) : game.status === "live" ? (
-                    <span className="text-[9px] uppercase tracking-[0.15em] text-[color:var(--color-flame)] font-bold">Live</span>
+                    <span className="inline-flex items-center gap-1.5 text-[9px] uppercase tracking-[0.15em] text-[color:var(--color-flame)] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--color-flame)] animate-live-dot" />
+                      {game.live_detail ?? "Live"}
+                    </span>
                   ) : (
                     formatTipOff(game.tip_off)
                   )}
