@@ -402,15 +402,9 @@ def test_plan_ecarte_un_joueur_out_avant_sa_date_de_retour():
     assert all(r.cell.player_id != 1 for r in d.recommendations)
 
 
-def test_projection_reduite_pendant_la_reprise():
-    """Retour estimé à J+18 : à J+20 la star est en reprise, projection et
-    P(joue) réduites par rapport au même joueur sans blessure."""
-    from engine.stats.availability_prob import RETURN_PROJECTION_FACTOR, RETURN_RAMP_FACTOR
-    d20 = TODAY + timedelta(days=20)
-    base = decide(_inputs()).plan[d20].cell
+def test_plan_ecarte_un_joueur_de_retour_depuis_moins_de_7_jours():
+    """Retour estimé à J+18 : à J+20 il n'est revenu que depuis 2 j, écarté."""
     players = {**PLAYERS, 1: {**PLAYERS[1], "injury_status": "Out",
                               "injury_return_date": (TODAY + timedelta(days=18)).isoformat()}}
-    cell = decide(_inputs(players=players)).plan[d20].cell
-    assert cell.player_id == 1
-    assert cell.projection == pytest.approx(base.projection * RETURN_PROJECTION_FACTOR)
-    assert cell.p_play == pytest.approx(base.p_play * RETURN_RAMP_FACTOR)
+    d = decide(_inputs(players=players))
+    assert all(e.cell.player_id != 1 for e in d.plan.values())
