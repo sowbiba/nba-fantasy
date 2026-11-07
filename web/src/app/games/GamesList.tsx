@@ -1,9 +1,11 @@
 "use client";
 
 import { Game } from "@/types";
+import type { LiveGame } from "@/lib/live";
+import { useLiveGames } from "@/components/useLiveGames";
 import Link from "next/link";
 
-function GameCard({ game }: { game: Game }) {
+function GameCard({ game }: { game: LiveGame }) {
   const homeWon =
     game.home_score !== null &&
     game.away_score !== null &&
@@ -74,7 +76,7 @@ function GameCard({ game }: { game: Game }) {
         )}
         {isLive && (
           <span className="text-[9px] font-bold tracking-[0.1em] px-1.5 py-0.5 rounded bg-[color:var(--color-flame)]/15 text-[color:var(--color-flame)] border border-[color:var(--color-flame)]/30 animate-live-dot">
-            LIVE
+            LIVE{game.live_detail ? ` · ${game.live_detail}` : ""}
           </span>
         )}
       </div>
@@ -95,10 +97,11 @@ function GameCard({ game }: { game: Game }) {
   );
 }
 
-export default function GamesList({ games }: { games: Game[] }) {
+export default function GamesList({ games: dbGames }: { games: Game[] }) {
+  const games = useLiveGames(dbGames);
   // Group games by date, then sort each day by tip-off (earliest first).
   // Games without a tip_off go last.
-  const dateMap = new Map<string, Game[]>();
+  const dateMap = new Map<string, LiveGame[]>();
   for (const g of games) {
     const list = dateMap.get(g.date) || [];
     list.push(g);
