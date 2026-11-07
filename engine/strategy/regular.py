@@ -57,6 +57,7 @@ class Recommendation:
     lock_value: float
     locked_until: date
     best_future: Cell | None
+    is_pick: bool = False   # joueur déjà pické ce soir (affiché à son rang, badge « ton pick »)
 
 
 @dataclass
@@ -194,6 +195,12 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
                               night=d, return_date=return_date, days_ahead=k)
         return projection, p, ctx
 
+    # Pick du soir : son propre pick le bloquerait (cooldown), il disparaîtrait
+    # des recos. On le note comme s'il n'était pas pické (case du soir + coût
+    # de blocage via ses soirées futures « fantômes », hors planificateur).
+    tonight_pick = max((p for p in inputs.picks if p.date == today), key=lambda p: p.id, default=None)
+    shadow: list[tuple[int, int, date, float, float, GameContext]] = []
+
     raw = []  # (days_ahead, player_id, night, projection, p, ctx)
     for d, night in nights.items():
         k = (d - today).days
@@ -208,14 +215,25 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
                     status = row.get("injury_status")
                     if k == 0 and status in HARD_OUT_STATUSES:
                         continue
-                    if not is_available(player_id=pid, player_team=team, night=d, season=night.season,
-                                        mode=night.mode, picks=inputs.picks,
-                                        second_chances=inputs.second_chances, series=inputs.series).ok:
+                    def _ok(exclude=None):
+                        return is_available(player_id=pid, player_team=team, night=d, season=night.season,
+                                            mode=night.mode, picks=inputs.picks,
+                                            second_chances=inputs.second_chances, series=inputs.series,
+                                            exclude_pick_id=exclude).ok
+                    is_tonight_pick = tonight_pick is not None and pid == tonight_pick.player_id
+                    ok = _ok()
+                    as_shadow = False
+                    if not ok and is_tonight_pick and _ok(tonight_pick.id):
+                        if k == 0:
+                            ok = True
+                        else:
+                            ok = as_shadow = True
+                    if not ok:
                         continue
                     projection, p, ctx = _estimate(pid, team, opponent, is_home, d, k, g)
                     if p <= 0:      # absent certain (Out jusqu'à sa date de retour…) : aucune case
                         continue
-                    raw.append((k, pid, d, projection, p, ctx))
+                    (shadow if as_shadow else raw).append((k, pid, d, projection, p, ctx))
 
     # Dédoublonnage par (joueur, soirée) : une ligne de match dupliquée ne
     # doit produire qu'une seule cellule, celle de plus forte espérance
@@ -230,7 +248,7 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
     raw = list(deduped.values())
 
     future_ev: dict[int, list[tuple[int, float]]] = defaultdict(list)
-    for k, pid, _d, projection, p, _ctx in raw:
+    for k, pid, _d, projection, p, _ctx in raw + shadow:
         if k > 0:
             future_ev[pid].append((k, p * projection))
 
@@ -278,12 +296,19 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         for c in cells:
             if c.night != today:
                 future_cells[c.player_id].append(c)
+        for k, pid, d, projection, p, ctx in shadow:
+            future_cells[pid].append(Cell(pid, d, projection, p, future_value(k, p, projection, decay), ctx))
+        pick_pid = tonight_pick.player_id if tonight_pick is not None else None
         tonight_cells = sorted((c for c in cells if c.night == today), key=lambda c: c.value, reverse=True)
-        for c in tonight_cells[:TOP_RECOMMENDATIONS]:
+        shown = tonight_cells[:TOP_RECOMMENDATIONS]
+        # Le pick du soir est toujours montré, même hors du top.
+        shown += [c for c in tonight_cells[TOP_RECOMMENDATIONS:] if c.player_id == pick_pid]
+        for c in shown:
             best = max(future_cells[c.player_id], key=lambda f: f.value, default=None)
             recommendations.append(Recommendation(
                 cell=c, lock_value=lock_value(future_ev[c.player_id], decay),
-                locked_until=today + timedelta(days=COOLDOWN_DAYS), best_future=best))
+                locked_until=today + timedelta(days=COOLDOWN_DAYS), best_future=best,
+                is_pick=c.player_id == pick_pid))
 
         if tonight_source == "plan":
             plan_entry = plan.get(today)

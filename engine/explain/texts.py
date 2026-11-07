@@ -46,6 +46,8 @@ def reco_texts(rec, rank: int, player_name: str) -> tuple[list[str], list[str], 
     cons.append(blocage)
     if rank <= 3:
         tags.append("reco_du_soir")
+    if rec.is_pick:
+        tags.append("mon_pick")
     verdict = (f"{player_name} : {c.projection:.0f} pts projetés, valeur {c.value:.1f} "
                f"une fois le risque d'absence et le blocage de 30 jours pris en compte.")
     return pros, cons, verdict, tags

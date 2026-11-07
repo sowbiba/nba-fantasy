@@ -256,3 +256,25 @@ export function sortStandings(
     return primary !== 0 ? primary : a.rank - b.rank;
   });
 }
+
+// Pick du soir dans les recos (tag « mon_pick » posé par le moteur) : son
+// rang parmi les recos affichées et, s'il n'est pas n°1, la meilleure
+// alternative pour comparer avant la fermeture.
+type RankedRec = { player_id: number; projection: number | null; estimated_score: number; player: { name: string } };
+
+export function isMyPick(rec: { tags: string[] }): boolean {
+  return rec.tags.includes("mon_pick");
+}
+
+export function pickStanding(recs: RankedRec[], pickPlayerId: number) {
+  const idx = recs.findIndex((r) => r.player_id === pickPlayerId);
+  if (idx < 0) return null;
+  const proj = (r: RankedRec) => Number(r.projection ?? r.estimated_score);
+  const top = recs[0];
+  return {
+    rank: idx + 1,
+    total: recs.length,
+    projection: proj(recs[idx]),
+    best: idx === 0 ? null : { name: top.player.name, projection: proj(top) },
+  };
+}

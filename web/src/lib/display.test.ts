@@ -17,6 +17,8 @@ import {
   winPctPair,
   x2Hint,
   x2HintText,
+  pickStanding,
+  isMyPick,
 } from "./display";
 import type { StandingsRow } from "@/types";
 
@@ -320,5 +322,32 @@ describe("x2AllowedOn (R10)", () => {
     expect(x2AllowedOn("2027-05-02", "regular")).toBe(false);
     expect(x2AllowedOn("2027-04-20", "playoffs")).toBe(false);
     expect(x2AllowedOn("2026-12-01", null)).toBe(false);
+  });
+});
+
+describe("pickStanding (pick du soir à son rang dans les recos)", () => {
+  const recs = [
+    { player_id: 10, projection: 45, estimated_score: 44, tags: [], player: { name: "Murray" } },
+    { player_id: 20, projection: 53.6, estimated_score: 53.6, tags: ["mon_pick"], player: { name: "Jokić" } },
+    { player_id: 30, projection: 30, estimated_score: 30, tags: [], player: { name: "X" } },
+  ];
+
+  it("donne le rang du pick, le total et la meilleure alternative", () => {
+    expect(pickStanding(recs, 20)).toEqual({ rank: 2, total: 3, projection: 53.6, best: { name: "Murray", projection: 45 } });
+  });
+
+  it("pas d'alternative à afficher quand le pick est n°1", () => {
+    expect(pickStanding([recs[1], recs[0]], 20)).toEqual({ rank: 1, total: 2, projection: 53.6, best: null });
+  });
+
+  it("null si le pick n'est pas dans les recos", () => {
+    expect(pickStanding(recs, 99)).toBeNull();
+  });
+});
+
+describe("isMyPick", () => {
+  it("lit le tag mon_pick posé par le moteur", () => {
+    expect(isMyPick({ tags: ["home", "mon_pick"] })).toBe(true);
+    expect(isMyPick({ tags: ["home"] })).toBe(false);
   });
 });

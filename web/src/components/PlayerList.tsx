@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { RecommendationWithPlayer } from "@/types";
+import { isMyPick } from "@/lib/display";
 
 const tierVisual: Record<
   string,
@@ -88,6 +89,11 @@ export default function PlayerList({
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-[color:var(--color-text)] truncate">
                         {player.name}
+                        {isMyPick(rec) && (
+                          <span className="ml-1.5 align-middle text-[9px] font-bold tracking-[0.1em] px-1.5 py-0.5 rounded-full bg-[color:var(--color-emerald)] text-black">
+                            TON PICK
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-[color:var(--color-text-mute)] truncate">
                         {player.team} {isHome ? "vs" : "@"} {opponent}

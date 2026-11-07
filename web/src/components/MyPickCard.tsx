@@ -3,12 +3,13 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { setX2 } from "@/app/actions";
-import { isClosed } from "@/lib/display";
+import { isClosed, pickStanding } from "@/lib/display";
 
 export default function MyPickCard({
-  date, playerId, playerName, team, isX2, x2Allowed, closingAt,
+  date, playerId, playerName, team, isX2, x2Allowed, closingAt, standing,
 }: {
   date: string; playerId: number; playerName: string; team: string; isX2: boolean; x2Allowed: boolean; closingAt: string;
+  standing?: ReturnType<typeof pickStanding>;
 }) {
   const [x2, setLocalX2] = useState(isX2);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +41,15 @@ export default function MyPickCard({
           </button>
         )}
       </div>
+      {standing && (
+        <p className="text-xs text-[color:var(--color-text-soft)] mt-1">
+          <span className="font-semibold text-white">n°{standing.rank}</span> sur {standing.total} recos
+          {" · "}{standing.projection.toFixed(1)} pts projetés
+          {standing.best && (
+            <> · n°1 : {standing.best.name} ({standing.best.projection.toFixed(1)})</>
+          )}
+        </p>
+      )}
       <p className="text-[11px] text-[color:var(--color-text-mute)] mt-1">
         {closed ? "Soirée fermée." : "Tu peux le remplacer jusqu'à la fermeture : choisis un autre joueur ci-dessous."}
       </p>

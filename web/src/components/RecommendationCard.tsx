@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { RecommendationWithPlayer } from "@/types";
-import { recMeta } from "@/lib/display";
+import { isMyPick, recMeta } from "@/lib/display";
 
 /**
  * Hero card for a Top-3 recommendation.
@@ -236,6 +236,11 @@ export default function RecommendationCard({
 
           {/* badges */}
           <div className="flex flex-wrap gap-1.5 mt-3">
+            {isMyPick(rec) && (
+              <TagChip tone="bg-[color:var(--color-emerald)] text-black">
+                TON PICK
+              </TagChip>
+            )}
             <span
               className={`inline-flex items-center gap-1 text-[10px] font-bold tracking-[0.1em] px-2 py-0.5 rounded-full ${tier.classes}`}
             >
