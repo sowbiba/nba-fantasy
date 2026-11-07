@@ -9,7 +9,7 @@ import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import MyPickCard from "@/components/MyPickCard";
 import { deckDate, frLongDate, parisTime } from "@/lib/date";
-import { HARD_OUT_STATUSES, homeState, topDefender, x2AllowedOn, x2Hint, x2HintText } from "@/lib/display";
+import { HARD_OUT_STATUSES, homeState, pickStanding, topDefender, x2AllowedOn, x2Hint, x2HintText } from "@/lib/display";
 
 export const revalidate = 0;
 
@@ -157,6 +157,7 @@ export default async function TonightPage() {
   const { deck, night, games, recsWithPlayers, pick, pickPlayer, plan, planPlayer, sync, dataError, predictions } = await getData();
   const state = homeState({ hasNight: !!night && night.n_eligible_games > 0, recCount: recsWithPlayers.length, hasPick: !!pick });
   const top3 = recsWithPlayers.slice(0, 3);
+  const standing = pick ? pickStanding(recsWithPlayers, pick.player_id) : null;
   const x2Allowed = x2AllowedOn(deck, pick ? pick.mode : night?.mode);
   // R10 (informatif) : avec un pick, le moteur replanifie sur ce pick ; on ne suit le plan
   // que si son joueur est bien le pick (voir x2Hint).
@@ -207,7 +208,7 @@ export default async function TonightPage() {
 
       {pick && pickPlayer ? (
         <MyPickCard key={`${pick.id}-${pick.is_x2}`} date={deck} playerId={pickPlayer.id} playerName={pickPlayer.name} team={pickPlayer.team}
-                    isX2={pick.is_x2} x2Allowed={x2Allowed} closingAt={night?.closing_at ?? ""} />
+                    isX2={pick.is_x2} x2Allowed={x2Allowed} closingAt={night?.closing_at ?? ""} standing={standing} />
       ) : (
         !dataError && <NoPickBanner hasGamesTonight={state !== "no_games"} />
       )}
