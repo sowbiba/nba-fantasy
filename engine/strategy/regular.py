@@ -15,7 +15,9 @@ from datetime import date, timedelta
 from engine.rules.availability import COOLDOWN_DAYS, PickRow, SecondChance, SeriesRow, is_available
 from engine.rules.calendar import Night
 from engine.rules.game_types import is_eligible
-from engine.stats.availability_prob import HARD_OUT_STATUSES, future_p_play, p_play
+from engine.stats.availability_prob import (
+    HARD_OUT_STATUSES, RETURN_PROJECTION_FACTOR, future_p_play, in_return_ramp, p_play, parse_return_date,
+)
 from engine.stats.blowout import BlowoutModel
 from engine.stats.profile import PlayerProfile
 from engine.stats.projection import GameContext, project, rest_days
@@ -183,13 +185,17 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         ctx = GameContext(opponent, is_home, rd, opp_factor(inputs.defense, opponent, row.get("position", "F")),
                           expected_margin=margin)
         projection = project(profile, ctx, blowout)
+        return_date = parse_return_date(row.get("injury_return_date"))
+        if in_return_ramp(d, return_date):
+            projection *= RETURN_PROJECTION_FACTOR
         b2b = rd == 0
         if k == 0:
             p = p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),
                        is_b2b_second=b2b, exp_minutes=profile.exp_minutes)
         else:
             p = future_p_play(injury_status=status, availability_rate=profile.availability_rate,
-                              is_b2b_second=b2b, exp_minutes=profile.exp_minutes)
+                              is_b2b_second=b2b, exp_minutes=profile.exp_minutes,
+                              night=d, return_date=return_date, days_ahead=k)
         return projection, p, ctx
 
     raw = []  # (days_ahead, player_id, night, projection, p, ctx)
@@ -210,7 +216,10 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
                                         mode=night.mode, picks=inputs.picks,
                                         second_chances=inputs.second_chances, series=inputs.series).ok:
                         continue
-                    raw.append((k, pid, d, *_estimate(pid, team, opponent, is_home, d, k, g)))
+                    projection, p, ctx = _estimate(pid, team, opponent, is_home, d, k, g)
+                    if p <= 0:      # absent certain (Out jusqu'à sa date de retour…) : aucune case
+                        continue
+                    raw.append((k, pid, d, projection, p, ctx))
 
     # Dédoublonnage par (joueur, soirée) : une ligne de match dupliquée ne
     # doit produire qu'une seule cellule, celle de plus forte espérance

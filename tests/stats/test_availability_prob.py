@@ -80,3 +80,45 @@ def test_future_p_play():
     assert future_p_play(injury_status="Out For Season", availability_rate=0.9,
                          is_b2b_second=False, exp_minutes=30) == 0.0
     assert future_p_play(injury_status=None, availability_rate=1.0, is_b2b_second=True, exp_minutes=36) == 0.93
+
+
+# --- Blessés longue durée : statut Out + date de retour ESPN ---------------
+
+from datetime import date
+
+import pytest
+
+from engine.stats.availability_prob import RETURN_RAMP_FACTOR
+
+RETURN = date(2026, 12, 21)
+
+
+def _fpp(status, night, return_date=None, days_ahead=10, rate=0.9):
+    return future_p_play(injury_status=status, availability_rate=rate, is_b2b_second=False, exp_minutes=34,
+                         night=night, return_date=return_date, days_ahead=days_ahead)
+
+
+def test_future_p_play_out_nul_avant_la_date_de_retour():
+    """Edwards 2026-11 : Out (genou), retour estimé 21/12 — le moteur le
+    planifiait à 100 % le 08/11 car seul le taux de présence comptait."""
+    assert _fpp("Out", date(2026, 11, 8), RETURN, days_ahead=1) == 0.0
+    assert _fpp("Out", date(2026, 12, 20), RETURN, days_ahead=43) == 0.0
+
+
+def test_future_p_play_reprise_reduite_juste_apres_le_retour():
+    assert _fpp("Out", RETURN, RETURN) == pytest.approx(0.9 * RETURN_RAMP_FACTOR)
+    assert _fpp("Out", date(2026, 12, 27), RETURN) == pytest.approx(0.9 * RETURN_RAMP_FACTOR)
+
+
+def test_future_p_play_normal_une_fois_la_reprise_passee():
+    assert _fpp("Out", date(2026, 12, 28), RETURN) == pytest.approx(0.9)
+
+
+def test_future_p_play_out_sans_date_nul_les_premiers_jours():
+    assert _fpp("Out", date(2026, 11, 10), None, days_ahead=3) == 0.0
+    assert _fpp("Out", date(2026, 11, 20), None, days_ahead=13) == pytest.approx(0.9)
+
+
+def test_future_p_play_date_de_retour_ignoree_sans_statut_out():
+    """Joueur rétabli (statut levé) : la date de retour n'a plus d'effet hors fenêtre."""
+    assert _fpp(None, date(2026, 11, 8), RETURN) == pytest.approx(0.9)
