@@ -388,3 +388,29 @@ def test_blowout_active_match_sans_ecart_connu_inchange():
     plain = _tonight(decide(_inputs()))
     blow = _tonight(decide(_inputs(), blowout=BLOWOUT))   # aucun écart attendu dans les entrées
     assert {pid: c.projection for pid, c in blow.items()} == {pid: c.projection for pid, c in plain.items()}
+
+
+# --- Blessés : Out + date de retour (correctif 2026-11, cas Edwards) -------
+
+def test_plan_ecarte_un_joueur_out_avant_sa_date_de_retour():
+    """Star DEN Out jusqu'à J+30 : le plan ne doit pas la placer à J+20,
+    même avec un taux de présence de 0.95."""
+    players = {**PLAYERS, 1: {**PLAYERS[1], "injury_status": "Out",
+                              "injury_return_date": (TODAY + timedelta(days=30)).isoformat()}}
+    d = decide(_inputs(players=players))
+    assert all(e.cell.player_id != 1 for e in d.plan.values())
+    assert all(r.cell.player_id != 1 for r in d.recommendations)
+
+
+def test_projection_reduite_pendant_la_reprise():
+    """Retour estimé à J+18 : à J+20 la star est en reprise, projection et
+    P(joue) réduites par rapport au même joueur sans blessure."""
+    from engine.stats.availability_prob import RETURN_PROJECTION_FACTOR, RETURN_RAMP_FACTOR
+    d20 = TODAY + timedelta(days=20)
+    base = decide(_inputs()).plan[d20].cell
+    players = {**PLAYERS, 1: {**PLAYERS[1], "injury_status": "Out",
+                              "injury_return_date": (TODAY + timedelta(days=18)).isoformat()}}
+    cell = decide(_inputs(players=players)).plan[d20].cell
+    assert cell.player_id == 1
+    assert cell.projection == pytest.approx(base.projection * RETURN_PROJECTION_FACTOR)
+    assert cell.p_play == pytest.approx(base.p_play * RETURN_RAMP_FACTOR)

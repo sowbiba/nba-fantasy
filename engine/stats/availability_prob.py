@@ -1,8 +1,9 @@
-"""P(joue) : statut ESPN, motif DNP récent, repos de back-to-back.
+"""P(joue) : statut ESPN, date de retour, motif DNP récent, repos de back-to-back.
 
 La fuite n°1 de 2025-26 (audit §9) : 17 zéros sur 162 picks. Un zéro coûte
 la soirée ET bloque le joueur (R7), d'où une P(joue) aussi honnête que possible.
 """
+from datetime import date, timedelta
 
 # Probabilité de jouer selon le statut ESPN (observation empirique TTFL).
 INJURY_PLAY_PROBABILITY = {
@@ -18,6 +19,20 @@ INJURY_PLAY_PROBABILITY = {
 
 # Statuts qui retirent le joueur des candidats du soir.
 HARD_OUT_STATUSES = frozenset({"Out", "Doubtful", "Out For Season", "Suspended"})
+
+# Blessés longue durée (correctif 2026-11, cas Edwards : Out jusqu'au 21/12
+# mais planifié à 100 % car seul le taux de présence comptait — les matchs
+# manqués ne laissent pas de log, donc ne le font pas baisser).
+# Statuts qui valent absence jusqu'à la date de retour ESPN.
+LONG_OUT_STATUSES = frozenset({"Out", "Suspended"})
+# Sans date de retour, un Out est tenu pour absent sur ces premiers jours.
+OUT_WITHOUT_RETURN_DAYS = 7
+# Reprise : les RETURN_RAMP_DAYS jours qui suivent la date de retour, P(joue)
+# réduite (les dates glissent souvent) et projection réduite (minutes
+# limitées, joueur pas encore en forme). Non calibrés : à backtester.
+RETURN_RAMP_DAYS = 7
+RETURN_RAMP_FACTOR = 0.75
+RETURN_PROJECTION_FACTOR = 0.85
 
 # 2e soir d'un back-to-back : les gros minutages sont parfois mis au repos
 # (load management). À recalibrer par backtest (L2).
@@ -58,10 +73,34 @@ def p_play(*, injury_status: str | None, recent_logs: list[dict],
     return play_probability(injury_status) * dnp_risk_factor(recent_logs) * _b2b(is_b2b_second, exp_minutes)
 
 
+def parse_return_date(value) -> date | None:
+    """Date de retour ESPN (`players.injury_return_date`, texte ISO) ou None."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def in_return_ramp(night: date | None, return_date: date | None) -> bool:
+    return (night is not None and return_date is not None
+            and return_date <= night < return_date + timedelta(days=RETURN_RAMP_DAYS))
+
+
 def future_p_play(*, injury_status: str | None, availability_rate: float,
-                  is_b2b_second: bool, exp_minutes: float) -> float:
-    """Soirées futures : le statut du jour ne dit presque rien d'un match dans
-    10 jours, sauf une saison terminée. On prend le taux de présence récent."""
+                  is_b2b_second: bool, exp_minutes: float, night: date | None = None,
+                  return_date: date | None = None, days_ahead: int | None = None) -> float:
+    """Soirées futures : un statut Out vaut absence jusqu'à la date de retour
+    ESPN (ou sur les OUT_WITHOUT_RETURN_DAYS premiers jours sans date), puis
+    P(joue) réduite pendant la reprise. Sinon, taux de présence récent."""
     if injury_status == "Out For Season":
         return 0.0
-    return availability_rate * _b2b(is_b2b_second, exp_minutes)
+    if injury_status in LONG_OUT_STATUSES:
+        if return_date is not None and night is not None:
+            if night < return_date:
+                return 0.0
+        elif days_ahead is not None and days_ahead <= OUT_WITHOUT_RETURN_DAYS:
+            return 0.0
+    ramp = RETURN_RAMP_FACTOR if in_return_ramp(night, return_date) else 1.0
+    return availability_rate * ramp * _b2b(is_b2b_second, exp_minutes)
