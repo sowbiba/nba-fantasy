@@ -35,3 +35,9 @@ def test_describe_et_plan_explanation():
     c = _cell(date(2026, 11, 20), is_home=False)
     assert describe_night(c) == "vendredi 20/11 @ WAS"
     assert "50" in plan_explanation(c)
+
+
+def test_reco_texts_tag_mon_pick():
+    base = (_cell(date(2026, 11, 2)), 40.0, date(2026, 12, 2), None)
+    assert "mon_pick" in reco_texts(Recommendation(*base, is_pick=True), 1, "X")[3]
+    assert "mon_pick" not in reco_texts(Recommendation(*base), 1, "X")[3]

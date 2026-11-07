@@ -408,3 +408,34 @@ def test_plan_ecarte_un_joueur_de_retour_depuis_moins_de_7_jours():
                               "injury_return_date": (TODAY + timedelta(days=18)).isoformat()}}
     d = decide(_inputs(players=players))
     assert all(e.cell.player_id != 1 for e in d.plan.values())
+
+
+# --- Pick du soir visible dans les recos (2026-11, cas Jokić) --------------
+
+def _pick_tonight(pid=1):
+    return [PickRow(99, pid, TODAY, "regular", "2026-27", False)]
+
+
+def test_pick_du_soir_reste_dans_les_recos_marque():
+    """Le cooldown de son propre pick l'excluait : Jokić pické ce soir
+    disparaissait des recommandations."""
+    d = decide(_inputs(picks=_pick_tonight()))
+    star = next((r for r in d.recommendations if r.cell.player_id == 1), None)
+    assert star is not None and star.is_pick
+    assert all(not r.is_pick for r in d.recommendations if r.cell.player_id != 1)
+
+
+def test_pick_du_soir_note_comme_sans_pick():
+    """Même valeur (blocage de 30 j compris) que s'il n'était pas pické :
+    sinon la comparaison avec les alternatives serait faussée."""
+    free = next(r for r in decide(_inputs()).recommendations if r.cell.player_id == 1)
+    picked = next(r for r in decide(_inputs(picks=_pick_tonight())).recommendations if r.cell.player_id == 1)
+    assert picked.cell.value == pytest.approx(free.cell.value)
+    assert picked.lock_value == pytest.approx(free.lock_value) and picked.lock_value > 0
+    assert picked.best_future is not None and picked.best_future.night == TODAY + timedelta(days=20)
+
+
+def test_pick_du_soir_pas_replanifie_plus_tard():
+    d = decide(_inputs(picks=_pick_tonight()))
+    later = d.plan.get(TODAY + timedelta(days=20))
+    assert later is None or later.cell.player_id != 1
