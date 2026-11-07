@@ -82,13 +82,13 @@ def test_future_p_play():
     assert future_p_play(injury_status=None, availability_rate=1.0, is_b2b_second=True, exp_minutes=36) == 0.93
 
 
-# --- Blessés longue durée : statut Out + date de retour ESPN ---------------
+# --- Blessés signalés : aucun risque (préférence utilisateur 2026-11) -------
 
 from datetime import date
 
 import pytest
 
-from engine.stats.availability_prob import RETURN_RAMP_FACTOR
+from engine.stats.availability_prob import INJURY_SAFETY_DAYS
 
 RETURN = date(2026, 12, 21)
 
@@ -105,20 +105,29 @@ def test_future_p_play_out_nul_avant_la_date_de_retour():
     assert _fpp("Out", date(2026, 12, 20), RETURN, days_ahead=43) == 0.0
 
 
-def test_future_p_play_reprise_reduite_juste_apres_le_retour():
-    assert _fpp("Out", RETURN, RETURN) == pytest.approx(0.9 * RETURN_RAMP_FACTOR)
-    assert _fpp("Out", date(2026, 12, 27), RETURN) == pytest.approx(0.9 * RETURN_RAMP_FACTOR)
+def test_future_p_play_ecarte_les_7_jours_qui_suivent_le_retour():
+    """Pas de pari sur une reprise : écarté tant que le retour date de moins de 7 j."""
+    assert INJURY_SAFETY_DAYS == 7
+    assert _fpp("Out", RETURN, RETURN) == 0.0
+    assert _fpp("Out", date(2026, 12, 27), RETURN) == 0.0
 
 
-def test_future_p_play_normal_une_fois_la_reprise_passee():
+def test_future_p_play_normal_7_jours_apres_le_retour():
     assert _fpp("Out", date(2026, 12, 28), RETURN) == pytest.approx(0.9)
 
 
-def test_future_p_play_out_sans_date_nul_les_premiers_jours():
+def test_future_p_play_tout_statut_signale_compte():
+    """Questionable / Day-To-Day avec date de retour : même règle que Out."""
+    assert _fpp("Questionable", date(2026, 12, 22), RETURN) == 0.0
+    assert _fpp("Day-To-Day", date(2026, 12, 28), RETURN) == pytest.approx(0.9)
+
+
+def test_future_p_play_signale_sans_date_nul_les_7_premiers_jours():
     assert _fpp("Out", date(2026, 11, 10), None, days_ahead=3) == 0.0
+    assert _fpp("Day-To-Day", date(2026, 11, 14), None, days_ahead=7) == 0.0
     assert _fpp("Out", date(2026, 11, 20), None, days_ahead=13) == pytest.approx(0.9)
 
 
-def test_future_p_play_date_de_retour_ignoree_sans_statut_out():
-    """Joueur rétabli (statut levé) : la date de retour n'a plus d'effet hors fenêtre."""
-    assert _fpp(None, date(2026, 11, 8), RETURN) == pytest.approx(0.9)
+def test_future_p_play_date_de_retour_ignoree_sans_statut():
+    """Joueur rétabli (statut levé) : la date de retour n'a plus d'effet."""
+    assert _fpp(None, date(2026, 12, 22), RETURN) == pytest.approx(0.9)

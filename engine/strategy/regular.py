@@ -15,9 +15,7 @@ from datetime import date, timedelta
 from engine.rules.availability import COOLDOWN_DAYS, PickRow, SecondChance, SeriesRow, is_available
 from engine.rules.calendar import Night
 from engine.rules.game_types import is_eligible
-from engine.stats.availability_prob import (
-    HARD_OUT_STATUSES, RETURN_PROJECTION_FACTOR, future_p_play, in_return_ramp, p_play, parse_return_date,
-)
+from engine.stats.availability_prob import HARD_OUT_STATUSES, future_p_play, p_play, parse_return_date
 from engine.stats.blowout import BlowoutModel
 from engine.stats.profile import PlayerProfile
 from engine.stats.projection import GameContext, project, rest_days
@@ -186,8 +184,6 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
                           expected_margin=margin)
         projection = project(profile, ctx, blowout)
         return_date = parse_return_date(row.get("injury_return_date"))
-        if in_return_ramp(d, return_date):
-            projection *= RETURN_PROJECTION_FACTOR
         b2b = rd == 0
         if k == 0:
             p = p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),
