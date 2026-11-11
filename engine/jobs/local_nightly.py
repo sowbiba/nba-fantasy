@@ -24,6 +24,10 @@ MATCHUP_DAYS = 3
 PLAYOFF_MONTHS = (4, 5, 6)
 SCHEDULE_PAST_DAYS = 5
 SCHEDULE_AHEAD_DAYS = 35
+# 48 min x 5 joueurs = 240 ; les minutes arrondies par joueur font osciller
+# la somme d'une équipe entre ~238 et ~242. En dessous, le box score est
+# encore partiel (stats.nba.com a parfois des quarts-temps de retard à 9h).
+MIN_TEAM_MINUTES = 235
 
 
 def to_raw_matchups(rows: list[dict], game: dict) -> list[dict]:
@@ -55,6 +59,15 @@ def _refresh_rosters(repo, nba, teams, season, warnings) -> None:
         repo.set_inactive(pid for pid, p in before.items() if p.get("active", True) and pid not in seen)
 
 
+def _incomplete_games(logs: list[dict]) -> set[str]:
+    minutes: dict[str, dict[bool, int]] = {}
+    for l in logs:
+        team = minutes.setdefault(l["game_id"], {})
+        team[l["is_home"]] = team.get(l["is_home"], 0) + (l.get("minutes") or 0)
+    return {gid for gid, t in minutes.items()
+            if len(t) < 2 or min(t.values()) < MIN_TEAM_MINUTES}
+
+
 def _load_logs(repo, nba, season, season_type, date_from, warnings, drop_from: date | None = None) -> None:
     try:
         games, logs, players = nba.league_game_log(season, season_type, date_from)
@@ -64,6 +77,12 @@ def _load_logs(repo, nba, season, season_type, date_from, warnings, drop_from: d
     if drop_from is not None:
         games = {gid: g for gid, g in games.items() if g["date"] < drop_from.isoformat()}
         logs = [l for l in logs if l["date"] < drop_from.isoformat() and l["game_id"] in games]
+        # Un box score partiel écrirait des stats et un pick faux : on l'écarte,
+        # le chevauchement de LOG_OVERLAP_DAYS le reprendra au run suivant.
+        for gid in sorted(_incomplete_games(logs)):
+            warnings.append(f"box score incomplet {gid} : ignoré jusqu'au prochain run")
+            games.pop(gid, None)
+        logs = [l for l in logs if l["game_id"] in games]
     if not logs:
         return
     known = {p["id"] for p in repo.load_players()}
@@ -102,6 +121,37 @@ def _load_matchups(repo, nba, today, warnings) -> None:
             repo.upsert_matchups_raw(to_raw_matchups(rows, g))
 
 
+def _load_recent_logs(repo, nba, season, today, warnings) -> None:
+    start = today - timedelta(days=LOG_OVERLAP_DAYS)
+    # Un match du jour peut encore être en direct : on ne l'ingère pas
+    # comme "final" ici, le chevauchement de 3 jours le rattrapera la
+    # nuit suivante une fois vraiment terminé.
+    _load_logs(repo, nba, season, "Regular Season", start, warnings, drop_from=today)
+    if today.month in PLAYOFF_MONTHS:
+        _load_logs(repo, nba, season, "Playoffs", start, warnings, drop_from=today)
+    score_picks(repo, season, today)
+
+
+def pending_games(repo, today: date) -> list[str]:
+    """Matchs éligibles terminés des derniers jours sans aucune stat en base
+    (box score encore incomplet chez stats.nba.com au run précédent)."""
+    finals = [g["id"] for g in repo.load_games_between(today - timedelta(days=LOG_OVERLAP_DAYS),
+                                                       today - timedelta(days=1))
+              if is_eligible(g.get("game_type", "unknown")) and g.get("status") == "final"]
+    done = repo.game_ids_with_logs(finals)
+    return sorted(gid for gid in finals if gid not in done)
+
+
+def retry_incomplete(repo, nba, today: date) -> list[str] | None:
+    """Relance du matin (cron 9h30→12h) : `None` si rien n'attend, sans aucun
+    appel à stats.nba.com ; sinon recharge les stats et score les picks."""
+    if not pending_games(repo, today):
+        return None
+    warnings: list[str] = []
+    _load_recent_logs(repo, nba, season_for_date(today), today, warnings)
+    return warnings
+
+
 def run(repo, nba, today: date, teams: list[dict], backfill_season: str | None = None) -> list[str]:
     warnings: list[str] = []
     season = season_for_date(today)
@@ -111,14 +161,7 @@ def run(repo, nba, today: date, teams: list[dict], backfill_season: str | None =
         for season_type in ("Regular Season", "Playoffs"):
             _load_logs(repo, nba, backfill_season, season_type, None, warnings)
     else:
-        start = today - timedelta(days=LOG_OVERLAP_DAYS)
-        # Un match du jour peut encore être en direct : on ne l'ingère pas
-        # comme "final" ici, le chevauchement de 3 jours le rattrapera la
-        # nuit suivante une fois vraiment terminé.
-        _load_logs(repo, nba, season, "Regular Season", start, warnings, drop_from=today)
-        if today.month in PLAYOFF_MONTHS:
-            _load_logs(repo, nba, season, "Playoffs", start, warnings, drop_from=today)
-        score_picks(repo, season, today)
+        _load_recent_logs(repo, nba, season, today, warnings)
     _load_matchups(repo, nba, today, warnings)
     return warnings
 
@@ -132,11 +175,16 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Job local (stats.nba.com)")
     parser.add_argument("--backfill-season", help="charge une saison complète, ex. 2025-26")
+    parser.add_argument("--retry-incomplete", action="store_true",
+                        help="recharge seulement les stats des matchs terminés encore sans box score")
     args = parser.parse_args()
 
     guard = ApiGuard()
     repo = SupabaseRepo.from_env()
     today = datetime.now(UTC).astimezone(PARIS).date()
+    if args.retry_incomplete:
+        _main_retry(repo, NbaSource(guard, allow_stats=True), guard, today)
+        return
     log_id = repo.start_log("local_nightly")
     try:
         warnings = run(repo, NbaSource(guard, allow_stats=True), today, nba_teams.get_teams(),
@@ -149,6 +197,24 @@ def main() -> None:
     print(f"local_nightly {today} : {len(warnings)} avertissement(s)")
     for w in warnings:
         print(f"  ⚠ {w}")
+
+
+def _main_retry(repo, nba, guard, today: date) -> None:
+    pending = pending_games(repo, today)
+    if not pending:
+        print(f"local_nightly retry {today} : rien en attente")
+        return
+    log_id = repo.start_log("local_nightly_retry")
+    try:
+        warnings = retry_incomplete(repo, nba, today) or []
+    except Exception as exc:
+        repo.finish_log(log_id, status="error", error=str(exc), api_calls=guard.summary())
+        raise
+    left = pending_games(repo, today)
+    repo.finish_log(log_id, status="success", api_calls=guard.summary(),
+                    error="; ".join(warnings) if warnings else None)
+    print(f"local_nightly retry {today} : {len(pending) - len(left)}/{len(pending)} match(s) rattrapé(s)"
+          + (f", encore en attente : {', '.join(left)}" if left else ""))
 
 
 if __name__ == "__main__":
