@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from engine.jobs.local_nightly import run
+from engine.jobs.local_nightly import retry_incomplete, run
 from tests.jobs.fakes import FakeRepo, FakeStatsSource
 
 TODAY = date(2026, 11, 2)
@@ -54,10 +54,11 @@ def test_effectif_vide_ne_compte_pas_comme_reponse():
 def test_historique_saison_courante_depuis_j_moins_3():
     game = {"0022600010": {"id": "0022600010", "date": "2026-10-31", "home_team": "DEN",
                            "away_team": "LAL", "status": "final"}}
-    logs = [{"player_id": 5, "game_id": "0022600010", "date": "2026-10-31", "team": "DEN", "minutes": 30,
+    logs = [{"player_id": 5, "game_id": "0022600010", "date": "2026-10-31", "team": "DEN", "minutes": 240,
              "ttfl_score": 40, "is_home": True, "pts": 20, "reb": 5, "ast": 5, "stl": 1, "blk": 1,
-             "fgm": 8, "fga": 15, "tpm": 2, "tpa": 5, "ftm": 2, "fta": 2, "tov": 1, "fouls": 2}]
-    players = {5: {"id": 5, "name": "Nouveau", "team": "DEN"}}
+             "fgm": 8, "fga": 15, "tpm": 2, "tpa": 5, "ftm": 2, "fta": 2, "tov": 1, "fouls": 2},
+            _log(6, "0022600010", "2026-10-31", "LAL", False, 240)]
+    players = {5: {"id": 5, "name": "Nouveau", "team": "DEN"}, 6: {"id": 6, "name": "J6", "team": "LAL"}}
     nba = FakeStatsSource(game_logs={("2026-27", "Regular Season"): (game, logs, players)})
     repo = FakeRepo()
     run(repo, nba, TODAY, [])
@@ -137,9 +138,10 @@ def test_picks_scores_des_le_chargement_des_logs():
     game = {"0022600011": {"id": "0022600011", "date": yesterday.isoformat(), "home_team": "BOS",
                            "away_team": "DEN", "status": "final"}}
     logs = [{"player_id": 5, "game_id": "0022600011", "date": yesterday.isoformat(), "team": "BOS",
-             "minutes": 30, "ttfl_score": 37, "is_home": True, "pts": 20, "reb": 5, "ast": 5, "stl": 1,
-             "blk": 1, "fgm": 8, "fga": 15, "tpm": 2, "tpa": 5, "ftm": 2, "fta": 2, "tov": 1, "fouls": 2}]
-    players = {5: {"id": 5, "name": "Nouveau", "team": "BOS"}}
+             "minutes": 240, "ttfl_score": 37, "is_home": True, "pts": 20, "reb": 5, "ast": 5, "stl": 1,
+             "blk": 1, "fgm": 8, "fga": 15, "tpm": 2, "tpa": 5, "ftm": 2, "fta": 2, "tov": 1, "fouls": 2},
+            _log(6, "0022600011", yesterday.isoformat(), "DEN", False, 240)]
+    players = {5: {"id": 5, "name": "Nouveau", "team": "BOS"}, 6: {"id": 6, "name": "J6", "team": "DEN"}}
     nba = FakeStatsSource(game_logs={("2026-27", "Regular Season"): (game, logs, players)})
     repo = FakeRepo(players=[{"id": 5, "name": "Nouveau", "team": "BOS", "position": "F", "active": True}],
                     games=[{"id": "0022600011", "date": yesterday.isoformat(), "home_team": "BOS",
@@ -148,3 +150,63 @@ def test_picks_scores_des_le_chargement_des_logs():
                             "mode": "regular", "season": "2026-27", "actual_score": None, "is_x2": False}])
     run(repo, nba, TODAY, [])
     assert repo.picks[0]["actual_score"] == 37
+
+
+def _log(pid, gid, day, team, is_home, minutes, ttfl=20):
+    return {"player_id": pid, "game_id": gid, "date": day, "team": team, "minutes": minutes,
+            "ttfl_score": ttfl, "is_home": is_home, "pts": 10, "reb": 5, "ast": 5, "stl": 1, "blk": 1,
+            "fgm": 4, "fga": 8, "tpm": 1, "tpa": 3, "ftm": 1, "fta": 1, "tov": 1, "fouls": 2}
+
+
+def test_box_score_partiel_ecarte_jusqu_au_run_suivant():
+    # 9h : stats.nba.com n'a encore que le 1er quart-temps du dernier match de
+    # la nuit (60 min par équipe) → ni le match ni ses logs ne sont écrits, et
+    # le pick n'est pas scoré avec un score faux. Le match complet passe.
+    yesterday = (TODAY - timedelta(days=1)).isoformat()
+    games = {gid: {"id": gid, "date": yesterday, "home_team": "BOS", "away_team": "DEN", "status": "final"}
+             for gid in ("0022600020", "0022600021")}
+    logs = [_log(5, "0022600020", yesterday, "BOS", True, 60, ttfl=8),
+            _log(6, "0022600020", yesterday, "DEN", False, 60),
+            _log(7, "0022600021", yesterday, "BOS", True, 241),
+            _log(8, "0022600021", yesterday, "DEN", False, 240)]
+    players = {pid: {"id": pid, "name": f"J{pid}", "team": "BOS"} for pid in (5, 6, 7, 8)}
+    nba = FakeStatsSource(game_logs={("2026-27", "Regular Season"): (games, logs, players)})
+    repo = FakeRepo(picks=[{"id": 1, "player_id": 5, "game_id": "0022600020", "date": yesterday,
+                            "mode": "regular", "season": "2026-27", "actual_score": None, "is_x2": False}])
+    warnings = run(repo, nba, TODAY, [])
+    assert (5, "0022600020") not in repo.logs and (6, "0022600020") not in repo.logs
+    assert (7, "0022600021") in repo.logs and (8, "0022600021") in repo.logs
+    assert repo.picks[0]["actual_score"] is None
+    assert any("0022600020" in w and "incomplet" in w for w in warnings)
+
+
+def _final_game(gid, day, home="BOS", away="DEN"):
+    return {"id": gid, "date": day, "home_team": home, "away_team": away, "status": "final",
+            "game_type": "regular", "season": "2026-27"}
+
+
+def test_relance_sans_match_en_attente_n_appelle_pas_stats_nba():
+    yesterday = (TODAY - timedelta(days=1)).isoformat()
+    repo = FakeRepo(players=[{"id": 5, "name": "J5", "team": "BOS", "position": "F", "active": True}],
+                    games=[_final_game("0022600030", yesterday)])
+    repo.logs[(5, "0022600030")] = {**_log(5, "0022600030", yesterday, "BOS", True, 240), "season": "2026-27"}
+    nba = FakeStatsSource()
+    assert retry_incomplete(repo, nba, TODAY) is None
+    assert nba.log_calls == []
+
+
+def test_relance_recharge_les_matchs_sans_stats_et_score_le_pick():
+    yesterday = (TODAY - timedelta(days=1)).isoformat()
+    gid = "0022600031"
+    games = {gid: {"id": gid, "date": yesterday, "home_team": "BOS", "away_team": "DEN", "status": "final"}}
+    logs = [_log(5, gid, yesterday, "BOS", True, 240, ttfl=42), _log(6, gid, yesterday, "DEN", False, 240)]
+    players = {5: {"id": 5, "name": "J5", "team": "BOS"}, 6: {"id": 6, "name": "J6", "team": "DEN"}}
+    nba = FakeStatsSource(game_logs={("2026-27", "Regular Season"): (games, logs, players)})
+    repo = FakeRepo(games=[_final_game(gid, yesterday)],
+                    picks=[{"id": 1, "player_id": 5, "game_id": gid, "date": yesterday, "mode": "regular",
+                            "season": "2026-27", "actual_score": None, "is_x2": False}])
+    warnings = retry_incomplete(repo, nba, TODAY)
+    assert warnings == []
+    assert nba.log_calls == [("2026-27", "Regular Season", TODAY - timedelta(days=3))]
+    assert repo.picks[0]["actual_score"] == 42
+    assert nba.roster_calls == [] and nba.schedule_calls == []
