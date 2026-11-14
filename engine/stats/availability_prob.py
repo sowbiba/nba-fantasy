@@ -28,10 +28,23 @@ HARD_OUT_STATUSES = frozenset({"Out", "Doubtful", "Out For Season", "Suspended"}
 # premiers jours.
 INJURY_SAFETY_DAYS = 7
 
-# 2e soir d'un back-to-back : les gros minutages sont parfois mis au repos
-# (load management). À recalibrer par backtest (L2).
-B2B_REST_FACTOR = 0.93
+# 2e soir d'un back-to-back : le risque est la mise au repos, pas le score
+# (ceux qui jouent marquent autant, voir projection.B2B_FACTOR).
+# Mesure sur 5 saisons, 84 000 cas (data/box-scores/analyse_repos_b2b.py) —
+# part des joueurs ayant joué la veille qui rejouent, rapportée à la même
+# part avec repos : 40+ TTFL de moyenne 0,88 ; 35+ 0,92 ; titulaires 30+ min
+# 0,94 ; les autres 0,957. Plus le joueur pèse, plus il est ménagé.
+# Les paliers retenus sont volontairement PRUDENTS pour les titulaires
+# (0,89 au lieu des 0,92-0,94 mesurés) : c'est la décote totale qu'appliquait
+# le moteur avant (0,96 sur le score × 0,93 sur la présence), que le backtest
+# ne permet pas d'alléger (changement mesuré seul : −0,7 et −1,4 point de
+# moyenne sur 64 soirées, dans le bruit) et un zéro coûte la soirée ET bloque
+# le joueur 30 jours (choix utilisateur du 14/11/2026 : prudence sur le repos).
+B2B_REST_STAR_40 = 0.88
+B2B_REST_STARTER = 0.89
+B2B_REST_OTHERS = 0.955
 B2B_REST_MIN_MINUTES = 30.0
+B2B_REST_FACTOR = B2B_REST_STARTER   # nom historique
 
 
 def play_probability(status: str | None) -> float:
@@ -58,8 +71,16 @@ def dnp_risk_factor(recent_logs: list[dict]) -> float:
     return 1.0
 
 
-def _b2b(is_b2b_second: bool, exp_minutes: float) -> float:
-    return B2B_REST_FACTOR if is_b2b_second and exp_minutes >= B2B_REST_MIN_MINUTES else 1.0
+def _b2b(is_b2b_second: bool, exp_minutes: float, base: float | None = None) -> float:
+    """`base` = projection de base du joueur (TTFL attendu) ; None → palier
+    selon les minutes seulement."""
+    if not is_b2b_second:
+        return 1.0
+    if base is not None and base >= 40.0:
+        return B2B_REST_STAR_40
+    if exp_minutes >= B2B_REST_MIN_MINUTES or (base is not None and base >= 35.0):
+        return B2B_REST_STARTER
+    return B2B_REST_OTHERS
 
 
 def p_play(*, injury_status: str | None, recent_logs: list[dict],
@@ -95,20 +116,22 @@ def quarantined(*, injury_status: str | None, night: date | None, return_date: d
 
 
 def tonight_p_play(*, injury_status: str | None, recent_logs: list[dict], is_b2b_second: bool,
-                   exp_minutes: float, night: date | None = None, return_date: date | None = None) -> float:
+                   exp_minutes: float, night: date | None = None, return_date: date | None = None,
+                   base: float | None = None) -> float:
     """Le soir même : tout statut signalé (même « Probable », même inconnu)
     écarte le joueur, comme la quarantaine de retour ; sinon motif DNP
     récent et repos de back-to-back."""
     if injury_status or quarantined(injury_status=None, night=night, return_date=return_date, days_ahead=0):
         return 0.0
-    return dnp_risk_factor(recent_logs) * _b2b(is_b2b_second, exp_minutes)
+    return dnp_risk_factor(recent_logs) * _b2b(is_b2b_second, exp_minutes, base)
 
 
 def future_p_play(*, injury_status: str | None, availability_rate: float,
                   is_b2b_second: bool, exp_minutes: float, night: date | None = None,
-                  return_date: date | None = None, days_ahead: int | None = None) -> float:
+                  return_date: date | None = None, days_ahead: int | None = None,
+                  base: float | None = None) -> float:
     """Soirées futures : joueur écarté (0) par la règle « aucun risque »
     (`quarantined`). Sinon, taux de présence récent."""
     if quarantined(injury_status=injury_status, night=night, return_date=return_date, days_ahead=days_ahead):
         return 0.0
-    return availability_rate * _b2b(is_b2b_second, exp_minutes)
+    return availability_rate * _b2b(is_b2b_second, exp_minutes, base)

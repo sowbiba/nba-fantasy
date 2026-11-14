@@ -239,3 +239,16 @@ def test_matchs_d_avant_son_arrivee_dans_l_equipe_non_comptes():
                                              nights=nights)
     assert all(l["minutes"] > 0 for l in inputs.recent_logs[1])
     assert profiles[1].availability_rate == 1.0
+
+
+def test_teammate_context_leaders_et_matchs_partages():
+    from engine.strategy.inputs import teammate_context
+    players = {1: _player(1, "DEN", "C"), 3: _player(3, "DEN", "F"), 4: _player(4, "DEN", "G")}
+    logs = {1: [_log(1, f"d{i}", TODAY - timedelta(days=i), "DEN", ttfl=50) for i in range(5, 11)],   # absent des 4 derniers
+            3: [_log(3, f"d{i}", TODAY - timedelta(days=i), "DEN", ttfl=30) for i in range(1, 11)],
+            4: [_log(4, f"d{i}", TODAY - timedelta(days=i), "DEN", ttfl=20) for i in range(1, 11)]}
+    profiles = {pid: build_profile(pid, logs[pid], [], 1.0) for pid in players}
+    leaders, shared = teammate_context(logs, players, profiles)
+    assert leaders["DEN"] == [1]
+    assert shared[(3, 1)] == 0.6 and shared[(4, 1)] == 0.6       # 6 des 10 derniers matchs avec le n°1
+    assert (1, 3) not in shared

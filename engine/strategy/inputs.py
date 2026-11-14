@@ -84,6 +84,8 @@ def build_decision_inputs(
     defense = defense_factors([l for l in logs if l.season == season], [l for l in logs if l.season == prior],
                               games_by_id, {pid: p.get("position", "F") for pid, p in players.items()})
 
+    team_leaders, played_with = teammate_context(current_by_player, players, profiles)
+
     recent_logs = {pid: [{"minutes": l.minutes}
                         for l in sorted(pid_logs, key=lambda l: l.date, reverse=True)[:RECENT_LOGS_WINDOW]]
                   for pid, pid_logs in current_by_player.items()}
@@ -103,8 +105,43 @@ def build_decision_inputs(
                             picks=picks, second_chances=second_chances, series=series,
                             x2_used_months=frozenset((p.date.year, p.date.month) for p in picks
                                                      if p.is_x2 and p.mode == "regular"),
-                            expected_margins=margins, blowout_model=model)
+                            expected_margins=margins, blowout_model=model,
+                            team_leaders=team_leaders, played_with=played_with)
     return inputs, profiles
+
+
+LEADERS_PER_TEAM = 1      # seul le n°1 compte : l'absence du n°2 n'a pas d'effet mesurable sur le n°1
+SHARED_WINDOW = 10        # matchs récents du joueur où l'on regarde si le leader jouait
+LEADER_MIN_GAMES = 5      # un leader se lit sur au moins 5 matchs joués cette saison
+
+
+def teammate_context(current_by_player: dict[int, list[GameLog]], players: dict[int, dict],
+                     profiles: dict[int, PlayerProfile]) -> tuple[dict[str, list[int]], dict[tuple[int, int], float]]:
+    """Pour le bonus « coéquipier majeur absent » :
+    - `team_leaders[équipe]` : le n°1 de l'équipe (projection de base) ;
+    - `played_with[(joueur, leader)]` : part des `SHARED_WINDOW` derniers
+      matchs JOUÉS par le joueur dans cette équipe où le leader jouait aussi.
+      Si le leader manquait déjà ces matchs-là, le profil du joueur contient
+      déjà l'effet : le bonus est réduit d'autant (pas de double compte)."""
+    by_team: dict[str, list[int]] = defaultdict(list)
+    for pid, p in players.items():
+        prof = profiles.get(pid)
+        if p.get("active", True) and p.get("team") and prof is not None and prof.games_current >= LEADER_MIN_GAMES:
+            by_team[p["team"]].append(pid)
+    leaders = {team: sorted(ids, key=lambda pid: profiles[pid].base, reverse=True)[:LEADERS_PER_TEAM]
+               for team, ids in by_team.items()}
+    played_games = {pid: {l.game_id for l in logs if l.minutes > 0} for pid, logs in current_by_player.items()}
+    shared: dict[tuple[int, int], float] = {}
+    for pid, p in players.items():
+        team = p.get("team")
+        recent = sorted((l for l in current_by_player.get(pid, []) if l.minutes > 0 and l.team == team),
+                        key=lambda l: l.date, reverse=True)[:SHARED_WINDOW]
+        if not recent:
+            continue
+        for lid in leaders.get(team, []):
+            if lid != pid:
+                shared[(pid, lid)] = sum(1 for l in recent if l.game_id in played_games.get(lid, ())) / len(recent)
+    return leaders, shared
 
 
 def absence_logs(current_by_player: dict[int, list[GameLog]], players: dict[int, dict],

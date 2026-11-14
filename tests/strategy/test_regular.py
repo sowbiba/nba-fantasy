@@ -506,3 +506,64 @@ def test_joueur_revenu_depuis_moins_de_7_jours_ecarte_ce_soir():
     healed = {**back, "injury_last_seen": (TODAY - timedelta(days=7)).isoformat()}
     d = decide(_inputs(players={**PLAYERS, 1: healed}))
     assert 1 in [r.cell.player_id for r in d.recommendations]
+
+
+# --- Coéquipier majeur absent (2026-11) --------------------------------------
+# DEN : joueur 1 (n°1, 51 pts de base) et joueur 5 (n°2, 40,8 pts).
+
+MATE = {5: {"id": 5, "name": "Second DEN", "team": "DEN", "position": "G", "injury_status": None, "active": True}}
+
+
+def _mate_inputs(star_status=None, second_status=None, shared=1.0, **over):
+    base = _inputs()
+    players = {**PLAYERS, **MATE, 1: {**PLAYERS[1], "injury_status": star_status},
+               5: {**MATE[5], "injury_status": second_status}}
+    args = dict(players=players, profiles={**base.profiles, 5: _prof(5, eff=1.2)},
+                recent_logs={**base.recent_logs, 5: [{"minutes": 34}] * 3},
+                team_leaders={"DEN": [1, 5], "LAL": [2]}, played_with={(5, 1): shared, (1, 5): shared, (3, 1): shared})
+    args.update(over)
+    return _inputs(**args)
+
+
+def _proj(d, pid):
+    return next(r.cell for r in d.recommendations if r.cell.player_id == pid)
+
+
+def test_numero_1_absent_ses_coequipiers_projetes_plus_haut():
+    normal = _proj(decide(_mate_inputs()), 5)
+    without_star = _proj(decide(_mate_inputs(star_status="Out")), 5)
+    assert without_star.projection == pytest.approx(normal.projection * 1.07)
+    assert without_star.ctx.teammate_out == "Star DEN"
+
+
+def test_numero_2_absent_pas_de_bonus_pour_le_numero_1():
+    """Non vérifié hors échantillon (0,0 ± 0,8 sur 1 262 cas)."""
+    normal = _proj(decide(_mate_inputs()), 1)
+    assert _proj(decide(_mate_inputs(second_status="Out")), 1).projection == pytest.approx(normal.projection)
+
+
+def test_pas_de_bonus_si_le_profil_contient_deja_l_absence():
+    """Le n°1 manquait déjà tous les matchs récents du joueur : son profil a
+    déjà monté, on ne compte pas l'effet deux fois."""
+    normal = _proj(decide(_mate_inputs()), 5)
+    assert _proj(decide(_mate_inputs(star_status="Out", shared=0.0)), 5).projection == pytest.approx(normal.projection)
+    half = _proj(decide(_mate_inputs(star_status="Out", shared=0.5)), 5)
+    assert half.projection == pytest.approx(normal.projection * 1.035)
+
+
+def test_pas_de_bonus_sur_une_absence_incertaine():
+    normal = _proj(decide(_mate_inputs()), 5)
+    for status in ("Probable", "Day-To-Day", "Questionable", "Doubtful"):
+        assert _proj(decide(_mate_inputs(star_status=status)), 5).projection == pytest.approx(normal.projection), status
+
+
+def test_bonus_futur_seulement_avant_la_date_de_retour():
+    later = TODAY + timedelta(days=20)
+    star_back_soon = {"injury_status": "Out", "injury_return_date": (TODAY + timedelta(days=5)).isoformat()}
+    star_out_long = {"injury_status": "Out", "injury_return_date": (TODAY + timedelta(days=40)).isoformat()}
+    def plan_cell(star):
+        inp = _mate_inputs()
+        inp.players[1] = {**inp.players[1], **star}
+        return decide(inp).plan[later].cell
+    assert plan_cell(star_back_soon).ctx.teammate_factor == 1.0      # revenu d'ici là (lui reste en quarantaine)
+    assert plan_cell(star_out_long).ctx.teammate_factor == pytest.approx(1.07)

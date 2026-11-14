@@ -34,6 +34,18 @@ TOP_RECOMMENDATIONS = 50
 # futur comprise) sur l'ensemble du plan — sinon il changerait d'avis chaque
 # jour pour des écarts qui ne sont que du bruit.
 CHALLENGE_MARGIN = 3.0
+# Coéquipier majeur absent : sans le n°1 de l'équipe, les autres joueurs de
+# rotation marquent plus (+2,2 points pour les n°2 et n°3, +1,8 pour les
+# autres, ≈ +7 % ; data/box-scores/analyse_facteurs.py). Validé hors
+# échantillon sur 5 saisons (validation_hors_echantillon.py) : +1,7 ± 0,3
+# observé sur 8 410 cas, +2,3 quand l'absence n'est pas encore dans le profil.
+# L'effet inverse (n°2 absent → n°1) ne se vérifie pas hors échantillon
+# (0,0 ± 0,8 sur 1 262 cas) : pas de bonus dans ce sens.
+TEAMMATE_OUT_TOP1 = 0.07
+# Absence assez certaine pour en tirer un bonus : « Probable » ou
+# « Day-To-Day » écartent le joueur lui-même (aucun risque) mais ne
+# justifient pas de parier sur son absence.
+SURE_OUT_STATUSES = frozenset({"Out", "Out For Season", "Suspended"})
 
 
 @dataclass
@@ -54,6 +66,9 @@ class DecisionInputs:
     # match, et modèle calibré à passer explicitement à decide(blowout=...).
     expected_margins: dict[str, float] = field(default_factory=dict)
     blowout_model: BlowoutModel | None = None
+    # Bonus « coéquipier majeur absent » (inputs.teammate_context).
+    team_leaders: dict[str, list[int]] = field(default_factory=dict)
+    played_with: dict[tuple[int, int], float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -202,6 +217,29 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         if row.get("active", True):
             roster[row["team"]].append(pid)
 
+    def _sure_out(pid: int, d: date, k: int) -> bool:
+        """Le joueur est-il absent de `d` avec assez de certitude ?"""
+        row = inputs.players.get(pid) or {}
+        status = row.get("injury_status")
+        if status not in SURE_OUT_STATUSES:
+            return False
+        if k == 0 or status == "Out For Season":
+            return True
+        back = parse_return_date(row.get("injury_return_date"))
+        return back is not None and d < back
+
+    def _teammate_boost(pid: int, team: str, d: date, k: int) -> tuple[float, str | None]:
+        leaders = inputs.team_leaders.get(team, [])
+        if not leaders or inputs.players.get(pid, {}).get("team") != team:
+            return 1.0, None
+        if pid == leaders[0]:
+            return 1.0, None
+        lid, gain = leaders[0], TEAMMATE_OUT_TOP1
+        share = inputs.played_with.get((pid, lid), 0.0)
+        if share <= 0 or not _sure_out(lid, d, k):
+            return 1.0, None
+        return 1.0 + gain * share, inputs.players[lid].get("name")
+
     def _estimate(pid: int, team: str, opponent: str, is_home: bool, d: date, k: int, game: dict
                   ) -> tuple[float, float, GameContext]:
         """(projection, p_play, contexte) d'un joueur sur un match (S1)."""
@@ -214,8 +252,9 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
             home_margin = inputs.expected_margins.get(str(game["id"]))
             if home_margin is not None:
                 margin = home_margin if is_home else -home_margin
+        mate_factor, mate_name = _teammate_boost(pid, team, d, k)
         ctx = GameContext(opponent, is_home, rd, opp_factor(inputs.defense, opponent, row.get("position", "F")),
-                          expected_margin=margin)
+                          expected_margin=margin, teammate_factor=mate_factor, teammate_out=mate_name)
         projection = project(profile, ctx, blowout)
         # Statut levé par ESPN : la période de sécurité court depuis le
         # dernier jour où il était signalé (`injury_last_seen`).
@@ -225,11 +264,11 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         if k == 0:
             p = tonight_p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),
                                is_b2b_second=b2b, exp_minutes=profile.exp_minutes,
-                               night=d, return_date=return_date)
+                               night=d, return_date=return_date, base=profile.base)
         else:
             p = future_p_play(injury_status=status, availability_rate=profile.availability_rate,
                               is_b2b_second=b2b, exp_minutes=profile.exp_minutes,
-                              night=d, return_date=return_date, days_ahead=k)
+                              night=d, return_date=return_date, days_ahead=k, base=profile.base)
         return projection, p, ctx
 
     # Pick du soir : son propre pick le bloquerait (cooldown), il disparaîtrait

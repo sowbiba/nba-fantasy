@@ -15,13 +15,22 @@ def _log(pid, gid, team, minutes, ttfl, season="2026-27"):
 
 
 def test_equipe_qui_encaisse_plus_que_la_moyenne():
-    # Les meneurs font 1.5 TTFL/min contre LAL (g1), 0.5 contre BOS (g2) ; moyenne ligue 1.0.
+    # On fait 1.5 TTFL/min contre LAL (g1), 0.5 contre BOS (g2) ; moyenne ligue 1.0.
     current = [_log(1, "g1", "DEN", 30, 45), _log(2, "g2", "LAL", 30, 15)]
     f = defense_factors(current, [], GAMES, POS)
-    # Sans prior, le facteur courant est fondu vers 1.0 selon les minutes vues au poste.
-    w = 30 / (30 + 1500)
+    # Sans prior, le facteur courant est fondu vers 1.0 selon les minutes vues.
+    w = 30 / (30 + 3600)
     assert f["LAL"]["G"] == pytest.approx(w * 1.5 + (1 - w) * 1.0)
     assert f["BOS"]["G"] == pytest.approx(w * 0.5 + (1 - w) * 1.0)
+
+
+def test_facteur_d_equipe_tous_postes_confondus():
+    """Un pivot dominé et un arrière qui s'amuse contre la même équipe : un
+    seul facteur d'équipe, identique pour tous les postes."""
+    pos = {1: "G", 3: "C", 2: "G"}
+    current = [_log(1, "g1", "DEN", 3000, 4500), _log(3, "g1", "DEN", 3000, 1500), _log(2, "g2", "LAL", 6000, 6000)]
+    f = defense_factors(current, [], GAMES, pos)
+    assert f["LAL"]["G"] == f["LAL"]["F"] == f["LAL"]["C"] == pytest.approx(1.0)
 
 
 def test_prior_regresse_de_moitie_et_borne():
@@ -33,20 +42,11 @@ def test_prior_regresse_de_moitie_et_borne():
     assert f["BOS"]["G"] == 0.90
 
 
-def test_un_poste_peu_vu_pese_moins_qu_un_poste_tres_vu():
-    """Même écart observé (1,5 fois la moyenne), mais 10 fois moins de minutes
-    au poste de pivot : son facteur doit rester plus près de 1."""
-    pos = {1: "G", 2: "G", 3: "C", 4: "C"}
-    current = [_log(1, "g1", "DEN", 600, 900), _log(2, "g2", "LAL", 600, 300),
-               _log(3, "g1", "DEN", 60, 90), _log(4, "g2", "LAL", 60, 30)]
-    f = defense_factors(current, [], GAMES, pos)
-    assert 1.0 < f["LAL"]["C"] < f["LAL"]["G"]
-
-
 def test_log_d_une_equipe_absente_du_match_ignore():
     current = [_log(1, "g1", "DEN", 30, 45), GameLog(3, "g1", date(2026, 11, 1), "2026-27", "PHX", 30, 99, True)]
     f = defense_factors(current, [], GAMES, POS)
-    assert "C" not in f.get("DEN", {}) or f["DEN"]["C"] == 1.0
+    assert f["LAL"]["C"] == f["LAL"]["G"]          # le log PHX (hors match) n'entre nulle part
+    assert f["LAL"]["G"] == pytest.approx(1.0)     # un seul adversaire vu : c'est la moyenne
 
 
 def test_opp_factor_inconnu_neutre():
