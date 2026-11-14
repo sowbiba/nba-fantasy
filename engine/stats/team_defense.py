@@ -4,16 +4,22 @@ game_logs.team (équipe au moment du match), ce qui corrige l'attribution
 erronée après transferts (audit §2).
 
 Saison en cours fondue avec la saison précédente régressée de moitié vers
-1.0 (effectifs changés, S6). Borné à [0.85, 1.15].
+1.0 (effectifs changés, S6). Borné à [0.90, 1.10].
+
+Le poids de la saison en cours dépend des MINUTES observées au poste, pas du
+nombre de matchs : un pivot ne joue que ~48 min par match contre ~96 pour
+les arrières ou les ailiers, donc son facteur était deux fois plus bruité et
+touchait les bornes sans aucun effet défensif réel (revue du 14/11/2026 :
+corrélation 0,05 entre le facteur et l'écart à la projection).
 """
 from collections import defaultdict
 
 from engine.stats.profile import GameLog
 
 POSITIONS = ("G", "F", "C")
-PRIOR_GAMES = 15
+PRIOR_MINUTES = 1500.0   # ≈ 15 matchs d'arrières/ailiers, ≈ 30 matchs de pivots
 PRIOR_REGRESSION = 0.5
-FACTOR_BOUNDS = (0.85, 1.15)
+FACTOR_BOUNDS = (0.90, 1.10)
 
 
 def _clamp(value: float) -> float:
@@ -52,16 +58,15 @@ def _league(totals) -> dict[str, float]:
 
 def defense_factors(current_logs: list[GameLog], prior_logs: list[GameLog],
                     games: dict[str, dict], positions: dict[int, str]) -> dict[str, dict[str, float]]:
-    cur, cur_games = _allowed(current_logs, games, positions)
+    cur, _ = _allowed(current_logs, games, positions)
     pri, _ = _allowed(prior_logs, games, positions)
     league_cur, league_pri = _league(cur), _league(pri)
     factors: dict[str, dict[str, float]] = {}
     for team in set(cur) | set(pri):
-        n = len(cur_games.get(team, ()))
-        weight = n / (n + PRIOR_GAMES)
         factors[team] = {}
         for pos in POSITIONS:
             ttfl, minutes = cur[team][pos] if team in cur else (0.0, 0.0)
+            weight = minutes / (minutes + PRIOR_MINUTES)
             f_cur = (ttfl / minutes) / league_cur[pos] if minutes > 0 and league_cur[pos] > 0 else 1.0
             ttfl_p, minutes_p = pri[team][pos] if team in pri else (0.0, 0.0)
             if minutes_p > 0 and league_pri[pos] > 0:

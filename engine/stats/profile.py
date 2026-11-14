@@ -98,7 +98,13 @@ def prior_minutes(prior_logs: list[GameLog]) -> dict[int, float]:
 def role_scales(prior_mins: dict[int, float], rosters: dict[str, list[int]]) -> dict[str, float]:
     """Échelle des minutes de la saison passée dans l'effectif actuel : une
     équipe qui a perdu sa star redistribue (> 1), un effectif encombré
-    partage (< 1). Rotation = les 10 plus gros minutages passés."""
+    partage (< 1). Rotation = les 10 plus gros minutages passés.
+
+    Les 10 premiers d'un effectif normal cumulent ≈ 258 min par match joué,
+    donc l'échelle vaut ≈ 0,93 presque partout. Essai du 14/11/2026 : la
+    rapporter à la moyenne de la ligue (échelle ≈ 1) dégradait la calibration
+    (MAE 10,43 → 10,56, sur-projection au-dessus de 40 et entre 25 et 30) et
+    le backtest (−2 points de moyenne). Ne pas « corriger » sans le mesurer."""
     scales = {}
     for team, ids in rosters.items():
         top = sorted((prior_mins.get(pid, 0.0) for pid in ids), reverse=True)[:ROTATION_SIZE]
