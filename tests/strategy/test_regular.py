@@ -97,22 +97,70 @@ def test_decide_exclut_cooldown_et_out():
     assert [r.cell.player_id for r in d.recommendations] == []
 
 
-def test_decide_respecte_les_reservations():
-    # Mois x2 déjà servi : la soirée réservée reste hors du plan (I-2 ne la
-    # garde que dans un mois x2 ouvert).
-    resa = PickRow(7, 1, TODAY + timedelta(days=20), "regular", "2026-27")
-    d = decide(_inputs(picks=[resa], x2_used_months=frozenset({(2026, 11)})))
-    assert TODAY + timedelta(days=20) not in d.plan          # soirée déjà fixée
-    assert 1 not in [r.cell.player_id for r in d.recommendations]   # réservé à J+20 → bloqué ce soir
+# --- Réservations challengeables (2026-11) -----------------------------------
+# Une réservation future ne bloque plus le moteur : le joueur réservé reste
+# candidat ce soir, et la soirée réservée reste au plan, où un autre joueur
+# peut la contester. Seule une réservation x2 reste figée.
+
+LATER = TODAY + timedelta(days=20)
+RIVAL = {4: {"id": 4, "name": "Wing WAS", "team": "WAS", "position": "F", "injury_status": None, "active": True}}
 
 
-def test_decide_reservation_dans_un_mois_x2_ouvert_reste_au_plan_sur_le_joueur_reserve():
-    # I-2 : novembre ouvert → la soirée réservée reste au plan, avec le joueur
-    # de l'utilisateur (seule cellule), et le blocage de ce soir est inchangé.
-    resa = PickRow(7, 1, TODAY + timedelta(days=20), "regular", "2026-27")
-    d = decide(_inputs(picks=[resa]))
-    assert d.plan[TODAY + timedelta(days=20)].cell.player_id == 1
-    assert 1 not in [r.cell.player_id for r in d.recommendations]
+def _resa(pid=1, is_x2=False):
+    return PickRow(7, pid, LATER, "regular", "2026-27", is_x2)
+
+
+def _with_rival(eff, **over):
+    """Un 4e joueur (WAS) joue aussi la soirée réservée à J+20."""
+    base = _inputs()
+    args = dict(players={**PLAYERS, **RIVAL}, profiles={**base.profiles, 4: _prof(4, eff=eff)},
+                recent_logs={**base.recent_logs, 4: [{"minutes": 34}] * 3})
+    args.update(over)
+    return _inputs(**args)
+
+
+def test_reservation_future_ne_change_pas_le_classement_du_soir():
+    free = decide(_inputs())
+    reserved = decide(_inputs(picks=[_resa()]))
+    assert ([(r.cell.player_id, r.cell.value) for r in reserved.recommendations]
+            == [(r.cell.player_id, r.cell.value) for r in free.recommendations])
+
+
+def test_reservation_future_signalee_sur_la_reco_du_soir():
+    d = decide(_inputs(picks=[_resa()]))
+    star = next(r for r in d.recommendations if r.cell.player_id == 1)
+    assert star.reserved_on == LATER
+    assert all(r.reserved_on is None for r in d.recommendations if r.cell.player_id != 1)
+
+
+def test_reservation_gardee_au_plan_si_aucun_ecart_net():
+    # Ce soir est déjà pické (joueur 2) ; à J+20 le rival fait à peine mieux
+    # que le joueur réservé (60,0 contre 59,8) : en dessous de la marge, le
+    # plan garde la réservation.
+    d = decide(_with_rival(eff=1.8, picks=[_resa(), PickRow(99, 2, TODAY, "regular", "2026-27")]))
+    assert d.plan[LATER].cell.player_id == 1
+    assert d.reservations[LATER].player_id == 1 and d.reservations[LATER].cell is not None
+
+
+def test_reservation_contestee_si_un_autre_joueur_fait_nettement_mieux():
+    d = decide(_with_rival(eff=2.2, picks=[_resa()]))
+    assert d.plan[LATER].cell.player_id == 4
+    assert d.plan[LATER].cell.value == pytest.approx(decide(_with_rival(eff=2.2)).plan[LATER].cell.value)
+
+
+def test_reservation_contestee_si_le_joueur_reserve_est_out():
+    players = {**PLAYERS, **RIVAL, 1: {**PLAYERS[1], "injury_status": "Out",
+                                       "injury_return_date": (TODAY + timedelta(days=30)).isoformat()}}
+    d = decide(_with_rival(eff=1.0, picks=[_resa()], players=players))
+    assert d.plan[LATER].cell.player_id == 4
+    assert d.reservations[LATER].cell.p_play == 0
+
+
+def test_reservation_x2_reste_figee():
+    d = decide(_with_rival(eff=2.2, picks=[_resa(is_x2=True)], x2_used_months=frozenset({(2026, 11)})))
+    assert LATER not in d.plan                                   # soirée figée
+    assert 1 not in [r.cell.player_id for r in d.recommendations]   # bloqué ce soir
+    assert LATER not in d.reservations
 
 
 def test_decide_debut_de_saison_utilise_le_prior():

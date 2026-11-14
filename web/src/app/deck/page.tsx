@@ -20,7 +20,8 @@ export default async function DeckPage() {
   const [nightsRes, planRes, picksRes] = await Promise.all([
     supabase.from("nights").select("*").gte("date", today).lte("date", until).order("date"),
     db!.from("plan_latest").select("night, player_id, projection, explanation, is_x2").gte("night", today).lte("night", until),
-    db!.from("picks").select("date, player_id, is_x2, game_id").gte("date", today).lte("date", until),
+    // Réservations jusqu'à 30 j : un joueur que le plan préfère peut être réservé au-delà des 14 j affichés.
+    db!.from("picks").select("date, player_id, is_x2, game_id").gte("date", today).lte("date", addDays(today, 30)),
   ]);
   const nights = (nightsRes.data || []) as Night[];
   const plan = (planRes.data || []) as PlanRow[];
@@ -43,7 +44,7 @@ export default async function DeckPage() {
         DE<span className="flame-text">CK</span>
       </h1>
       <p className="text-[11px] text-[color:var(--color-text-mute)] mt-1 uppercase tracking-[0.18em]">
-        Les soirées des 14 prochains jours · suggestions du plan (indicatives)
+        Les soirées des 14 prochains jours · le plan conteste aussi tes réservations (indicatif)
       </p>
       {dataError && (
         <p role="alert" className="mt-3 rounded-[var(--radius-card-sm)] border border-[color:var(--color-crimson)]/40 bg-[color:var(--color-crimson)]/10 px-3 py-2 text-sm text-[color:var(--color-crimson)]">
@@ -60,8 +61,9 @@ export default async function DeckPage() {
           return (
             <DeckNight key={n.date} date={n.date} closingAt={n.closing_at} nGames={n.n_eligible_games}
               isPhantom={n.is_phantom} isToday={n.date === today} mode={n.mode}
-              pick={pick && pickPlayer ? { playerId: pickPlayer.id, name: pickPlayer.name, team: pickPlayer.team, injury: pickPlayer.injury_status, isX2: pick.is_x2 } : null}
-              suggestion={s && sPlayer && sGame ? { playerId: sPlayer.id, name: sPlayer.name, team: sPlayer.team, gameId: sGame.id, projection: s.projection, explanation: s.explanation, isX2: s.is_x2 } : null} />
+              pick={pick && pickPlayer ? { playerId: pickPlayer.id, name: pickPlayer.name, team: pickPlayer.team, injury: pickPlayer.injury_status, injuryReturn: pickPlayer.injury_return_date ?? null, isX2: pick.is_x2 } : null}
+              suggestion={s && sPlayer && sGame ? { playerId: sPlayer.id, name: sPlayer.name, team: sPlayer.team, gameId: sGame.id, projection: s.projection, explanation: s.explanation, isX2: s.is_x2,
+                reservedOn: picks.find((x) => x.player_id === sPlayer.id && x.date !== n.date)?.date ?? null } : null} />
           );
         })}
         {nights.length === 0 && !dataError && <p className="text-sm text-[color:var(--color-text-mute)]">Aucune soirée TTFL dans les 14 prochains jours.</p>}

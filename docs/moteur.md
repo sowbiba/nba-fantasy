@@ -69,7 +69,7 @@ future_value  = décote(k) × P(joue) × projection   # pour une soirée à k jo
 
 ## Plan 30 jours (`engine/strategy/planner.py`, `engine/strategy/regular.py`, S2)
 
-Le plan sur l'horizon glissant de **30 jours** (`HORIZON_DAYS`, une fenêtre de cooldown R3) est un problème d'affectation résolu par l'**algorithme hongrois** (`scipy.optimize.linear_sum_assignment`, dans `planner.solve`) : une soirée reçoit au plus un pick, chaque joueur au plus une fois sur la fenêtre, réservations (picks déjà posés) fixées, la soirée du jour forcée si un candidat existe.
+Le plan sur l'horizon glissant de **30 jours** (`HORIZON_DAYS`, une fenêtre de cooldown R3) est un problème d'affectation résolu par l'**algorithme hongrois** (`scipy.optimize.linear_sum_assignment`, dans `planner.solve`) : une soirée reçoit au plus un pick, chaque joueur au plus une fois sur la fenêtre, le pick du soir, les picks passés et une réservation x2 fixés, la soirée du jour forcée si un candidat existe. Une **réservation future sans x2 reste contestable** : elle ne bloque ni son joueur ce soir (la reco porte le tag `reserve`) ni sa soirée dans le plan, qui propose un autre joueur s'il rapporte au moins `CHALLENGE_MARGIN` (3 points attendus) ou si le joueur réservé ne doit pas jouer ; le Deck affiche alors « Le moteur préfère … ».
 
 `regular.decide` assemble tout : profils, projections, P(joue), disponibilité (R3/R4/R5/R6/R15), filtre `MIN_EXP_MINUTES = 15.0` (sous ce seuil de minutes de rôle attendues, pas candidat), et produit :
 - la **reco du soir** (`recommendations`, top `TOP_RECOMMENDATIONS = 50`) triée par `tonight_value`, avec pour chaque candidat sa `lock_value`, la date de déblocage et son meilleur match futur connu ;

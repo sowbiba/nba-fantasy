@@ -29,6 +29,11 @@ log = logging.getLogger(__name__)
 HORIZON_DAYS = 30
 MIN_EXP_MINUTES = 15.0
 TOP_RECOMMENDATIONS = 50
+# Une réservation future reste contestable : le plan ne propose un autre
+# joueur que s'il rapporte au moins cette marge (points attendus, décote du
+# futur comprise) sur l'ensemble du plan — sinon il changerait d'avis chaque
+# jour pour des écarts qui ne sont que du bruit.
+CHALLENGE_MARGIN = 3.0
 
 
 @dataclass
@@ -58,6 +63,16 @@ class Recommendation:
     locked_until: date
     best_future: Cell | None
     is_pick: bool = False   # joueur déjà pické ce soir (affiché à son rang, badge « ton pick »)
+    reserved_on: date | None = None   # joueur réservé sur cette soirée future (contestable)
+
+
+@dataclass(frozen=True)
+class Reservation:
+    """Réservation future contestable : le joueur de l'utilisateur et sa
+    cellule ce soir-là (None s'il n'a pas de profil ou pas de match éligible).
+    `cell.p_play` vaut 0 s'il est absent certain."""
+    player_id: int
+    cell: Cell | None
 
 
 @dataclass
@@ -65,6 +80,7 @@ class Decision:
     tonight: date | None
     recommendations: list[Recommendation]
     plan: dict[date, PlanEntry]
+    reservations: dict[date, Reservation] = field(default_factory=dict)
 
 
 def _game_date(g: dict) -> date:
@@ -147,6 +163,23 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
     today = inputs.today
     nights = {n.date: n for n in inputs.nights
               if not n.is_phantom and n.n_eligible_games > 0 and 0 <= (n.date - today).days < HORIZON_DAYS}
+
+    # Réservations futures contestables : elles ne bloquent ni le joueur ce
+    # soir ni leur soirée dans le plan. Restent figées : le pick du soir, les
+    # picks passés (cooldown R3) et une réservation x2 (le x2 du mois y est
+    # engagé). Tout le reste de la fonction travaille sur `inputs.picks`
+    # sans les réservations contestables.
+    soft: dict[date, PickRow] = {}
+    for p in inputs.picks:
+        if p.date > today and p.date in nights and nights[p.date].mode == "regular" and not p.is_x2:
+            if p.date not in soft or p.id > soft[p.date].id:
+                soft[p.date] = p
+    soft_ids = {p.id for p in inputs.picks
+                if p.date in soft and not p.is_x2}   # doublons d'une même soirée compris
+    reserved_on: dict[int, date] = {}
+    for d in sorted(soft):
+        reserved_on.setdefault(soft[d].player_id, d)
+    inputs = replace(inputs, picks=[p for p in inputs.picks if p.id not in soft_ids])
 
     completed_pairs = {(s.season, frozenset({s.home_team, s.away_team}))
                         for s in inputs.series if s.status == "completed"}
@@ -267,7 +300,8 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         cell = Cell(pid, d, projection, p, reco_value, ctx)
         cells.append(cell)
         gain = x2_gain(p, projection, inputs.profiles[pid].stddev) if nights[d].mode == "regular" else 0.0
-        planner_cells.append(replace(cell, value=plan_value, x2_gain=gain))
+        kept = d in soft and soft[d].player_id == pid   # inertie : retirée du plan après résolution
+        planner_cells.append(replace(cell, value=plan_value + (CHALLENGE_MARGIN if kept else 0.0), x2_gain=gain))
 
     x2_months = _x2_months(inputs, nights)
     fixed = {p.date for p in inputs.picks}
@@ -288,6 +322,24 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         # de ses recommandations (écrites par daily_sync juste après).
         log.exception("planificateur en échec : plan vide, recommandations conservées")
         plan = {}
+    for d, entry in plan.items():
+        if d in soft and soft[d].player_id == entry.cell.player_id:
+            plan[d] = PlanEntry(replace(entry.cell, value=entry.cell.value - CHALLENGE_MARGIN), entry.is_x2)
+
+    reservations: dict[date, Reservation] = {}
+    for d, pick in soft.items():
+        row = inputs.players.get(pick.player_id)
+        game = None if row is None else next(
+            (g for g in games_by_night[d] if row["team"] in (g["home_team"], g["away_team"])), None)
+        if row is None or game is None or inputs.profiles.get(pick.player_id) is None:
+            reservations[d] = Reservation(pick.player_id, None)
+            continue
+        is_home = game["home_team"] == row["team"]
+        k = (d - today).days
+        projection, p, ctx = _estimate(pick.player_id, row["team"],
+                                       game["away_team"] if is_home else game["home_team"], is_home, d, k, game)
+        reservations[d] = Reservation(pick.player_id, Cell(pick.player_id, d, projection, p,
+                                                           future_value(k, p, projection, decay), ctx))
 
     tonight = today if today in nights else None
     recommendations: list[Recommendation] = []
@@ -308,7 +360,7 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
             recommendations.append(Recommendation(
                 cell=c, lock_value=lock_value(future_ev[c.player_id], decay),
                 locked_until=today + timedelta(days=COOLDOWN_DAYS), best_future=best,
-                is_pick=c.player_id == pick_pid))
+                is_pick=c.player_id == pick_pid, reserved_on=reserved_on.get(c.player_id)))
 
         if tonight_source == "plan":
             plan_entry = plan.get(today)
@@ -325,6 +377,7 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
                         best = max(future_cells[plan_pid], key=lambda f: f.value, default=None)
                         recommendations.insert(0, Recommendation(
                             cell=reco_cell, lock_value=lock_value(future_ev[plan_pid], decay),
-                            locked_until=today + timedelta(days=COOLDOWN_DAYS), best_future=best))
+                            locked_until=today + timedelta(days=COOLDOWN_DAYS), best_future=best,
+                            reserved_on=reserved_on.get(plan_pid)))
                         del recommendations[TOP_RECOMMENDATIONS:]
-    return Decision(tonight, recommendations, plan)
+    return Decision(tonight, recommendations, plan, reservations)

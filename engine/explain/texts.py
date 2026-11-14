@@ -44,6 +44,9 @@ def reco_texts(rec, rank: int, player_name: str) -> tuple[list[str], list[str], 
     if rec.best_future is not None:
         blocage += f" (meilleur soir à venir : {describe_night(rec.best_future)}, {rec.best_future.projection:.0f} pts projetés)"
     cons.append(blocage)
+    if rec.reserved_on is not None:
+        cons.append(f"📌 Réservé le {rec.reserved_on:%d/%m} : le jouer ce soir libère cette soirée, à repourvoir")
+        tags.append("reserve")
     if rank <= 3:
         tags.append("reco_du_soir")
     if rec.is_pick:
@@ -56,3 +59,16 @@ def reco_texts(rec, rank: int, player_name: str) -> tuple[list[str], list[str], 
 def plan_explanation(cell: Cell) -> str:
     return (f"{describe_night(cell)} · {cell.projection:.0f} pts projetés · "
             f"{round(cell.p_play * 100)} % de chances de jouer")
+
+
+def challenge_explanation(cell: Cell, reserved: Cell | None, reserved_name: str) -> str:
+    """Texte du plan quand il conteste une réservation : `cell` est le joueur
+    que le plan préfère, `reserved` la cellule du joueur réservé ce soir-là
+    (None : pas de match ou pas de profil)."""
+    base = plan_explanation(cell)
+    if reserved is None:
+        return f"{base} · {reserved_name} n'a pas de match ce soir-là"
+    if reserved.p_play <= 0:
+        return f"{base} · {reserved_name} ne devrait pas jouer"
+    gain = cell.p_play * cell.projection - reserved.p_play * reserved.projection
+    return f"{base} · {gain:+.0f} pts attendus par rapport à {reserved_name}"
