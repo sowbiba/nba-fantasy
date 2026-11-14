@@ -10,8 +10,11 @@ import X2Toggle from "./X2Toggle";
 
 export type DeckNightProps = {
   date: string; closingAt: string; nGames: number; isPhantom: boolean; isToday: boolean; mode: "regular" | "playoffs";
-  pick: { playerId: number; name: string; team: string; injury: string | null; isX2: boolean } | null;
-  suggestion: { playerId: number; name: string; team: string; gameId: string; projection: number; explanation: string; isX2: boolean } | null;
+  pick: { playerId: number; name: string; team: string; injury: string | null; injuryReturn?: string | null; isX2: boolean } | null;
+  /** Joueur du plan. Si la soirée est déjà pickée avec un autre joueur, le
+   *  plan conteste la réservation ; `reservedOn` = autre soirée où ce joueur
+   *  est déjà réservé (il faut alors échanger, pas remplacer en un clic). */
+  suggestion: { playerId: number; name: string; team: string; gameId: string; projection: number; explanation: string; isX2: boolean; reservedOn?: string | null } | null;
 };
 
 export default function DeckNight(p: DeckNightProps) {
@@ -29,6 +32,7 @@ export default function DeckNight(p: DeckNightProps) {
       setMsg(res.ok ? "Réservé. Pense à le reporter sur trashtalk.co." : res.error);
     });
   };
+  const challenger = p.pick && p.suggestion && p.suggestion.playerId !== p.pick.playerId ? p.suggestion : null;
 
   return (
     <div className="rounded-[var(--radius-card-sm)] border border-white/5 bg-[color:var(--color-surface)] px-3 py-2.5">
@@ -57,6 +61,29 @@ export default function DeckNight(p: DeckNightProps) {
           )}
           {p.pick.injury && HARD_OUT_STATUSES.has(p.pick.injury) && !closed && (
             <p className="text-xs text-[color:var(--color-crimson)]">⚠️ {p.pick.injury} : remplace-le avant la fermeture.</p>
+          )}
+          {p.pick.injury && !HARD_OUT_STATUSES.has(p.pick.injury) && !closed && (
+            <p className="text-xs text-[color:var(--color-gold)]">
+              ⚠️ {p.pick.injury}{p.pick.injuryReturn && /^\d{4}-\d{2}-\d{2}/.test(p.pick.injuryReturn) ? ` · retour estimé ${frLongDate(p.pick.injuryReturn.slice(0, 10))}` : ""} : à surveiller.
+            </p>
+          )}
+          {challenger && !closed && (
+            <div className="mt-1 flex items-center justify-between gap-3 rounded-[var(--radius-card-sm)] border border-[color:var(--color-gold)]/30 px-2 py-1.5">
+              <p className="min-w-0 text-xs text-[color:var(--color-text-soft)]">
+                Le moteur préfère{" "}
+                <Link href={`/player/${challenger.playerId}`} className="font-semibold text-[color:var(--color-text)]">{challenger.name}</Link>{" "}
+                <span className="text-[11px] text-[color:var(--color-text-mute)]">
+                  {challenger.explanation}
+                  {challenger.reservedOn ? ` · déjà réservé ${frLongDate(challenger.reservedOn)} : échange les deux soirées` : " · indicatif"}
+                </span>
+              </p>
+              {!challenger.reservedOn && (
+                <button onClick={reserve} disabled={pending}
+                        className="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-[color:var(--color-flame)] disabled:opacity-50">
+                  REMPLACER
+                </button>
+              )}
+            </div>
           )}
         </div>
       ) : p.suggestion ? (

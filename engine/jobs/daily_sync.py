@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
-from engine.explain.texts import plan_explanation, reco_texts, tier
+from engine.explain.texts import challenge_explanation, plan_explanation, reco_texts, tier
 from engine.io.espn import match_injury_to_player
 from engine.rules.availability import PickRow, SecondChance
 from engine.rules.calendar import PARIS, build_nights
@@ -249,9 +249,16 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime,
         repo.replace_recommendations(today, rows)
         result.recommendations = len(rows)
 
+    def _plan_text(night: date, entry) -> str:
+        """Réservation contestée : le plan dit ce qu'il gagne sur le joueur réservé."""
+        reservation = decision.reservations.get(night)
+        if reservation is None or reservation.player_id == entry.cell.player_id:
+            return plan_explanation(entry.cell)
+        return challenge_explanation(entry.cell, reservation.cell, players[reservation.player_id]["name"])
+
     plan_rows = [{"generated_at": now.isoformat(), "night": night.isoformat(), "player_id": e.cell.player_id,
                   "is_x2": e.is_x2, "projection": round(e.cell.projection, 1), "p_play": round(e.cell.p_play, 3),
-                  "value": round(e.cell.value, 1), "explanation": plan_explanation(e.cell)}
+                  "value": round(e.cell.value, 1), "explanation": _plan_text(night, e)}
                  for night, e in decision.plan.items() if (night - today).days < HORIZON_DAYS]
     repo.write_plan(plan_rows, keep_since=now - PLAN_RETENTION)
     result.plan_nights = len(plan_rows)
