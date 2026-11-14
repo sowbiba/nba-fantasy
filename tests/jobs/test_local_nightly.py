@@ -51,7 +51,7 @@ def test_effectif_vide_ne_compte_pas_comme_reponse():
     assert any("DEN" in w and "effectif vide" in w for w in warnings)
 
 
-def test_historique_saison_courante_depuis_j_moins_3():
+def test_historique_saison_courante_depuis_j_moins_21():
     game = {"0022600010": {"id": "0022600010", "date": "2026-10-31", "home_team": "DEN",
                            "away_team": "LAL", "status": "final"}}
     logs = [{"player_id": 5, "game_id": "0022600010", "date": "2026-10-31", "team": "DEN", "minutes": 240,
@@ -62,7 +62,7 @@ def test_historique_saison_courante_depuis_j_moins_3():
     nba = FakeStatsSource(game_logs={("2026-27", "Regular Season"): (game, logs, players)})
     repo = FakeRepo()
     run(repo, nba, TODAY, [])
-    assert nba.log_calls == [("2026-27", "Regular Season", TODAY - timedelta(days=3))]
+    assert nba.log_calls == [("2026-27", "Regular Season", TODAY - timedelta(days=21))]
     assert repo.players[5]["active"] is False and repo.players[5]["position"] == "F"
     assert (5, "0022600010") in repo.logs
 
@@ -207,6 +207,41 @@ def test_relance_recharge_les_matchs_sans_stats_et_score_le_pick():
                             "season": "2026-27", "actual_score": None, "is_x2": False}])
     warnings = retry_incomplete(repo, nba, TODAY)
     assert warnings == []
-    assert nba.log_calls == [("2026-27", "Regular Season", TODAY - timedelta(days=3))]
+    assert nba.log_calls == [("2026-27", "Regular Season", TODAY - timedelta(days=21))]
     assert repo.picks[0]["actual_score"] == 42
     assert nba.roster_calls == [] and nba.schedule_calls == []
+
+
+def test_orientation_du_calendrier_conservee_sur_terrain_neutre():
+    """Le calendrier en base dit DEN à domicile ; le journal des matchs
+    (terrain neutre, orientation arbitraire) dit l'inverse : on garde le
+    calendrier, sinon l'appariement ESPN (date, domicile, extérieur) casse."""
+    known = {"id": "0022600010", "date": "2026-10-31", "home_team": "DEN", "away_team": "LAL",
+             "status": "scheduled", "game_type": "regular", "season": "2026-27"}
+    game = {"0022600010": {"id": "0022600010", "date": "2026-10-31", "home_team": "LAL", "away_team": "DEN",
+                           "status": "final", "home_score": 100, "away_score": 90}}
+    logs = [dict(_log(5, "0022600010", "2026-10-31", "DEN", False, 240), pts=90),
+            dict(_log(6, "0022600010", "2026-10-31", "LAL", True, 240), pts=100)]
+    repo = FakeRepo(games=[known])
+    players = {5: {"id": 5, "name": "J5", "team": "DEN"}, 6: {"id": 6, "name": "J6", "team": "LAL"}}
+    nba = FakeStatsSource(rosters={}, game_logs={("2026-27", "Regular Season"): (game, logs, players)})
+    run(repo, nba, TODAY, [])
+    g = repo.games["0022600010"]
+    assert (g["home_team"], g["away_team"], g["home_score"], g["away_score"]) == ("DEN", "LAL", 90, 100)
+    assert {l["team"]: l["is_home"] for l in repo.logs.values() if l["game_id"] == "0022600010"} == {"DEN": True, "LAL": False}
+
+
+def test_recharge_trois_semaines_pour_les_corrections_de_stats():
+    repo = FakeRepo()
+    nba = FakeStatsSource(rosters={})
+    run(repo, nba, TODAY, [])
+    assert nba.log_calls[0][2] == TODAY - timedelta(days=21)
+
+
+def test_run_du_matin_sans_matchups():
+    yesterday = (TODAY - timedelta(days=1)).isoformat()
+    repo = FakeRepo(games=[_final_game("0022600031", yesterday)])
+    nba = FakeStatsSource(rosters={}, matchups={"0022600031": [{"game_id": "0022600031", "off_player_id": 1,
+                                                                "def_player_id": 2, "off_team": "BOS"}]})
+    run(repo, nba, TODAY, [], matchups=False)
+    assert repo.matchups == []

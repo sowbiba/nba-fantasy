@@ -8,7 +8,7 @@ from datetime import date
 
 PLAYERS_ALLOWED = {
     "id", "name", "team", "position", "injury_status", "injury_detail", "injury_short_comment",
-    "injury_return_date", "injury_updated_at", "avg_ttfl_l5", "avg_ttfl_l10", "avg_ttfl_l20",
+    "injury_return_date", "injury_updated_at", "injury_last_status", "injury_last_seen", "avg_ttfl_l5", "avg_ttfl_l10", "avg_ttfl_l20",
     "avg_ttfl_season", "stddev_ttfl", "home_avg", "away_avg", "avg_minutes_l10", "usage_rate",
     "updated_at", "active",
 }

@@ -103,3 +103,10 @@ Les constantes ci-dessus vivent directement dans le code, pas dans un fichier de
 | `TOP_PER_NIGHT` | `engine/strategy/planner.py` | Candidats gardés par soirée dans la matrice hongroise |
 
 Aucun de ces paramètres n'a encore été calibré par backtest (lot L2) : ce sont des valeurs de départ, à date d'écriture de ce document.
+
+
+## Blessures et absences (correctifs du 14/11/2026)
+
+- **Aucun risque le soir même** : tout joueur au statut signalé chez ESPN (même « Probable ») est écarté des recos du soir, comme des soirées futures (`tonight_p_play`, `quarantined`).
+- **Période de sécurité après le retour** : quand ESPN retire un joueur de sa liste, son dernier statut daté reste en base (`injury_last_status`, `injury_last_seen`) et il reste écarté 7 jours.
+- **Absences sans trace** : stats.nba.com ne renvoie que les joueurs entrés en jeu. Les matchs joués par l'équipe actuelle du joueur sans lui sont reconstruits comme des absences (`absence_logs`), ce qui alimente le motif DNP du soir et le taux de présence.

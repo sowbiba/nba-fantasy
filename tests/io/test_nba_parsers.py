@@ -90,6 +90,19 @@ def test_parse_league_game_log():
     assert players[2] == {"id": 2, "name": "Curry", "team": "GSW"}
 
 
+def test_parse_league_game_log_terrain_neutre_les_deux_equipes_a_l_exterieur():
+    """Match sur terrain neutre (IND–DEN du 07/11/2026) : stats.nba.com note
+    « IND @ DEN » et « DEN @ IND ». Les deux équipes étaient marquées à
+    l'extérieur, d'où un score 0–216."""
+    rows = [dict(LGL[0], MATCHUP="DEN @ GSW"), dict(LGL[1], MATCHUP="GSW @ DEN")]
+    games, logs, _ = parse_league_game_log(rows)
+    g = games["0022500010"]
+    assert {g["home_team"], g["away_team"]} == {"DEN", "GSW"}
+    by_team = {l["team"]: l["is_home"] for l in logs}
+    assert by_team[g["home_team"]] is True and by_team[g["away_team"]] is False
+    assert g["home_score"] + g["away_score"] == 55 and g["home_score"] > 0 and g["away_score"] > 0
+
+
 def test_parse_league_game_log_score_final_somme_des_points():
     """Un match marqué final doit porter son score final : sinon le score
     écrit en direct par une synchro de nuit reste (BOS 79-45 « Final », 07/11)."""

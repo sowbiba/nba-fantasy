@@ -6,6 +6,9 @@ export interface Player {
   injury_status: string | null;
   injury_detail: string | null;
   injury_return_date?: string | null;
+  injury_short_comment?: string | null;
+  injury_last_status?: string | null;
+  injury_last_seen?: string | null;
   avg_ttfl_l5: number;
   avg_ttfl_l10: number;
   avg_ttfl_l20: number;

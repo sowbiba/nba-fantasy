@@ -19,7 +19,11 @@ from engine.jobs.daily_sync import score_picks
 from engine.rules.calendar import PARIS
 from engine.rules.game_types import is_eligible, season_for_date
 
-LOG_OVERLAP_DAYS = 3
+# Fenêtre rechargée à chaque run (un seul appel LeagueGameLog) : 3 semaines,
+# pour reprendre les corrections de stats que la NBA publie après coup (avec
+# 3 jours, 35 scores TTFL étaient faux de 1 ou 2 points mi-novembre 2026).
+LOG_OVERLAP_DAYS = 21
+PENDING_DAYS = 3   # matchs terminés encore sans stats : fenêtre de la relance du matin
 MATCHUP_DAYS = 3
 PLAYOFF_MONTHS = (4, 5, 6)
 SCHEDULE_PAST_DAYS = 5
@@ -68,6 +72,24 @@ def _incomplete_games(logs: list[dict]) -> set[str]:
             if len(t) < 2 or min(t.values()) < MIN_TEAM_MINUTES}
 
 
+def _keep_schedule_orientation(games: dict[str, dict], logs: list[dict], known: dict[str, dict]) -> None:
+    """Le calendrier en base (stats.nba.com, chargé à l'avance) fait foi pour
+    domicile/extérieur : sur terrain neutre, le journal des matchs choisit un
+    côté arbitraire, ce qui casserait l'appariement ESPN (date, domicile,
+    extérieur). On réaligne le match, son score et le côté de chaque log."""
+    flipped = set()
+    for gid, g in games.items():
+        k = known.get(gid)
+        if k and (k.get("home_team"), k.get("away_team")) == (g["away_team"], g["home_team"]):
+            g["home_team"], g["away_team"] = g["away_team"], g["home_team"]
+            if "home_score" in g and "away_score" in g:
+                g["home_score"], g["away_score"] = g["away_score"], g["home_score"]
+            flipped.add(gid)
+    for l in logs:
+        if l["game_id"] in flipped:
+            l["is_home"] = not l["is_home"]
+
+
 def _load_logs(repo, nba, season, season_type, date_from, warnings, drop_from: date | None = None) -> None:
     try:
         games, logs, players = nba.league_game_log(season, season_type, date_from)
@@ -85,6 +107,7 @@ def _load_logs(repo, nba, season, season_type, date_from, warnings, drop_from: d
         logs = [l for l in logs if l["game_id"] in games]
     if not logs:
         return
+    _keep_schedule_orientation(games, logs, {g["id"]: g for g in repo.load_games_of_seasons([season])})
     known = {p["id"] for p in repo.load_players()}
     missing = [{"id": p["id"], "name": p["name"], "team": p["team"], "position": "F", "active": False}
                for pid, p in players.items() if pid not in known]
@@ -135,7 +158,7 @@ def _load_recent_logs(repo, nba, season, today, warnings) -> None:
 def pending_games(repo, today: date) -> list[str]:
     """Matchs éligibles terminés des derniers jours sans aucune stat en base
     (box score encore incomplet chez stats.nba.com au run précédent)."""
-    finals = [g["id"] for g in repo.load_games_between(today - timedelta(days=LOG_OVERLAP_DAYS),
+    finals = [g["id"] for g in repo.load_games_between(today - timedelta(days=PENDING_DAYS),
                                                        today - timedelta(days=1))
               if is_eligible(g.get("game_type", "unknown")) and g.get("status") == "final"]
     done = repo.game_ids_with_logs(finals)
@@ -152,7 +175,8 @@ def retry_incomplete(repo, nba, today: date) -> list[str] | None:
     return warnings
 
 
-def run(repo, nba, today: date, teams: list[dict], backfill_season: str | None = None) -> list[str]:
+def run(repo, nba, today: date, teams: list[dict], backfill_season: str | None = None,
+        matchups: bool = True) -> list[str]:
     warnings: list[str] = []
     season = season_for_date(today)
     _refresh_rosters(repo, nba, teams, season, warnings)
@@ -162,7 +186,8 @@ def run(repo, nba, today: date, teams: list[dict], backfill_season: str | None =
             _load_logs(repo, nba, backfill_season, season_type, None, warnings)
     else:
         _load_recent_logs(repo, nba, season, today, warnings)
-    _load_matchups(repo, nba, today, warnings)
+    if matchups:
+        _load_matchups(repo, nba, today, warnings)
     return warnings
 
 
@@ -175,6 +200,9 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Job local (stats.nba.com)")
     parser.add_argument("--backfill-season", help="charge une saison complète, ex. 2025-26")
+    parser.add_argument("--no-matchups", dest="matchups", action="store_false",
+                        help="runs du matin : stats.nba.com n'a pas encore les matchups de la nuit (IndexError "
+                             "puis disjoncteur, ~3 min perdues) ; le run de 23h50 les charge")
     parser.add_argument("--retry-incomplete", action="store_true",
                         help="recharge seulement les stats des matchs terminés encore sans box score")
     args = parser.parse_args()
@@ -188,7 +216,7 @@ def main() -> None:
     log_id = repo.start_log("local_nightly")
     try:
         warnings = run(repo, NbaSource(guard, allow_stats=True), today, nba_teams.get_teams(),
-                       backfill_season=args.backfill_season)
+                       backfill_season=args.backfill_season, matchups=args.matchups)
     except Exception as exc:
         repo.finish_log(log_id, status="error", error=str(exc), api_calls=guard.summary())
         raise

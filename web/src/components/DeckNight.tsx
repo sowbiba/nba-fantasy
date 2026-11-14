@@ -3,14 +3,16 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { savePick } from "@/app/actions";
-import { frLongDate, parisTime } from "@/lib/date";
+import { addDays, frLongDate, parisTime } from "@/lib/date";
 import { HARD_OUT_STATUSES, isClosed, x2AllowedOn } from "@/lib/display";
 import NightPlayerPicker from "./NightPlayerPicker";
 import X2Toggle from "./X2Toggle";
 
 export type DeckNightProps = {
   date: string; closingAt: string; nGames: number; isPhantom: boolean; isToday: boolean; mode: "regular" | "playoffs";
-  pick: { playerId: number; name: string; team: string; injury: string | null; injuryReturn?: string | null; isX2: boolean } | null;
+  pick: { playerId: number; name: string; team: string; injury: string | null; injuryReturn?: string | null;
+          /** Dernier statut daté, conservé après le retour : période de sécurité de 7 jours. */
+          lastInjury?: { status: string; seen: string } | null; isX2: boolean } | null;
   /** Joueur du plan. Si la soirée est déjà pickée avec un autre joueur, le
    *  plan conteste la réservation ; `reservedOn` = autre soirée où ce joueur
    *  est déjà réservé (il faut alors échanger, pas remplacer en un clic). */
@@ -65,6 +67,11 @@ export default function DeckNight(p: DeckNightProps) {
           {p.pick.injury && !HARD_OUT_STATUSES.has(p.pick.injury) && !closed && (
             <p className="text-xs text-[color:var(--color-gold)]">
               ⚠️ {p.pick.injury}{p.pick.injuryReturn && /^\d{4}-\d{2}-\d{2}/.test(p.pick.injuryReturn) ? ` · retour estimé ${frLongDate(p.pick.injuryReturn.slice(0, 10))}` : ""} : à surveiller.
+            </p>
+          )}
+          {!p.pick.injury && p.pick.lastInjury && p.date < addDays(p.pick.lastInjury.seen, 7) && !closed && (
+            <p className="text-xs text-[color:var(--color-gold)]">
+              ⚠️ Retour de blessure ({p.pick.lastInjury.status} jusqu&apos;au {frLongDate(p.pick.lastInjury.seen)}) : période de sécurité de 7 jours.
             </p>
           )}
           {challenger && !closed && (

@@ -77,18 +77,38 @@ def parse_return_date(value) -> date | None:
         return None
 
 
+def quarantined(*, injury_status: str | None, night: date | None, return_date: date | None,
+                days_ahead: int | None) -> bool:
+    """Règle « aucun risque » : le joueur est écarté de `night`.
+
+    - forfait pour la saison ;
+    - date de retour connue : jusqu'à INJURY_SAFETY_DAYS jours après elle,
+      que le statut soit encore affiché ou non (ESPN retire le joueur de sa
+      liste le jour de son retour : `daily_sync` garde alors la date) ;
+    - statut signalé sans date : sur les INJURY_SAFETY_DAYS premiers jours.
+    """
+    if injury_status == "Out For Season":
+        return True
+    if return_date is not None and night is not None:
+        return night < return_date + timedelta(days=INJURY_SAFETY_DAYS)
+    return bool(injury_status) and days_ahead is not None and days_ahead <= INJURY_SAFETY_DAYS
+
+
+def tonight_p_play(*, injury_status: str | None, recent_logs: list[dict], is_b2b_second: bool,
+                   exp_minutes: float, night: date | None = None, return_date: date | None = None) -> float:
+    """Le soir même : tout statut signalé (même « Probable », même inconnu)
+    écarte le joueur, comme la quarantaine de retour ; sinon motif DNP
+    récent et repos de back-to-back."""
+    if injury_status or quarantined(injury_status=None, night=night, return_date=return_date, days_ahead=0):
+        return 0.0
+    return dnp_risk_factor(recent_logs) * _b2b(is_b2b_second, exp_minutes)
+
+
 def future_p_play(*, injury_status: str | None, availability_rate: float,
                   is_b2b_second: bool, exp_minutes: float, night: date | None = None,
                   return_date: date | None = None, days_ahead: int | None = None) -> float:
-    """Soirées futures : joueur au statut signalé écarté (0) jusqu'à
-    INJURY_SAFETY_DAYS jours après sa date de retour ESPN, ou sur les
-    INJURY_SAFETY_DAYS premiers jours sans date. Sinon, taux de présence récent."""
-    if injury_status == "Out For Season":
+    """Soirées futures : joueur écarté (0) par la règle « aucun risque »
+    (`quarantined`). Sinon, taux de présence récent."""
+    if quarantined(injury_status=injury_status, night=night, return_date=return_date, days_ahead=days_ahead):
         return 0.0
-    if injury_status:
-        if return_date is not None and night is not None:
-            if night < return_date + timedelta(days=INJURY_SAFETY_DAYS):
-                return 0.0
-        elif days_ahead is not None and days_ahead <= INJURY_SAFETY_DAYS:
-            return 0.0
     return availability_rate * _b2b(is_b2b_second, exp_minutes)

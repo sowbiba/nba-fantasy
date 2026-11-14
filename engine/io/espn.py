@@ -79,18 +79,17 @@ def fetch_espn_scoreboard(game_date: date, guard=None) -> list[dict]:
 def fetch_all_injuries(guard=None, teams: list[str] | None = None) -> dict[str, list[dict]]:
     """Blessures de toutes les équipes (endpoint ESPN global, 1 appel).
 
-    Returns {team_tricode: [{"name", "status", "detail", ...}, ...]}, ou {}
-    si ESPN est indisponible (le job continue avec les statuts en base).
+    Returns {team_tricode: [{"name", "status", "detail", ...}, ...]}. Lève si
+    ESPN est indisponible : daily_sync note l'échec en avertissement et
+    continue avec les statuts en base (renvoyer {} le faisait passer pour une
+    synchro réussie).
     """
     def download():
         resp = httpx.get(GLOBAL_INJURIES_URL, timeout=15)
         resp.raise_for_status()
         return resp.json()
 
-    try:
-        data = guard.call("espn", download) if guard is not None else download()
-    except Exception:
-        return {}
+    data = guard.call("espn", download) if guard is not None else download()
 
     all_injuries: dict[str, list[dict]] = {}
 

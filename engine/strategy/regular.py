@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from engine.rules.availability import COOLDOWN_DAYS, PickRow, SecondChance, SeriesRow, is_available
 from engine.rules.calendar import Night
 from engine.rules.game_types import is_eligible
-from engine.stats.availability_prob import HARD_OUT_STATUSES, future_p_play, p_play, parse_return_date
+from engine.stats.availability_prob import HARD_OUT_STATUSES, future_p_play, parse_return_date, tonight_p_play
 from engine.stats.blowout import BlowoutModel
 from engine.stats.profile import PlayerProfile
 from engine.stats.projection import GameContext, project, rest_days
@@ -217,11 +217,15 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         ctx = GameContext(opponent, is_home, rd, opp_factor(inputs.defense, opponent, row.get("position", "F")),
                           expected_margin=margin)
         projection = project(profile, ctx, blowout)
-        return_date = parse_return_date(row.get("injury_return_date"))
+        # Statut levé par ESPN : la période de sécurité court depuis le
+        # dernier jour où il était signalé (`injury_last_seen`).
+        return_date = parse_return_date(row.get("injury_return_date") if status
+                                        else row.get("injury_last_seen"))
         b2b = rd == 0
         if k == 0:
-            p = p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),
-                       is_b2b_second=b2b, exp_minutes=profile.exp_minutes)
+            p = tonight_p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),
+                               is_b2b_second=b2b, exp_minutes=profile.exp_minutes,
+                               night=d, return_date=return_date)
         else:
             p = future_p_play(injury_status=status, availability_rate=profile.availability_rate,
                               is_b2b_second=b2b, exp_minutes=profile.exp_minutes,

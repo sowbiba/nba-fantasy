@@ -128,6 +128,37 @@ def test_future_p_play_signale_sans_date_nul_les_7_premiers_jours():
     assert _fpp("Out", date(2026, 11, 20), None, days_ahead=13) == pytest.approx(0.9)
 
 
-def test_future_p_play_date_de_retour_ignoree_sans_statut():
-    """Joueur rétabli (statut levé) : la date de retour n'a plus d'effet."""
-    assert _fpp(None, date(2026, 12, 22), RETURN) == pytest.approx(0.9)
+def test_future_p_play_quarantaine_maintenue_apres_levee_du_statut():
+    """ESPN retire le joueur de sa liste le jour de son retour : sans la
+    date de retour conservée, il revenait à 100 % dès son premier match."""
+    assert _fpp(None, date(2026, 12, 22), RETURN) == 0.0
+    assert _fpp(None, date(2026, 12, 28), RETURN) == pytest.approx(0.9)
+
+
+# --- Le soir même : même règle « aucun risque » ------------------------------
+
+from engine.stats.availability_prob import tonight_p_play
+
+TONIGHT = date(2026, 11, 14)
+
+
+def _tpp(status, return_date=None, logs=(), b2b=False):
+    return tonight_p_play(injury_status=status, recent_logs=list(logs), is_b2b_second=b2b, exp_minutes=34,
+                          night=TONIGHT, return_date=return_date)
+
+
+def test_tonight_p_play_tout_statut_signale_est_ecarte():
+    for status in ("Probable", "Day-To-Day", "Questionable", "Game-Time Decision", "Out", "OUT", "Inconnu"):
+        assert _tpp(status) == 0.0
+        assert _tpp(status, return_date=date(2026, 10, 1)) == 0.0   # date de retour périmée : toujours signalé
+
+
+def test_tonight_p_play_quarantaine_sans_statut():
+    assert _tpp(None, return_date=date(2026, 11, 10)) == 0.0     # revenu depuis 4 j
+    assert _tpp(None, return_date=date(2026, 11, 7)) == 1.0      # revenu depuis 7 j
+
+
+def test_tonight_p_play_sain_garde_dnp_et_back_to_back():
+    assert _tpp(None) == 1.0
+    assert _tpp(None, logs=[{"minutes": 0}, {"minutes": 30}, {"minutes": 30}]) == 0.75
+    assert _tpp(None, b2b=True) == pytest.approx(0.93)
