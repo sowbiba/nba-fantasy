@@ -166,7 +166,11 @@ def parse_league_game_log(rows: list[dict]) -> tuple[dict[str, dict], list[dict]
                                       "home_score": 0, "away_score": 0})
         # Score final = somme des points des joueurs : un match passé « final »
         # ici ne doit pas garder le score écrit en direct par une synchro de nuit.
-        game["home_score" if is_home else "away_score"] += int(r["PTS"] or 0)
+        game["home_score" if team == game["home_team"] else "away_score"] += int(r["PTS"] or 0)
+        # Terrain neutre : stats.nba.com note les DEUX équipes à l'extérieur
+        # (« IND @ DEN » et « DEN @ IND »). Le côté se lit donc sur le match,
+        # pas sur la ligne : sinon 0 point à domicile et tout à l'extérieur.
+        is_home = team == game["home_team"]
         logs.append({
             "player_id": int(r["PLAYER_ID"]), "game_id": gid, "date": game_date, "team": team,
             "minutes": _minutes(r.get("MIN")), "fouls": int(r.get("PF") or 0), "is_home": is_home,

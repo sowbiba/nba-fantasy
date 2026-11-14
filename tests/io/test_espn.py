@@ -78,13 +78,18 @@ def test_fetch_passe_par_le_garde_et_parse(monkeypatch):
     assert guard.summary()["espn"]["calls"] == 1
 
 
-def test_fetch_renvoie_vide_si_espn_tombe(monkeypatch):
+def test_fetch_leve_si_espn_tombe(monkeypatch):
+    """Une panne ESPN doit remonter (daily_sync la note en avertissement) :
+    renvoyer {} la faisait passer pour une synchro réussie."""
+    import pytest
+
     def boom(*a, **k):
         raise espn_module.httpx.ConnectError("down")
 
     monkeypatch.setattr(espn_module.httpx, "get", boom)
     guard = ApiGuard({"espn": HostPolicy(0.0, 0, 3, 5)})
-    assert espn_module.fetch_all_injuries(guard) == {}
+    with pytest.raises(Exception):
+        espn_module.fetch_all_injuries(guard)
 
 
 from datetime import date

@@ -1,0 +1,18 @@
+# --- TTFL Advisor (PC toujours allumé) — source : ops/crontab.ttfl du dépôt ---
+# Heures de Paris. Le PC est la synchro principale ; GitHub Actions
+# (.github/workflows/daily-sync.yml) n'est qu'un filet de sécurité.
+# 23h50 : effectifs, calendrier, stats des 3 dernières semaines, matchups
+50 23 * * * /home/isow/workspace/perso/nba-fantasy/ops/ttfl-cron.sh nightly
+# 00h05 : recos et plan de la nouvelle soirée dès que le deck change de date
+5 0 * * * /home/isow/workspace/perso/nba-fantasy/ops/ttfl-cron.sh daily
+# 7h30 et 9h00 : stats de la nuit, scores des picks, recos du soir
+30 7 * * * /home/isow/workspace/perso/nba-fantasy/ops/ttfl-cron.sh morning
+0 9 * * * /home/isow/workspace/perso/nba-fantasy/ops/ttfl-cron.sh morning
+# 9h30 → 12h00 : matchs dont les stats étaient encore incomplètes
+30 9-11 * * * /home/isow/workspace/perso/nba-fantasy/ops/ttfl-cron.sh retry
+0 10-12 * * * /home/isow/workspace/perso/nba-fantasy/ops/ttfl-cron.sh retry
+# Journée : blessures et recos toutes les heures
+20 10-15 * * * /home/isow/workspace/perso/nba-fantasy/ops/ttfl-cron.sh daily
+# Soirée : toutes les 15 min jusqu'à la fermeture (au plus tard 00h00)
+*/15 16-23 * * * /home/isow/workspace/perso/nba-fantasy/ops/ttfl-cron.sh daily
+# --- fin TTFL ---

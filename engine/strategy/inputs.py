@@ -69,6 +69,9 @@ def build_decision_inputs(
     for log in logs:
         (current_by_player if log.season == season else prior_by_player)[log.player_id].append(log)
 
+    for pid, missed in absence_logs(current_by_player, players, season).items():
+        current_by_player[pid].extend(missed)
+
     rosters: dict[str, list[int]] = defaultdict(list)
     for pid, p in players.items():
         if p.get("active", True):
@@ -102,6 +105,40 @@ def build_decision_inputs(
                                                      if p.is_x2 and p.mode == "regular"),
                             expected_margins=margins, blowout_model=model)
     return inputs, profiles
+
+
+def absence_logs(current_by_player: dict[int, list[GameLog]], players: dict[int, dict],
+                 season: str) -> dict[int, list[GameLog]]:
+    """Matchs manqués, reconstruits : stats.nba.com ne renvoie que les
+    joueurs entrés en jeu, donc une absence ne laisse aucun log et ni le
+    motif DNP du soir ni le taux de présence ne la voyaient (cas Sabonis,
+    2026-11 : recommandé n°2 un soir où il ne jouait pas).
+
+    Pour chaque joueur actif, un log à 0 minute par match joué par son
+    équipe ACTUELLE depuis son premier match avec elle et où il n'apparaît
+    pas. Avant ce premier match (transfert, début de saison), rien : on ne
+    sait pas s'il faisait partie de l'effectif."""
+    team_games: dict[str, dict[date, str]] = defaultdict(dict)
+    for pid_logs in current_by_player.values():
+        for log in pid_logs:
+            if log.team:
+                team_games[log.team].setdefault(log.date, log.game_id)
+    out: dict[int, list[GameLog]] = {}
+    for pid, p in players.items():
+        team = p.get("team")
+        if not p.get("active", True) or not team:
+            continue
+        own = [l for l in current_by_player.get(pid, []) if l.team == team]
+        if not own:
+            continue
+        first = min(l.date for l in own)
+        seen = {l.date for l in current_by_player[pid]}
+        missed = [GameLog(player_id=pid, game_id=gid, date=d, season=season, team=team, minutes=0, ttfl=0,
+                          is_home=False)
+                  for d, gid in team_games[team].items() if d > first and d not in seen]
+        if missed:
+            out[pid] = missed
+    return out
 
 
 def absent_shares(*, today: date, players: dict[int, dict], logs: list[GameLog]) -> dict[str, float]:

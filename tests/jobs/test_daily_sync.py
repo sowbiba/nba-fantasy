@@ -103,6 +103,26 @@ def test_daily_sync_blessures():
     assert 2 not in [r["player_id"] for r in repo.recommendations[TODAY]]
 
 
+def test_daily_sync_garde_le_dernier_statut_quand_espn_retire_le_joueur():
+    """ESPN retire le joueur de sa liste le jour de son retour : le statut
+    courant est levé, mais la trace datée reste et la période de sécurité
+    de 7 jours continue de l'écarter."""
+    repo = _base_repo()
+    injuries = {"LAL": [{"name": "Joueur 2", "status": "Out", "detail": "Genou", "return_date": None,
+                         "short_comment": "", "updated_at": ""}]}
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: injuries, TODAY, NOW)
+    assert repo.players[2]["injury_last_status"] == "Out"
+    assert repo.players[2]["injury_last_seen"] == TODAY.isoformat()
+
+    other = {"DEN": [{"name": "Inconnu", "status": "Out", "detail": "", "return_date": None,
+                      "short_comment": "", "updated_at": ""}]}
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: other, TODAY, NOW)
+    assert repo.players[2]["injury_status"] is None
+    assert repo.players[2]["injury_last_status"] == "Out"
+    assert repo.players[2]["injury_last_seen"] == TODAY.isoformat()
+    assert 2 not in [r["player_id"] for r in repo.recommendations[TODAY]]
+
+
 def test_daily_sync_n_ingere_pas_un_match_en_cours():
     # Le run 07:00 Paris (01:00 ET) voit encore en direct certains matchs de
     # la veille finis tard aux USA : pas de scoring du pick tant que ce n'est
@@ -150,6 +170,33 @@ def test_score_picks_rescore_un_pick_vieux_de_60_jours():
     repo = FakeRepo(players=players, games=games, logs=logs, picks=picks)
     run(repo, _fetch_scoreboard({}), lambda: {}, TODAY, NOW)
     assert repo.picks[0]["actual_score"] == 37
+
+
+def test_score_picks_suit_une_correction_de_stats():
+    """La NBA corrige des box scores après coup : le pick déjà noté doit
+    suivre le log (il n'était jamais renoté une fois écrit)."""
+    old = TODAY - timedelta(days=10)
+    players = [_player(1, "DEN", "C")]
+    games = [{"id": "0022600099", "date": old.isoformat(), "home_team": "DEN", "away_team": "LAL",
+              "status": "final", "game_type": "regular", "season": "2026-27"}]
+    logs = [_log(1, "0022600099", old, "DEN", ttfl=38)]
+    picks = [{"id": 1, "player_id": 1, "game_id": "0022600099", "date": old.isoformat(),
+              "mode": "regular", "season": "2026-27", "actual_score": 39, "is_x2": False},
+             # noté 0 pour absence, aucun log : reste à 0
+             {"id": 2, "player_id": 9, "game_id": "0022600099", "date": (old + timedelta(days=1)).isoformat(),
+              "mode": "regular", "season": "2026-27", "actual_score": 0, "is_x2": False}]
+    repo = FakeRepo(players=players, games=games, logs=logs, picks=picks)
+    run(repo, _fetch_scoreboard({}), lambda: {}, TODAY, NOW)
+    assert [p["actual_score"] for p in repo.picks] == [38, 0]
+
+
+def test_daily_sync_panne_espn_blessures_notee_en_avertissement():
+    def down():
+        raise ConnectionError("ESPN indisponible")
+    repo = _base_repo()
+    result = run(repo, _fetch_scoreboard(SCOREBOARD), down, TODAY, NOW)
+    assert any("blessures" in w for w in result.warnings)
+    assert repo.recommendations[TODAY]
 
 
 def test_scoreboard_espn_apparie_par_date_et_equipes():

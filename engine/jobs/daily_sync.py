@@ -79,7 +79,9 @@ def score_picks(repo, season: str, today: date) -> None:
     # (`correct_pick`) peut porter sur une soirée plus ancienne et doit être
     # rescorée par la synchro suivante (spec §3.1).
     games = {g["id"]: g for g in repo.load_games_of_seasons([season])}
-    picks = [p for p in repo.load_picks(season) if p.get("actual_score") is None and _d(p["date"]) < today]
+    # Un pick déjà noté suit aussi son log : la NBA corrige des box scores
+    # après coup (local_nightly les recharge sur LOG_OVERLAP_DAYS).
+    picks = [p for p in repo.load_picks(season) if _d(p["date"]) < today]
     logs = {(l["player_id"], l["game_id"]): l for l in repo.load_game_logs([season])}
     with_logs = {gid for (_, gid) in logs}
     for p in picks:
@@ -88,8 +90,9 @@ def score_picks(repo, season: str, today: date) -> None:
             continue
         log = logs.get((p["player_id"], p["game_id"]))
         if log is not None:
-            repo.set_pick_score(p["id"], int(log["ttfl_score"]))
-        elif p["game_id"] in with_logs:
+            if p.get("actual_score") != int(log["ttfl_score"]):
+                repo.set_pick_score(p["id"], int(log["ttfl_score"]))
+        elif p.get("actual_score") is None and p["game_id"] in with_logs:
             repo.set_pick_score(p["id"], 0)   # R7 : ne pas avoir joué = 0
 
 
@@ -152,7 +155,11 @@ def _write_elo(repo, season_games: list[dict], window: list[dict], today: date, 
         repo.upsert_game_predictions(pred_rows)
 
 
-def _apply_injuries(repo, injuries: dict[str, list[dict]]) -> None:
+def _apply_injuries(repo, injuries: dict[str, list[dict]], today: date) -> None:
+    """Statuts ESPN → players. Un joueur listé garde aussi la trace datée de
+    son statut (`injury_last_status`, `injury_last_seen`) ; quand ESPN le
+    retire de sa liste, le statut courant est levé mais cette trace reste :
+    c'est elle qui porte la période de sécurité (`quarantined`)."""
     players = repo.load_players()
     by_team: dict[str, list[dict]] = defaultdict(list)
     for p in players:
@@ -169,10 +176,13 @@ def _apply_injuries(repo, injuries: dict[str, list[dict]]) -> None:
         if inj is not None:
             rows.append({**{k: p[k] for k in IDENTITY}, "injury_status": inj["status"],
                          "injury_detail": inj.get("detail"), "injury_short_comment": inj.get("short_comment"),
-                         "injury_return_date": inj.get("return_date"), "injury_updated_at": inj.get("updated_at")})
+                         "injury_return_date": inj.get("return_date"), "injury_updated_at": inj.get("updated_at"),
+                         "injury_last_status": inj["status"], "injury_last_seen": today.isoformat()})
         elif p.get("injury_status"):
             rows.append({**{k: p[k] for k in IDENTITY}, "injury_status": None, "injury_detail": None,
-                         "injury_short_comment": None, "injury_return_date": None})
+                         "injury_short_comment": None, "injury_return_date": None,
+                         "injury_last_status": p.get("injury_last_status") or p["injury_status"],
+                         "injury_last_seen": p.get("injury_last_seen") or today.isoformat()})
     if rows:
         repo.upsert_players(rows)
 
@@ -192,7 +202,7 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime,
 
     injuries = _step("blessures", fetch_injuries, result)
     if injuries:
-        _apply_injuries(repo, injuries)
+        _apply_injuries(repo, injuries, today)
 
     players = {p["id"]: p for p in repo.load_players()}
     season_games = repo.load_games_of_seasons([season, prior])

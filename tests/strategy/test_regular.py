@@ -487,3 +487,22 @@ def test_pick_du_soir_pas_replanifie_plus_tard():
     d = decide(_inputs(picks=_pick_tonight()))
     later = d.plan.get(TODAY + timedelta(days=20))
     assert later is None or later.cell.player_id != 1
+
+
+# --- Aucun risque le soir même (2026-11) ------------------------------------
+
+def test_joueur_signale_ecarte_des_recos_du_soir():
+    for status in ("Probable", "Day-To-Day", "Questionable"):
+        players = {**PLAYERS, 1: {**PLAYERS[1], "injury_status": status}}
+        d = decide(_inputs(players=players))
+        assert 1 not in [r.cell.player_id for r in d.recommendations], status
+
+
+def test_joueur_revenu_depuis_moins_de_7_jours_ecarte_ce_soir():
+    back = {**PLAYERS[1], "injury_status": None, "injury_last_status": "Out",
+            "injury_last_seen": (TODAY - timedelta(days=3)).isoformat()}
+    d = decide(_inputs(players={**PLAYERS, 1: back}))
+    assert 1 not in [r.cell.player_id for r in d.recommendations]
+    healed = {**back, "injury_last_seen": (TODAY - timedelta(days=7)).isoformat()}
+    d = decide(_inputs(players={**PLAYERS, 1: healed}))
+    assert 1 in [r.cell.player_id for r in d.recommendations]

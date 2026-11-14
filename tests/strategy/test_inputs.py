@@ -188,3 +188,54 @@ def test_blowout_correction_blessures_seulement_ce_soir_et_si_calibree():
     # Le joueur 1 porte toute la production de DEN : note −300 ce soir seulement.
     assert corrected.expected_margins["t1"] == pytest.approx(raw.expected_margins["t1"] - 300 / 28)
     assert corrected.expected_margins["t2"] == raw.expected_margins["t2"]
+
+
+# --- Absences sans trace (2026-11, cas Sabonis) ------------------------------
+# stats.nba.com ne renvoie que les joueurs entrés en jeu : un match manqué ne
+# laissait aucun log, donc ni le motif DNP ni le taux de présence ne voyaient
+# l'absence.
+
+def _absence_inputs(missed: int):
+    """Joueur 1 (DEN) a joué les matchs les plus anciens puis manqué les
+    `missed` derniers ; joueur 3 (DEN) a tout joué."""
+    players = {1: _player(1, "DEN", "C"), 3: _player(3, "DEN", "F"), 2: _player(2, "LAL", "G")}
+    days = range(1, 9)   # 8 matchs de DEN, J-1 = le plus récent
+    logs = [_log(3, f"d{i}", TODAY - timedelta(days=i), "DEN") for i in days]
+    logs += [_log(1, f"d{i}", TODAY - timedelta(days=i), "DEN") for i in days if i > missed]
+    logs += _current_logs(2, "LAL")
+    games = [_game("c10", TODAY, "DEN", "LAL")]
+    nights = [Night(date=TODAY, season=SEASON, mode="regular", n_eligible_games=1, closing_at=None, is_phantom=False)]
+    return build_decision_inputs(today=TODAY, players=players, games=games, season_games=games, logs=logs,
+                                 season=SEASON, prior=PRIOR, picks=[], second_chances=[], series_rows=[], nights=nights)
+
+
+def test_matchs_manques_par_l_equipe_comptes_comme_absences():
+    inputs, profiles = _absence_inputs(missed=2)
+    assert [l["minutes"] for l in inputs.recent_logs[1]][:3] == [0, 0, 30]
+    assert profiles[1].availability_rate == 6 / 8
+    played = [_log(1, f"d{i}", TODAY - timedelta(days=i), "DEN") for i in range(3, 9)]
+    without = build_profile(1, played, [], 1.0)                       # l'absence ne touche ni le rôle
+    assert profiles[1].exp_minutes == without.exp_minutes             # ni l'efficacité
+    assert profiles[1].ttfl_per_min == without.ttfl_per_min
+
+
+def test_aucune_absence_si_le_joueur_a_tout_joue():
+    inputs, profiles = _absence_inputs(missed=0)
+    assert all(l["minutes"] > 0 for l in inputs.recent_logs[1])
+    assert profiles[1].availability_rate == 1.0
+
+
+def test_matchs_d_avant_son_arrivee_dans_l_equipe_non_comptes():
+    """Transféré : seuls comptent les matchs de son équipe actuelle depuis
+    son premier match avec elle."""
+    players = {1: _player(1, "DEN", "C"), 3: _player(3, "DEN", "F")}
+    logs = [_log(3, f"d{i}", TODAY - timedelta(days=i), "DEN") for i in range(1, 9)]
+    logs += [_log(1, f"d{i}", TODAY - timedelta(days=i), "DEN") for i in (1, 2)]       # arrivé il y a 2 matchs
+    logs += [_log(1, f"l{i}", TODAY - timedelta(days=i), "LAL") for i in range(5, 9)]  # ancienne équipe
+    games = [_game("c10", TODAY, "DEN", "LAL")]
+    nights = [Night(date=TODAY, season=SEASON, mode="regular", n_eligible_games=1, closing_at=None, is_phantom=False)]
+    inputs, profiles = build_decision_inputs(today=TODAY, players=players, games=games, season_games=games, logs=logs,
+                                             season=SEASON, prior=PRIOR, picks=[], second_chances=[], series_rows=[],
+                                             nights=nights)
+    assert all(l["minutes"] > 0 for l in inputs.recent_logs[1])
+    assert profiles[1].availability_rate == 1.0

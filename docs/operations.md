@@ -14,27 +14,22 @@
 
 ## Rythme de synchronisation (cron)
 
-Le sync principal tourne via **GitHub Actions** (`.github/workflows/daily-sync.yml`) : 3 passages dans la journée (07 h / 12 h / 17 h, heure de Paris) puis un passage **toutes les heures, de 18 h à minuit (été) ou 17 h à 23 h (hiver)** (blessures, P(joue), plan) pendant que les matchs se jouent en Europe. Un cron local complète à 23 h 50 pour les effectifs et le calendrier (`stats.nba.com` bloque les IPs GitHub). Hors saison, les deux sont désactivés.
+**Le PC (toujours allumé) est la synchro principale** depuis le 14/11/2026 ; GitHub Actions n'est qu'un filet de sécurité (ses runs planifiés sont souvent retardés de 1 à 3 h ou sautés : 4 à 6 runs sur 10 par jour constatés, et la dernière synchro passait plus de 2 h avant la fermeture 10 soirs sur 24).
 
-Les horaires du yml sont en UTC (l'heure du cron GitHub Actions) : `0 5,10,15 * * *` (07/12/17 h Paris) et `0 16-22 * * *` (toutes les heures). Cette plage couvre à la fois l'heure d'été (CEST = UTC+2 : 18 h→00 h Paris) et l'heure d'hiver (CET = UTC+1 : 17 h→23 h Paris) — aucun changement n'est nécessaire au passage d'heure (voir le commentaire en tête de `daily-sync.yml`).
+Cron local, heures de Paris — source versionnée : `ops/crontab.ttfl`, lanceur `ops/ttfl-cron.sh` (un seul job à la fois par verrou, sortie dans `/tmp/ttfl-local.log`, échec dans `~/ttfl-sync-failures.log` avec notification bureau). Pour réinstaller : remplacer le bloc TTFL de `crontab -e` par le contenu de `ops/crontab.ttfl`.
 
-`daily_sync` (GitHub Actions) n'appelle plus `cdn.nba.com` (403 partout) : les statuts/scores du jour et de la veille viennent d'ESPN.
+| Heure | Job | Rôle |
+|---|---|---|
+| 23 h 50 | `nightly` | effectifs, calendrier, stats des 3 dernières semaines (corrections NBA), matchups |
+| 00 h 05 | `daily` | recos et plan de la nouvelle soirée dès que le deck change de date |
+| 7 h 30, 9 h 00 | `morning` | stats de la nuit (sans matchups, indisponibles le matin), scores des picks, recos |
+| 9 h 30 → 12 h 00 | `retry` | matchs dont le box score était encore incomplet |
+| 10 h 20 → 15 h 20 | `daily` | blessures ESPN et recos, toutes les heures |
+| 16 h 00 → 23 h 45 | `daily` | toutes les 15 minutes jusqu'à la fermeture |
 
-1. Scoreboard ESPN de J-1 et J (statuts, scores) → mise à jour de `games`
-2. Score les picks non encore scorés dont le match est réglé (`score_picks`)
-3. Fetch les blessures ESPN (tous les teams) et met à jour `players`
-4. Recalcule les agrégats/profils des joueurs actifs, le facteur défense
-5. Reconstruit les soirées (`nights`) sur la fenêtre chargée par `local_nightly`
-6. Applique la couche stratégie et génère les recommandations + argumentaires du soir
-7. Calcule le plan 30 jours et le push
+GitHub Actions (`.github/workflows/daily-sync.yml`, UTC) : `23 5,10,15 * * *` et `37 16-22 * * *`, jamais à la minute 0 (créneau le plus chargé). Aucun changement au passage d'heure. Hors saison, cron local et workflow sont désactivés.
 
-Chaque étape réseau peut échouer sans faire tomber le job (décision sur les données en base, échec noté dans les `warnings` du log).
-
-Le run local (`local_nightly`, cron 23 h 50 et 9 h 00, PC) est à part : effectifs des 30 équipes, calendrier (35 jours à venir, stats.nba.com), historique de la saison via `LeagueGameLog` (seule source de box scores, le CDN NBA n'est plus utilisé), puis `score_picks` sur les picks concernés par ce chargement, et les matchups bruts défenseur/joueur.
-
-Logs : `/tmp/ttfl-local.log`
-
----
+Blessures : une panne ESPN remonte en avertissement dans `sync_log` (elle passait pour une synchro réussie). Quand ESPN retire un joueur de sa liste, `players.injury_last_status` / `injury_last_seen` (migration 034) gardent son dernier statut daté : la période de sécurité de 7 jours s'applique depuis cette date.
 
 ## Structure du code
 

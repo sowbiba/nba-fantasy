@@ -6,10 +6,12 @@ import { setX2 } from "@/app/actions";
 import { isClosed, pickStanding } from "@/lib/display";
 
 export default function MyPickCard({
-  date, playerId, playerName, team, isX2, x2Allowed, closingAt, standing,
+  date, playerId, playerName, team, isX2, x2Allowed, closingAt, standing, injury,
 }: {
   date: string; playerId: number; playerName: string; team: string; isX2: boolean; x2Allowed: boolean; closingAt: string;
   standing?: ReturnType<typeof pickStanding>;
+  /** Statut de blessure du joueur pické (tout statut : règle « aucun risque »). */
+  injury?: { status: string; comment: string | null } | null;
 }) {
   const [x2, setLocalX2] = useState(isX2);
   const [error, setError] = useState<string | null>(null);
@@ -25,9 +27,19 @@ export default function MyPickCard({
     });
   };
 
+  const atRisk = !!injury && !closed;
   return (
-    <div className="mx-3 mt-3 rounded-[var(--radius-card)] border border-[color:var(--color-emerald)]/40 bg-[color:var(--color-emerald)]/10 px-4 py-3">
-      <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--color-emerald)]">Ton pick de ce soir</div>
+    <div className={`mx-3 mt-3 rounded-[var(--radius-card)] border px-4 py-3 ${atRisk
+      ? "border-[color:var(--color-crimson)]/60 bg-[color:var(--color-crimson)]/10"
+      : "border-[color:var(--color-emerald)]/40 bg-[color:var(--color-emerald)]/10"}`}>
+      <div className={`text-[10px] font-bold uppercase tracking-[0.22em] ${atRisk ? "text-[color:var(--color-crimson)]" : "text-[color:var(--color-emerald)]"}`}>
+        Ton pick de ce soir{atRisk ? " · à remplacer" : ""}
+      </div>
+      {atRisk && injury && (
+        <p role="alert" className="mt-1 text-sm font-semibold text-[color:var(--color-crimson)]">
+          ⚠️ {injury.status}{injury.comment ? ` : ${injury.comment}` : ""}
+        </p>
+      )}
       <div className="flex items-center justify-between gap-3 mt-1">
         <Link href={`/player/${playerId}`} className="font-display text-2xl text-white tracking-wide truncate">
           {playerName} <span className="text-sm text-[color:var(--color-text-mute)]">{team}</span>

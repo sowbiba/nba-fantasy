@@ -61,7 +61,9 @@ export default async function DeckPage() {
           return (
             <DeckNight key={n.date} date={n.date} closingAt={n.closing_at} nGames={n.n_eligible_games}
               isPhantom={n.is_phantom} isToday={n.date === today} mode={n.mode}
-              pick={pick && pickPlayer ? { playerId: pickPlayer.id, name: pickPlayer.name, team: pickPlayer.team, injury: pickPlayer.injury_status, injuryReturn: pickPlayer.injury_return_date ?? null, isX2: pick.is_x2 } : null}
+              pick={pick && pickPlayer ? { playerId: pickPlayer.id, name: pickPlayer.name, team: pickPlayer.team, injury: pickPlayer.injury_status, injuryReturn: pickPlayer.injury_return_date ?? null,
+                lastInjury: pickPlayer.injury_last_status && pickPlayer.injury_last_seen ? { status: pickPlayer.injury_last_status, seen: pickPlayer.injury_last_seen } : null,
+                isX2: pick.is_x2 } : null}
               suggestion={s && sPlayer && sGame ? { playerId: sPlayer.id, name: sPlayer.name, team: sPlayer.team, gameId: sGame.id, projection: s.projection, explanation: s.explanation, isX2: s.is_x2,
                 reservedOn: picks.find((x) => x.player_id === sPlayer.id && x.date !== n.date)?.date ?? null } : null} />
           );

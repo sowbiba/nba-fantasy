@@ -107,7 +107,10 @@ async function getData() {
       const player = players.get(r.player_id);
       const game = games.find((g) => g.home_team === player?.team || g.away_team === player?.team);
       if (!player || !game || (player.injury_status && HARD_OUT_STATUSES.has(player.injury_status))) return null;
-      return { ...r, player, game };
+      // Badge « ton pick » d'après le pick réel, pas d'après le tag écrit à la
+      // dernière synchro : après un changement de joueur, l'ancien gardait le badge.
+      const tags = [...(r.tags || []).filter((t) => t !== "mon_pick"), ...(pick?.player_id === r.player_id ? ["mon_pick"] : [])];
+      return { ...r, tags, player, game };
     })
     .filter(Boolean) as RecommendationWithPlayer[];
 
@@ -208,7 +211,8 @@ export default async function TonightPage() {
 
       {pick && pickPlayer ? (
         <MyPickCard key={`${pick.id}-${pick.is_x2}`} date={deck} playerId={pickPlayer.id} playerName={pickPlayer.name} team={pickPlayer.team}
-                    isX2={pick.is_x2} x2Allowed={x2Allowed} closingAt={night?.closing_at ?? ""} standing={standing} />
+                    isX2={pick.is_x2} x2Allowed={x2Allowed} closingAt={night?.closing_at ?? ""} standing={standing}
+                    injury={pickPlayer.injury_status ? { status: pickPlayer.injury_status, comment: pickPlayer.injury_short_comment ?? null } : null} />
       ) : (
         !dataError && <NoPickBanner hasGamesTonight={state !== "no_games"} />
       )}

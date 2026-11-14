@@ -14,10 +14,15 @@ name: Daily TTFL sync
 # already flipped) or is simply the last of the 17h→23h winter window.
 on:
   schedule:
-    - cron: "0 5 * * *"      # 07:00 Paris (CEST)
-    - cron: "0 10 * * *"     # 12:00 Paris
-    - cron: "0 15 * * *"     # 17:00 Paris
-    - cron: "0 16-22 * * *"  # 18h→00h Paris (été) / 17h→23h Paris (hiver), toutes les heures
+    # Jamais à la minute 0 : c'est le créneau le plus chargé de GitHub, où les
+    # runs planifiés sont retardés de 1 à 3 h ou sautés (4 à 6 runs sur 10 par
+    # jour constatés jusqu'au 14/11/2026).
+    - cron: "23 5 * * *"        # ~07:20 Paris (CEST)
+    - cron: "23 10 * * *"       # ~12:20 Paris
+    - cron: "23 15 * * *"       # ~17:20 Paris
+    - cron: "37 16-22 * * *"    # soirée, toutes les heures
+    # GitHub n'est plus que le filet de sécurité : le PC (toujours allumé)
+    # lance daily_sync toutes les 15 min le soir (voir docs/operations.md).
   # Manual trigger so we can re-run after a series result lands or
   # debug from the Actions tab without waiting for tomorrow.
   workflow_dispatch:
