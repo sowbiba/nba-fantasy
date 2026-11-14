@@ -9,7 +9,7 @@ import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import MyPickCard from "@/components/MyPickCard";
 import { deckDate, frLongDate, parisTime } from "@/lib/date";
-import { HARD_OUT_STATUSES, homeState, pickStanding, topDefender, x2AllowedOn, x2Hint, x2HintText } from "@/lib/display";
+import { HARD_OUT_STATUSES, homeState, isClosed, pickStanding, topDefender, x2AllowedOn, x2Hint, x2HintText } from "@/lib/display";
 
 export const revalidate = 0;
 
@@ -214,7 +214,8 @@ export default async function TonightPage() {
                     isX2={pick.is_x2} x2Allowed={x2Allowed} closingAt={night?.closing_at ?? ""} standing={standing}
                     injury={pickPlayer.injury_status ? { status: pickPlayer.injury_status, comment: pickPlayer.injury_short_comment ?? null } : null} />
       ) : (
-        !dataError && <NoPickBanner hasGamesTonight={state !== "no_games"} />
+        // Soirée fermée (matinale du week-end) : plus rien à picker, la bannière n'a plus lieu d'être.
+        !dataError && !(night && isClosed(night.closing_at)) && <NoPickBanner hasGamesTonight={state !== "no_games"} />
       )}
 
       <SyncStatus sync={sync} />
