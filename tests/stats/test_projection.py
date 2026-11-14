@@ -15,7 +15,8 @@ def test_projection_domicile_defense_faible():
 
 def test_projection_exterieur_back_to_back():
     ctx = GameContext("BOS", is_home=False, rest_days=0, opp_factor=0.90)
-    assert project(PROFILE, ctx) == pytest.approx(51.0 * 0.90 * 0.98 * 0.96)
+    # Pas de pénalité de score en back-to-back : le risque de repos est dans P(joue).
+    assert project(PROFILE, ctx) == pytest.approx(51.0 * 0.90 * 0.98)
 
 
 def test_rest_days():

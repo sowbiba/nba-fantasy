@@ -67,19 +67,19 @@ def test_play_probability_statuts():
 def test_p_play_combine_statut_dnp_et_back_to_back():
     logs = [{"minutes": 34}, {"minutes": 33}, {"minutes": 35}]
     assert p_play(injury_status=None, recent_logs=logs, is_b2b_second=False, exp_minutes=34) == 1.0
-    assert p_play(injury_status="Questionable", recent_logs=logs, is_b2b_second=True, exp_minutes=34) == 0.55 * 0.93
+    assert p_play(injury_status="Questionable", recent_logs=logs, is_b2b_second=True, exp_minutes=34) == 0.55 * 0.89
 
 
 def test_p_play_back_to_back_sans_effet_pour_un_remplacant():
     logs = [{"minutes": 18}] * 3
-    assert p_play(injury_status=None, recent_logs=logs, is_b2b_second=True, exp_minutes=18) == 1.0
+    assert p_play(injury_status=None, recent_logs=logs, is_b2b_second=True, exp_minutes=18) == 0.955
 
 
 def test_future_p_play():
     assert future_p_play(injury_status=None, availability_rate=0.9, is_b2b_second=False, exp_minutes=30) == 0.9
     assert future_p_play(injury_status="Out For Season", availability_rate=0.9,
                          is_b2b_second=False, exp_minutes=30) == 0.0
-    assert future_p_play(injury_status=None, availability_rate=1.0, is_b2b_second=True, exp_minutes=36) == 0.93
+    assert future_p_play(injury_status=None, availability_rate=1.0, is_b2b_second=True, exp_minutes=36) == 0.89
 
 
 # --- Blessés signalés : aucun risque (préférence utilisateur 2026-11) -------
@@ -161,4 +161,19 @@ def test_tonight_p_play_quarantaine_sans_statut():
 def test_tonight_p_play_sain_garde_dnp_et_back_to_back():
     assert _tpp(None) == 1.0
     assert _tpp(None, logs=[{"minutes": 0}, {"minutes": 30}, {"minutes": 30}]) == 0.75
-    assert _tpp(None, b2b=True) == pytest.approx(0.93)
+    assert _tpp(None, b2b=True) == pytest.approx(0.89)
+
+
+def test_back_to_back_risque_de_repos_dans_p_joue():
+    """Le 2e soir, le risque est la mise au repos : plus le joueur pèse, plus
+    il est ménagé (40+ TTFL : 80,6 % rejouent). Paliers prudents pour les
+    titulaires : la décote totale d'avant (0,96 × 0,93), pas moins."""
+    def f(minutes, base):
+        return tonight_p_play(injury_status=None, recent_logs=[], is_b2b_second=True, exp_minutes=minutes, base=base)
+    assert f(36, 45) == 0.88
+    assert f(34, 37) == 0.89
+    assert f(27, 36) == 0.89      # star à moins de 30 min : ménagée quand même
+    assert f(32, 28) == 0.89
+    assert f(22, 18) == 0.955
+    assert tonight_p_play(injury_status=None, recent_logs=[], is_b2b_second=False, exp_minutes=36, base=45) == 1.0
+    assert future_p_play(injury_status=None, availability_rate=1.0, is_b2b_second=True, exp_minutes=36, base=45) == 0.88

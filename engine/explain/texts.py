@@ -30,8 +30,11 @@ def reco_texts(rec, rank: int, player_name: str) -> tuple[list[str], list[str], 
         pros.append(f"🎯 Défense adverse faible à son poste (+{delta} %)")
     elif delta <= -5:
         cons.append(f"🛡️ Défense adverse solide à son poste ({delta} %)")
+    if c.ctx.teammate_out and c.ctx.teammate_factor > 1.005:
+        pros.append(f"🚀 {c.ctx.teammate_out} absent : plus de ballons (+{round((c.ctx.teammate_factor - 1) * 100)} %)")
+        tags.append("coequipier_absent")
     if c.ctx.rest_days == 0:
-        cons.append("😴 2e soir d'un back-to-back")
+        cons.append("😴 2e soir d'un back-to-back : risque de mise au repos")
         tags.append("b2b")
     elif c.ctx.rest_days is not None and c.ctx.rest_days >= 2:
         pros.append(f"🔋 {c.ctx.rest_days} jours de repos")

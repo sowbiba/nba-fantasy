@@ -15,7 +15,12 @@ from engine.stats.profile import PlayerProfile
 
 HOME_FACTOR = 1.02
 AWAY_FACTOR = 0.98
-B2B_FACTOR = 0.96
+# 2e soir d'un back-to-back : AUCUN effet sur le score de ceux qui jouent
+# (5 saisons, 9 226 matchs : +0,1 ± 0,3 ; stars −0,3 ± 0,9 ; minutes
+# inchangées — data/box-scores/analyse_facteurs.py). Le risque réel est la
+# mise au repos, portée par P(joue) (availability_prob.B2B_REST_*), pas par
+# la projection : la pénalité de 4 % d'avant comptait ce risque deux fois.
+B2B_FACTOR = 1.0
 
 
 @dataclass(frozen=True)
@@ -25,6 +30,8 @@ class GameContext:
     rest_days: int | None
     opp_factor: float
     expected_margin: float | None = None   # écart attendu, du point de vue de l'équipe du joueur
+    teammate_factor: float = 1.0           # bonus « coéquipier majeur absent » (regular.TEAMMATE_OUT_*)
+    teammate_out: str | None = None        # nom du coéquipier absent, pour l'argumentaire
 
 
 def project(profile: PlayerProfile, ctx: GameContext, blowout: BlowoutModel | None = None) -> float:
@@ -33,7 +40,7 @@ def project(profile: PlayerProfile, ctx: GameContext, blowout: BlowoutModel | No
     projection est exactement celle d'avant L3a."""
     terrain = HOME_FACTOR if ctx.is_home else AWAY_FACTOR
     fatigue = B2B_FACTOR if ctx.rest_days == 0 else 1.0
-    value = profile.base * ctx.opp_factor * terrain * fatigue
+    value = profile.base * ctx.opp_factor * terrain * fatigue * ctx.teammate_factor
     if blowout is not None and ctx.expected_margin is not None:
         value *= factor(blowout, ctx.expected_margin, profile.exp_minutes >= STARTER_MINUTES)
     return value

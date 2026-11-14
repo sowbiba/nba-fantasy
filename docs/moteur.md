@@ -110,3 +110,14 @@ Aucun de ces paramètres n'a encore été calibré par backtest (lot L2) : ce so
 - **Aucun risque le soir même** : tout joueur au statut signalé chez ESPN (même « Probable ») est écarté des recos du soir, comme des soirées futures (`tonight_p_play`, `quarantined`).
 - **Période de sécurité après le retour** : quand ESPN retire un joueur de sa liste, son dernier statut daté reste en base (`injury_last_status`, `injury_last_seen`) et il reste écarté 7 jours.
 - **Absences sans trace** : stats.nba.com ne renvoie que les joueurs entrés en jeu. Les matchs joués par l'équipe actuelle du joueur sans lui sont reconstruits comme des absences (`absence_logs`), ce qui alimente le motif DNP du soir et le taux de présence.
+
+
+## Facteurs de contexte (14/11/2026, mesurés sur 5 saisons)
+
+Mesures et validation dans `data/box-scores/` (cache local, ignoré par git) : `analyse_facteurs.py`, `analyse_repos_b2b.py`, `validation_hors_echantillon.py`.
+
+- **Défense adverse : facteur d'équipe**, tous postes confondus (il était par poste, sans pouvoir prédictif). Hors échantillon sur 43 800 prédictions : ajustement prédit +1,7 / −1,6, écart réel +1,7 / −1,5 ; pente 1,03.
+- **N°1 de l'équipe absent** (statut Out, Suspended ou Out For Season) : +7 % pour ses coéquipiers, réduit au prorata des matchs récents déjà joués sans lui. Hors échantillon : +1,7 ± 0,3 sur 8 410 cas. Pas de bonus dans l'autre sens (n°2 absent → n°1 : 0,0 ± 0,8).
+- **Back-to-back** : plus de pénalité sur la projection (ceux qui jouent marquent autant : +0,1 ± 0,3 sur 9 226 matchs). Le risque est la mise au repos, portée par P(joue) : 0,88 pour un joueur à 40+ de projection, 0,89 pour un titulaire (30+ min) ou une star à 35+, 0,955 sinon. Paliers volontairement prudents pour les titulaires (mesure : 0,92 à 0,94).
+- **Sans effet mesuré**, donc absents du moteur : historique face à une franchise, match contre un ancien club, soirées de NBA Cup, rivalités, jours de repos, 3 matchs en 4 soirs, période de la saison, altitude.
+- **Le backtest de picks ne départage pas ces réglages** : sur 24 ou 64 soirées, un seul pick différent change toute la suite (cooldown) et la moyenne bouge de ±3 points d'une variante à l'autre. La précision par prédiction, sur des dizaines de milliers de matchs, est le bon critère.
