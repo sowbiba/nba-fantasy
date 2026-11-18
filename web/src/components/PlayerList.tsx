@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { RecommendationWithPlayer } from "@/types";
 import { isMyPick } from "@/lib/display";
+import { frDayMonth } from "@/lib/date";
 
 const tierVisual: Record<
   string,
@@ -97,6 +98,11 @@ export default function PlayerList({
                       </div>
                       <div className="text-[11px] text-[color:var(--color-text-mute)] truncate">
                         {player.team} {isHome ? "vs" : "@"} {opponent}
+                        {rec.reserved && (
+                          <span className="ml-1.5 text-[color:var(--color-gold-soft)] font-semibold">
+                            · réservé le {frDayMonth(rec.reserved.date)} {rec.reserved.home ? "vs" : "@"} {rec.reserved.opponent}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

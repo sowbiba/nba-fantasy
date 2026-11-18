@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { RecommendationWithPlayer } from "@/types";
 import { isMyPick, recMeta } from "@/lib/display";
+import { frDayMonth } from "@/lib/date";
 
 /**
  * Hero card for a Top-3 recommendation.
@@ -248,6 +249,11 @@ export default function RecommendationCard({
               <span>{tier.label}</span>
             </span>
 
+            {rec.reserved && (
+              <TagChip tone="bg-[color:var(--color-gold)]/15 text-[color:var(--color-gold-soft)] border border-[color:var(--color-gold)]/40">
+                RÉSERVÉ LE {frDayMonth(rec.reserved.date)} {rec.reserved.home ? "VS" : "@"} {rec.reserved.opponent}
+              </TagChip>
+            )}
             {rec.tags.includes("hot") && (
               <TagChip tone="bg-[color:var(--color-emerald)]/15 text-[color:var(--color-emerald)] border border-[color:var(--color-emerald)]/30">
                 EN FORME

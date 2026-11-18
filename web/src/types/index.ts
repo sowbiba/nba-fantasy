@@ -130,5 +130,7 @@ export interface RecommendationWithPlayer extends Recommendation {
   player: Player;
   game: Game;
   defender?: { name: string; share: number; per36: number | null; games: number } | null;
+  /** Réservation à venir de ce joueur (autre soirée que ce soir). */
+  reserved?: { date: string; opponent: string; home: boolean } | null;
 }
 
