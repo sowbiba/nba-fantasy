@@ -8,7 +8,7 @@ import RecommendationCard from "@/components/RecommendationCard";
 import PlayerList from "@/components/PlayerList";
 import RefreshButton from "@/components/RefreshButton";
 import MyPickCard from "@/components/MyPickCard";
-import { deckDate, frLongDate, parisTime } from "@/lib/date";
+import { addDays, deckDate, frLongDate, parisTime } from "@/lib/date";
 import { HARD_OUT_STATUSES, homeState, isClosed, pickStanding, topDefender, x2AllowedOn, x2Hint, x2HintText } from "@/lib/display";
 
 export const revalidate = 0;
@@ -74,13 +74,15 @@ async function getData() {
   const db = await ownerDb();
   const emptyList: { data: never[]; error: null } = { data: [], error: null };
   const emptySingle: { data: null; error: null } = { data: null, error: null };
-  const [nightRes, gamesRes, recsRes, pickRes, syncRes, planRes] = await Promise.all([
+  const [nightRes, gamesRes, recsRes, pickRes, syncRes, planRes, futureRes] = await Promise.all([
     supabase.from("nights").select("*").eq("date", deck).maybeSingle(),
     supabase.from("games").select("*").eq("date", deck).order("tip_off"),
     db ? db.from("recommendations").select("*").eq("date", deck).order("rank") : emptyList,
     db ? db.from("picks").select("*").eq("date", deck).maybeSingle() : emptySingle,
     supabase.from("sync_log").select("*").eq("job", "daily_sync").order("started_at", { ascending: false }).limit(1),
     db ? db.from("plan_latest").select("night, player_id, is_x2").eq("night", deck).maybeSingle() : emptySingle,
+    // Réservations à venir (30 j, comme le Deck) : badge « réservé le … vs … » sur les cartes.
+    db ? db.from("picks").select("date, player_id, game_id").gt("date", deck).lte("date", addDays(deck, 30)).order("date") : emptyList,
   ]);
   const night = (nightRes.data as Night | null) ?? null;
   const plan = (planRes.data as PlanRow | null) ?? null;
@@ -93,10 +95,13 @@ async function getData() {
   const ids = [...new Set([...recs.map((r) => r.player_id), ...(pick ? [pick.player_id] : []), ...(plan ? [plan.player_id] : [])])];
   // game_predictions (spec L3a §3) : ids des matchs connus seulement après gamesRes, donc
   // requête séparée ici, comme playersRes ci-dessous.
-  const [playersRes, predsRes] = await Promise.all([
+  const future = (futureRes.data || []) as { date: string; player_id: number; game_id: string }[];
+  const [playersRes, predsRes, futureGamesRes] = await Promise.all([
     ids.length ? supabase.from("players").select("*").in("id", ids) : Promise.resolve({ data: [], error: null }),
     db && games.length ? db.from("game_predictions").select("game_id, home_win_prob").in("game_id", games.map((g) => g.id)) : Promise.resolve({ data: [], error: null }),
+    future.length ? supabase.from("games").select("id, home_team, away_team").in("id", future.map((f) => f.game_id)) : Promise.resolve({ data: [], error: null }),
   ]);
+  const futureGames = new Map(((futureGamesRes.data || []) as { id: string; home_team: string; away_team: string }[]).map((g) => [g.id, g]));
   const players = new Map(((playersRes.data || []) as Player[]).map((p) => [p.id, p]));
   const predictions = Object.fromEntries(
     ((predsRes.data || []) as { game_id: string; home_win_prob: number }[]).map((p) => [p.game_id, Number(p.home_win_prob)]),
@@ -136,11 +141,18 @@ async function getData() {
     }
     defenders = new Map([...byKey].map(([k, rows]) => [k, topDefender(rows)]));
   }
+  const reservedOf = (r: RecommendationWithPlayer) => {
+    const f = future.find((x) => x.player_id === r.player_id);
+    if (!f) return null;
+    const g = futureGames.get(f.game_id);
+    const home = g ? g.home_team === r.player.team : true;
+    return { date: f.date, opponent: g ? (home ? g.away_team : g.home_team) : "?", home };
+  };
   const recsWithPlayers = recsWithPlayersBase.map((r) => ({
-    ...r, defender: defenders.get(`${r.player_id}:${opponentOf(r)}`) ?? null,
+    ...r, defender: defenders.get(`${r.player_id}:${opponentOf(r)}`) ?? null, reserved: reservedOf(r),
   }));
 
-  const dataError = [nightRes, gamesRes, recsRes, pickRes, playersRes, planRes].some((r) => r.error) || !!matchupError;
+  const dataError = [nightRes, gamesRes, recsRes, pickRes, playersRes, planRes, futureRes, futureGamesRes].some((r) => r.error) || !!matchupError;
 
   return {
     deck, night, games, recsWithPlayers, pick, dataError, plan, predictions,
