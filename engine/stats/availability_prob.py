@@ -47,6 +47,23 @@ B2B_REST_MIN_MINUTES = 30.0
 B2B_REST_FACTOR = B2B_REST_STARTER   # nom historique
 
 
+# Repos (« Rest », cas Tatum 22/11/2026) : ESPN le liste comme un blessé
+# (Day-To-Day ou Out, détail « Rest (Other) »), mais ce n'est pas une
+# blessure. Le joueur reste écarté le soir où il est signalé ; aucune
+# période de sécurité ensuite. `daily_sync` note REST_STATUS dans
+# `injury_last_status` pour s'en souvenir quand ESPN le retire de sa liste.
+REST_STATUS = "Rest"
+
+
+def is_rest(detail: str | None, short_comment: str | None) -> bool:
+    """Signalement ESPN pour repos : détail « Rest … » ou « (rest) » dans le
+    commentaire."""
+    d = (detail or "").strip().lower()
+    if d == "rest" or d.startswith("rest "):
+        return True
+    return "(rest)" in (short_comment or "").lower()
+
+
 def play_probability(status: str | None) -> float:
     if not status:
         return 1.0

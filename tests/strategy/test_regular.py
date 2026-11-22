@@ -567,3 +567,33 @@ def test_bonus_futur_seulement_avant_la_date_de_retour():
         return decide(inp).plan[later].cell
     assert plan_cell(star_back_soon).ctx.teammate_factor == 1.0      # revenu d'ici là (lui reste en quarantaine)
     assert plan_cell(star_out_long).ctx.teammate_factor == pytest.approx(1.07)
+
+
+# --- Repos (« Rest ») : pas de période de sécurité (2026-11-22) --------------
+
+def _future_cell(d, pid):
+    return [e.cell for e in d.plan.values() if e.cell.player_id == pid]
+
+
+def test_repos_signale_ecarte_ce_soir_mais_pas_les_soirs_suivants():
+    """Signalé pour repos ce soir : écarté ce soir, planifiable dès J+3
+    (un blessé, lui, resterait écarté 7 jours après sa date de retour)."""
+    d3 = TODAY + timedelta(days=3)
+    def run(detail):
+        pl = {**PLAYERS[1], "injury_status": "Day-To-Day", "injury_detail": detail,
+              "injury_return_date": TODAY.isoformat()}
+        return decide(_inputs(players={**PLAYERS, 1: pl},
+                              nights=[_night(TODAY), _night(d3)],
+                              games=[_game("g1", TODAY, "DEN", "LAL"), _game("g2", d3, "DEN", "WAS")]))
+    rest = run("Rest (Other)")
+    assert 1 not in [r.cell.player_id for r in rest.recommendations]
+    assert rest.plan[d3].cell.player_id == 1 and rest.plan[d3].cell.p_play > 0
+    injured = run("Back (Torso)")
+    assert injured.plan.get(d3) is None or injured.plan[d3].cell.player_id != 1
+
+
+def test_repos_leve_par_espn_pas_de_quarantaine():
+    back = {**PLAYERS[1], "injury_status": None, "injury_last_status": "Rest",
+            "injury_last_seen": (TODAY - timedelta(days=1)).isoformat()}
+    d = decide(_inputs(players={**PLAYERS, 1: back}))
+    assert 1 in [r.cell.player_id for r in d.recommendations]

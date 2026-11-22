@@ -15,7 +15,8 @@ from datetime import date, timedelta
 from engine.rules.availability import COOLDOWN_DAYS, PickRow, SecondChance, SeriesRow, is_available
 from engine.rules.calendar import Night
 from engine.rules.game_types import is_eligible
-from engine.stats.availability_prob import HARD_OUT_STATUSES, future_p_play, parse_return_date, tonight_p_play
+from engine.stats.availability_prob import (HARD_OUT_STATUSES, REST_STATUS, future_p_play, is_rest,
+                                           parse_return_date, tonight_p_play)
 from engine.stats.blowout import BlowoutModel
 from engine.stats.profile import PlayerProfile
 from engine.stats.projection import GameContext, project, rest_days
@@ -260,6 +261,13 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
         # dernier jour où il était signalé (`injury_last_seen`).
         return_date = parse_return_date(row.get("injury_return_date") if status
                                         else row.get("injury_last_seen"))
+        # Repos : écarté le soir même s'il est signalé, aucune période de
+        # sécurité (ni avant ni après la levée du statut).
+        if (is_rest(row.get("injury_detail"), row.get("injury_short_comment")) if status
+                else row.get("injury_last_status") == REST_STATUS):
+            return_date = None
+            if k > 0:
+                status = None
         b2b = rd == 0
         if k == 0:
             p = tonight_p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),

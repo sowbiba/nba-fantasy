@@ -177,3 +177,20 @@ def test_back_to_back_risque_de_repos_dans_p_joue():
     assert f(22, 18) == 0.955
     assert tonight_p_play(injury_status=None, recent_logs=[], is_b2b_second=False, exp_minutes=36, base=45) == 1.0
     assert future_p_play(injury_status=None, availability_rate=1.0, is_b2b_second=True, exp_minutes=36, base=45) == 0.88
+
+
+# --- Repos (« Rest ») : pas une blessure (2026-11-22, cas Tatum) -------------
+
+from engine.stats.availability_prob import REST_STATUS, is_rest
+
+
+def test_is_rest_detail_ou_commentaire_espn():
+    assert is_rest("Rest (Other)", "")
+    assert is_rest("", "Tatum (rest) has been ruled out for Saturday's game against the Kings.")
+    assert not is_rest("Back (Torso)", "Gilgeous-Alexander (back) is day-to-day.")
+    assert not is_rest(None, None)
+    assert not is_rest("Restricted (Other)", "")
+
+
+def test_rest_constante():
+    assert REST_STATUS == "Rest"
