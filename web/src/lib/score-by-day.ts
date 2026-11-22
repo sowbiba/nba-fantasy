@@ -1,10 +1,17 @@
-// Page autonome « Scores TTFL par soirée » 2025-26 (/score-by-day-25-26) :
-// helpers purs (paramètres, navigation entre soirées, lignes du tableau).
+// Pages autonomes « Scores TTFL par soirée » (/score-by-day-25-26 et
+// /score-by-day-26-27, une par saison) : helpers purs (paramètres, navigation entre soirées, lignes du tableau).
 // Même périmètre que le jeu : matchs regular, cup_final et playoffs
 // (engine/rules/game_types.py ELIGIBLE_TYPES) ; seuls les joueurs entrés en
 // jeu (minutes > 0).
 
-export const DAY_SEASON = "2025-26";
+export const DAY_SEASONS = ["2025-26", "2026-27"] as const;
+export type DaySeason = (typeof DAY_SEASONS)[number];
+
+/** « 2026-27 » → « /score-by-day-26-27 ». */
+export function dayBasePath(season: DaySeason): string {
+  return `/score-by-day-${season.slice(2)}`;
+}
+
 export const DAY_GAME_TYPES = ["regular", "cup_final", "playoffs"] as const;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;

@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { distinctNights, neighbors, parseDayParams, toDayRows, type DayLogInput } from "./score-by-day";
+import { dayBasePath, distinctNights, neighbors, parseDayParams, toDayRows, type DayLogInput } from "./score-by-day";
 
 const NIGHTS = ["2025-10-21", "2025-10-22", "2025-10-24"];
 const TEAMS = ["BOS", "LAL"];
+
+describe("dayBasePath", () => {
+  it("une route par saison", () => {
+    expect(dayBasePath("2025-26")).toBe("/score-by-day-25-26");
+    expect(dayBasePath("2026-27")).toBe("/score-by-day-26-27");
+  });
+});
 
 describe("parseDayParams", () => {
   it("date connue et équipe connue (casse ignorée)", () => {

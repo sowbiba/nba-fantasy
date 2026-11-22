@@ -1,7 +1,7 @@
 import "server-only";
 
 import { supabase } from "@/lib/supabase/public";
-import { DAY_GAME_TYPES, DAY_SEASON, distinctNights, toDayRows, type DayLogInput, type DayRow } from "@/lib/score-by-day";
+import { DAY_GAME_TYPES, distinctNights, toDayRows, type DayLogInput, type DayRow, type DaySeason } from "@/lib/score-by-day";
 
 // Lecture des tables publiques `games`, `game_logs` et `players` avec le
 // client anon uniquement (voir no-private-leak.test.ts). Toute erreur rend
@@ -10,15 +10,15 @@ import { DAY_GAME_TYPES, DAY_SEASON, distinctNights, toDayRows, type DayLogInput
 
 const PAGE = 1000; // max-rows PostgREST
 
-/** Soirées de la saison 2025-26 ayant au moins un match terminé du jeu,
+/** Soirées de la saison ayant au moins un match terminé du jeu,
  *  par ordre croissant. ~1 400 matchs : lus par pages de 1000. */
-export async function fetchNights(): Promise<{ nights: string[]; available: boolean }> {
+export async function fetchNights(season: DaySeason): Promise<{ nights: string[]; available: boolean }> {
   const dates: string[] = [];
   for (let from = 0; from < 10 * PAGE; from += PAGE) {
     const { data, error } = await supabase
       .from("games")
       .select("date")
-      .eq("season", DAY_SEASON)
+      .eq("season", season)
       .eq("status", "final")
       .in("game_type", [...DAY_GAME_TYPES])
       .order("date")
@@ -36,14 +36,14 @@ export async function fetchNights(): Promise<{ nights: string[]; available: bool
 
 /** Joueurs entrés en jeu lors d'une soirée (éventuellement d'une équipe),
  *  avec leurs stats et leur score TTFL. */
-export async function fetchDay(date: string, team: string | null): Promise<{ rows: DayRow[]; available: boolean }> {
+export async function fetchDay(season: DaySeason, date: string, team: string | null): Promise<{ rows: DayRow[]; available: boolean }> {
   let query = supabase
     .from("game_logs")
     .select(
       "player_id, team, is_home, minutes, pts, reb, ast, stl, blk, tov, fgm, fga, tpm, tpa, ftm, fta, ttfl_score, players(name), games(home_team, away_team, game_type)",
       { count: "exact" },
     )
-    .eq("season", DAY_SEASON)
+    .eq("season", season)
     .eq("date", date)
     .gt("minutes", 0);
   if (team) query = query.eq("team", team);
