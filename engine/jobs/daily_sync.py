@@ -19,6 +19,7 @@ from engine.rules.availability import PickRow, SecondChance
 from engine.rules.calendar import PARIS, build_nights
 from engine.rules.game_types import is_eligible, previous_season, season_for_date
 from engine.stats.aggregates import player_aggregates
+from engine.stats.availability_prob import REST_STATUS, is_rest
 from engine.stats.elo import PRODUCTION_ELO, EloParams, game_season, is_countable, predict, ratings_before
 from engine.stats.profile import GameLog
 from engine.strategy.inputs import absent_shares, build_decision_inputs
@@ -177,7 +178,8 @@ def _apply_injuries(repo, injuries: dict[str, list[dict]], today: date) -> None:
             rows.append({**{k: p[k] for k in IDENTITY}, "injury_status": inj["status"],
                          "injury_detail": inj.get("detail"), "injury_short_comment": inj.get("short_comment"),
                          "injury_return_date": inj.get("return_date"), "injury_updated_at": inj.get("updated_at"),
-                         "injury_last_status": inj["status"], "injury_last_seen": today.isoformat()})
+                         "injury_last_status": REST_STATUS if is_rest(inj.get("detail"), inj.get("short_comment"))
+                         else inj["status"], "injury_last_seen": today.isoformat()})
         elif p.get("injury_status"):
             rows.append({**{k: p[k] for k in IDENTITY}, "injury_status": None, "injury_detail": None,
                          "injury_short_comment": None, "injury_return_date": None,

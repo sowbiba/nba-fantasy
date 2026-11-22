@@ -417,3 +417,19 @@ def test_daily_sync_pas_de_x2_si_le_mois_est_deja_servi():
     repo = _base_repo(picks=picks)
     run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
     assert repo.plan and not any(r["is_x2"] for r in repo.plan)
+
+
+def test_daily_sync_repos_note_rest_dans_la_trace():
+    """Un repos (« Rest ») est noté comme tel : une fois levé par ESPN, il
+    ne déclenche pas la période de sécurité des blessés."""
+    repo = _base_repo()
+    injuries = {"LAL": [{"name": "Joueur 2", "status": "Day-To-Day", "detail": "Rest (Other)", "return_date": None,
+                         "short_comment": "Joueur 2 (rest) is out tonight.", "updated_at": ""}]}
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: injuries, TODAY, NOW)
+    assert repo.players[2]["injury_status"] == "Day-To-Day"
+    assert repo.players[2]["injury_last_status"] == "Rest"
+    other = {"DEN": [{"name": "Inconnu", "status": "Out", "detail": "", "return_date": None,
+                      "short_comment": "", "updated_at": ""}]}
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: other, TODAY, NOW)
+    assert repo.players[2]["injury_status"] is None
+    assert repo.players[2]["injury_last_status"] == "Rest"
