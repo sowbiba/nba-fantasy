@@ -25,7 +25,9 @@ HARD_OUT_STATUSES = frozenset({"Out", "Doubtful", "Out For Season", "Suspended"}
 # ne laissent pas de log). Choix utilisateur « aucun risque » : tout joueur
 # au statut signalé est écarté des soirées futures jusqu'à INJURY_SAFETY_DAYS
 # jours après sa date de retour ESPN ; sans date, sur les INJURY_SAFETY_DAYS
-# premiers jours.
+# premiers jours. Depuis le 24/11/2026, cette période après le retour est
+# levée dès que le joueur a rejoué avec des minutes normales
+# (regular.RETURN_MIN_MINUTES_SHARE).
 INJURY_SAFETY_DAYS = 7
 
 # 2e soir d'un back-to-back : le risque est la mise au repos, pas le score

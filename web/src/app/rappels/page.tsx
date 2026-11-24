@@ -14,11 +14,12 @@ export default async function RappelsPage() {
         <span className="flame-text">RAPPELS</span>
       </h1>
       <p className="text-sm text-[color:var(--color-text-soft)] mt-3">
-        Deux rappels par notification, si activés :
+        Rappels par notification, si activés :
       </p>
       <ul className="text-sm text-[color:var(--color-text-soft)] mt-2 list-disc pl-5 space-y-1">
         <li>Oubli de pick : 2 h puis 30 min avant la fermeture de la soirée.</li>
-        <li>Blessure ou indisponibilité annoncée pour le joueur pické.</li>
+        <li>Deck des 7 prochains jours : un joueur pické est signalé blessé, avec le remplaçant proposé par le moteur.</li>
+        <li>Deck des 7 prochains jours : le moteur propose un autre joueur (plus de 3 points d&apos;écart).</li>
       </ul>
 
       <div className="mt-6">

@@ -221,7 +221,13 @@ Sans `TEST_DATABASE_URL`, ces tests sont ignorés. En CI, un service Postgres le
 
 ## Rappels (Web Push + Telegram)
 
-Deux rappels par soirée si activés : oubli de pick (−2 h puis −30 min avant `closing_at`) et alerte blessure/indisponibilité du joueur pické. Web Push en priorité, Telegram en secours si `notifyAll` ne délivre rien.
+Rappel d'oubli de pick (−2 h puis −30 min avant `closing_at`). Web Push en priorité, Telegram en secours si `notifyAll` ne délivre rien.
+
+**Vérification du deck sur 7 jours** (depuis le 24/11/2026, `web/src/lib/deck-entries.ts` + `deckAlerts` dans `web/src/lib/reminders.ts`) : à chaque appel de la route (toutes les 15 min), chaque pick des 7 prochaines soirées est comparé à la proposition du moteur. Le soir même, c'est la reco n°1, si elle dépasse le pick de plus de 3 points. Les soirs suivants, c'est le dernier `plan`, qui applique déjà la marge de 3 points aux réservations. Deux alertes possibles :
+- `deck_injury` : le joueur pické est signalé, quel que soit son statut (même Probable), avec la proposition du moteur ;
+- `deck_change` : le moteur propose un autre joueur.
+
+Chaque alerte n'est envoyée qu'une fois par changement (`reminders_sent`, clé `night|kind|key`). Rien n'est envoyé entre 00:00 et 07:00. Un échec de cette vérification est journalisé sans faire échouer les rappels du soir.
 
 **Variables d'environnement** (Vercel, jamais commitées) :
 

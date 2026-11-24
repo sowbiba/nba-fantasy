@@ -86,7 +86,7 @@ def build_decision_inputs(
 
     team_leaders, played_with = teammate_context(current_by_player, players, profiles)
 
-    recent_logs = {pid: [{"minutes": l.minutes}
+    recent_logs = {pid: [{"minutes": l.minutes, "date": l.date}
                         for l in sorted(pid_logs, key=lambda l: l.date, reverse=True)[:RECENT_LOGS_WINDOW]]
                   for pid, pid_logs in current_by_player.items()}
 
