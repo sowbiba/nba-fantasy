@@ -1,11 +1,10 @@
-import { HARD_OUT_STATUSES } from "@/lib/display";
-import { parisTime } from "@/lib/date";
+import { frDayMonth, parisTime } from "@/lib/date";
 
-export type Reminder = { kind: "no_pick_2h" | "no_pick_30m" | "injury"; key: string; title: string; body: string };
+export type Reminder = { kind: "no_pick_2h" | "no_pick_30m"; key: string; title: string; body: string };
 
 const H2 = 2 * 60 * 60 * 1000;
 const M30 = 30 * 60 * 1000;
-const INJURY_ALERT_START_MIN = 7 * 60; // 07:00 Paris (M3, revue finale)
+const INJURY_ALERT_START_MIN = 7 * 60; // 07:00 Paris (M3, revue finale) : pas d'alerte deck la nuit
 
 /** Minutes écoulées depuis 00:00 heure de Paris (DST-safe, via Intl). */
 function parisMinutesOfDay(d: Date): number {
@@ -35,12 +34,51 @@ export function dueReminders(input: {
     if (kind && !sent.has(`${kind}|`)) {
       out.push({ kind, key: "", title: "Pas de pick ce soir", body: `Le deck ferme à ${at}.` });
     }
-  } else if (pick.injuryStatus && HARD_OUT_STATUSES.has(pick.injuryStatus) && parisMinutesOfDay(now) >= INJURY_ALERT_START_MIN) {
-    const key = `${pick.playerId}:${pick.injuryStatus}`;
-    if (!sent.has(`injury|${key}`)) {
-      out.push({ kind: "injury", key, title: `${pick.name} : ${pick.injuryStatus}`,
-                 body: `Ton pick de ce soir est ${pick.injuryStatus}. Change avant ${at}.` });
+  }
+  // L'alerte blessure du pick du soir est faite par deckAlerts (tout statut,
+  // sur 7 jours, avec la proposition du moteur).
+  return out;
+}
+
+/** Vérification du deck sur 7 jours (24/11/2026) : à chaque passage, chaque
+ *  pick du deck est comparé à la proposition du moteur (dernier plan, ou
+ *  reco n°1 le soir même). Alerte si le joueur est signalé blessé, ou si le
+ *  moteur propose quelqu'un d'autre (il ne le fait qu'au-delà de sa marge de
+ *  3 points). Une alerte par changement (clé dédupliquée par soirée). */
+const fr1 = (x: number) => x.toFixed(1).replace(".", ",");
+
+export type DeckEntry = {
+  night: string;
+  closingAt: string;
+  pick: { playerId: number; name: string; injuryStatus: string | null } | null;
+  proposal: { playerId: number; name: string; expected: number } | null;
+};
+
+export type DeckAlert = { kind: "deck_injury" | "deck_change"; night: string; key: string; title: string; body: string };
+
+export function deckAlerts(input: { now: Date; entries: DeckEntry[]; sent: Set<string> }): DeckAlert[] {
+  const { now, entries, sent } = input;
+  if (parisMinutesOfDay(now) < INJURY_ALERT_START_MIN) return [];
+  const out: DeckAlert[] = [];
+  for (const e of entries) {
+    if (!e.pick || now.getTime() >= new Date(e.closingAt).getTime()) continue;
+    const day = frDayMonth(e.night);
+    const p = e.pick;
+    const other = e.proposal && e.proposal.playerId !== p.playerId ? e.proposal : null;
+    const proposalText = other
+      ? `Le moteur propose ${other.name} (≈ ${fr1(other.expected)}).`
+      : "Le moteur le garde pour l'instant.";
+    let alert: DeckAlert | null = null;
+    if (p.injuryStatus) {
+      alert = { kind: "deck_injury", night: e.night, key: `${p.playerId}:${p.injuryStatus}`,
+                title: `Deck ${day} : ${p.name} (${p.injuryStatus})`,
+                body: `${proposalText} Le deck ferme à ${parisTime(e.closingAt)} le ${day}.` };
+    } else if (other) {
+      alert = { kind: "deck_change", night: e.night, key: `${p.playerId}>${other.playerId}`,
+                title: `Deck ${day} : changement proposé`,
+                body: `Le moteur propose ${other.name} (≈ ${fr1(other.expected)}) à la place de ${p.name}.` };
     }
+    if (alert && !sent.has(`${alert.night}|${alert.kind}|${alert.key}`)) out.push(alert);
   }
   return out;
 }

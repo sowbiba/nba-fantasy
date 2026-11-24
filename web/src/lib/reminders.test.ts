@@ -28,36 +28,70 @@ describe("dueReminders", () => {
     const pick = { playerId: 7, name: "Jokic", injuryStatus: null };
     expect(dueReminders({ now: at("2026-10-21T21:35:00Z"), night, pick, sent: new Set() })).toEqual([]);
   });
-  it("alerte blessure à tout moment avant la fermeture, une fois par statut", () => {
-    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Out" };
-    const r = dueReminders({ now: at("2026-10-21T10:00:00Z"), night, pick, sent: new Set() });
-    expect(r).toHaveLength(1);
-    expect(r[0]).toMatchObject({ kind: "injury", key: "7:Out" });
-    expect(r[0].body).toContain("00:00");
-    expect(dueReminders({ now: at("2026-10-21T11:00:00Z"), night, pick, sent: new Set(["injury|7:Out"]) })).toEqual([]);
-  });
-  it("Questionable ne déclenche rien", () => {
-    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Questionable" };
-    expect(dueReminders({ now: at("2026-10-21T10:00:00Z"), night, pick, sent: new Set() })).toEqual([]);
+});
+
+// --- Vérification du deck sur 7 jours (24/11/2026) ---------------------------
+import { deckAlerts, type DeckEntry } from "./reminders";
+
+describe("deckAlerts", () => {
+  const now = at("2026-11-24T10:00:00Z"); // 11:00 Paris
+  const entry = (over: Partial<DeckEntry> = {}): DeckEntry => ({
+    night: "2026-11-27", closingAt: "2026-11-27T23:00:00Z",
+    pick: { playerId: 1, name: "Wembanyama", injuryStatus: null },
+    proposal: { playerId: 1, name: "Wembanyama", expected: 45 },
+    ...over,
   });
 
-  // M3 (revue finale) : pas d'alerte blessure entre 00:00 et 07:00 Paris.
-  it("pas d'alerte blessure à 06:59 Paris (CEST, UTC+2)", () => {
-    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Out" };
-    expect(dueReminders({ now: at("2026-10-21T04:59:00Z"), night, pick, sent: new Set() })).toEqual([]);
+  it("deck conforme au moteur, joueur sain : rien", () => {
+    expect(deckAlerts({ now, entries: [entry()], sent: new Set() })).toEqual([]);
   });
-  it("alerte blessure dès 07:00 Paris (CEST, UTC+2)", () => {
-    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Out" };
-    expect(kinds(dueReminders({ now: at("2026-10-21T05:00:00Z"), night, pick, sent: new Set() }))).toEqual(["injury"]);
+
+  it("pick signalé blessé : alerte avec la proposition du moteur", () => {
+    const r = deckAlerts({ now, sent: new Set(), entries: [entry({
+      pick: { playerId: 1, name: "Wembanyama", injuryStatus: "Day-To-Day" },
+      proposal: { playerId: 2, name: "McDaniels", expected: 29.6 },
+    })] });
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ kind: "deck_injury", night: "2026-11-27", key: "1:Day-To-Day" });
+    expect(r[0].title).toContain("27/11");
+    expect(r[0].title).toContain("Wembanyama");
+    expect(r[0].body).toContain("McDaniels");
+    expect(r[0].body).toContain("29,6");
   });
-  it("pas d'alerte blessure à 06:59 Paris (CET, UTC+1)", () => {
-    const winterNight = { date: "2026-12-15", closing_at: "2026-12-15T23:00:00Z" }; // 00:00 Paris le 16
-    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Out" };
-    expect(dueReminders({ now: at("2026-12-15T05:59:00Z"), night: winterNight, pick, sent: new Set() })).toEqual([]);
+
+  it("pick signalé mais gardé par le moteur : alerte sans remplaçant", () => {
+    const r = deckAlerts({ now, sent: new Set(), entries: [entry({
+      pick: { playerId: 1, name: "Wembanyama", injuryStatus: "Probable" },
+    })] });
+    expect(r).toHaveLength(1);
+    expect(r[0].body).toContain("garde");
   });
-  it("alerte blessure dès 07:00 Paris (CET, UTC+1)", () => {
-    const winterNight = { date: "2026-12-15", closing_at: "2026-12-15T23:00:00Z" };
-    const pick = { playerId: 7, name: "Jokic", injuryStatus: "Out" };
-    expect(kinds(dueReminders({ now: at("2026-12-15T06:00:00Z"), night: winterNight, pick, sent: new Set() }))).toEqual(["injury"]);
+
+  it("joueur sain mais le moteur propose un autre joueur : alerte de changement", () => {
+    const r = deckAlerts({ now, sent: new Set(), entries: [entry({
+      proposal: { playerId: 3, name: "SGA", expected: 45.7 },
+    })] });
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ kind: "deck_change", key: "1>3" });
+    expect(r[0].body).toContain("SGA");
+  });
+
+  it("une seule fois par changement", () => {
+    const e = entry({ proposal: { playerId: 3, name: "SGA", expected: 45.7 } });
+    expect(deckAlerts({ now, entries: [e], sent: new Set(["2026-11-27|deck_change|1>3"]) })).toEqual([]);
+  });
+
+  it("pas de pick sur une soirée : rien (le rappel d'oubli s'en charge le soir même)", () => {
+    expect(deckAlerts({ now, sent: new Set(), entries: [entry({ pick: null })] })).toEqual([]);
+  });
+
+  it("rien entre 00:00 et 07:00 Paris", () => {
+    const e = entry({ proposal: { playerId: 3, name: "SGA", expected: 45.7 } });
+    expect(deckAlerts({ now: at("2026-11-24T05:30:00Z"), entries: [e], sent: new Set() })).toEqual([]);
+  });
+
+  it("soirée déjà fermée : rien", () => {
+    const e = entry({ closingAt: "2026-11-24T09:00:00Z", proposal: { playerId: 3, name: "SGA", expected: 45.7 } });
+    expect(deckAlerts({ now, entries: [e], sent: new Set() })).toEqual([]);
   });
 });

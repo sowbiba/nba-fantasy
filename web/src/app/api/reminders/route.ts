@@ -3,7 +3,9 @@ import { NextRequest } from "next/server";
 import { adminClient } from "@/lib/supabase/admin";
 import { notifyAll } from "@/lib/notify";
 import { deckDate } from "@/lib/date";
-import { dueReminders } from "@/lib/reminders";
+import { deckAlerts, dueReminders } from "@/lib/reminders";
+import { addDays } from "@/lib/date";
+import { DECK_CHECK_DAYS, loadDeckEntries } from "@/lib/deck-entries";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,61 +62,77 @@ async function handle(req: NextRequest): Promise<Response> {
     return Response.json({ error: "nights" }, { status: 500 });
   }
 
-  if (!night) return Response.json({ sent: 0 });
-
-  const { data: pickRow, error: pickErr } = await db
-    .from("picks")
-    .select("player_id, players(name, injury_status)")
-    .eq("date", date)
-    .maybeSingle();
-
-  if (pickErr) {
-    console.error("Échec de la requête picks :", pickErr.message ?? pickErr);
-    return Response.json({ error: "picks" }, { status: 500 });
-  }
-
-  const pick = pickRow
-    ? (() => {
-        const row = pickRow as unknown as PickRow;
-        const player = playerJoin(row.players);
-        // Un pick existe même si la jointure players échoue (données
-        // incohérentes) : ne pas déclencher un faux rappel « pas de pick ».
-        return { playerId: row.player_id, name: player?.name ?? "?", injuryStatus: player?.injury_status ?? null };
-      })()
-    : null;
-
-  const { data: sentRows } = await db.from("reminders_sent").select("kind, key").eq("night", date);
-  const sent = new Set((sentRows ?? []).map((r) => `${r.kind}|${r.key}`));
-
   const now = new Date();
-  const reminders = dueReminders({ now, night, pick, sent });
-  // M4 (revue finale) : TTL = temps restant avant la fermeture — passé ce
-  // délai le rappel n'a plus de sens (ne pas laisser web-push le livrer à
-  // un téléphone qui revient en ligne le lendemain).
-  const ttlSeconds = Math.max(1, Math.round((new Date(night.closing_at).getTime() - now.getTime()) / 1000));
-
   let sentCount = 0;
-  for (const r of reminders) {
-    const { error } = await db.from("reminders_sent").insert({ night: date, kind: r.kind, key: r.key });
+
+  /** Réserve la clé (une seule alerte par changement), envoie, libère la
+   *  réservation si rien n'a été délivré pour retenter au prochain run. */
+  async function deliver(n: string, kind: string, key: string, title: string, body: string, closingAt: string) {
+    const { error } = await db.from("reminders_sent").insert({ night: n, kind, key });
     if (error) {
-      if ((error as { code?: string }).code === "23505") continue; // déjà envoyé par un run concurrent
+      if ((error as { code?: string }).code === "23505") return; // déjà envoyé par un run concurrent
       console.error("Échec de la réservation du rappel :", error.message ?? error);
-      continue;
+      return;
     }
+    // M4 (revue finale) : TTL = temps restant avant la fermeture de la soirée.
+    const ttlSeconds = Math.max(1, Math.round((new Date(closingAt).getTime() - now.getTime()) / 1000));
     let delivered = false;
     try {
-      const result = await notifyAll({ title: r.title, body: r.body, url: "/", ttlSeconds });
+      const result = await notifyAll({ title, body, url: "/", ttlSeconds });
       delivered = result.push > 0 || result.telegram;
     } catch (e) {
       console.error("Échec de notifyAll :", e instanceof Error ? e.message : e);
     }
     if (!delivered) {
-      // Rien n'a été délivré (ou notifyAll a levé) : on libère la réservation
-      // pour retenter au prochain run (dans les 15 min).
-      await db.from("reminders_sent").delete().eq("night", date).eq("kind", r.kind).eq("key", r.key);
-      continue;
+      await db.from("reminders_sent").delete().eq("night", n).eq("kind", kind).eq("key", key);
+      return;
     }
     sentCount += 1;
+  }
+
+  if (night) {
+    const { data: pickRow, error: pickErr } = await db
+      .from("picks")
+      .select("player_id, players(name, injury_status)")
+      .eq("date", date)
+      .maybeSingle();
+
+    if (pickErr) {
+      console.error("Échec de la requête picks :", pickErr.message ?? pickErr);
+      return Response.json({ error: "picks" }, { status: 500 });
+    }
+
+    const pick = pickRow
+      ? (() => {
+          const row = pickRow as unknown as PickRow;
+          const player = playerJoin(row.players);
+          // Un pick existe même si la jointure players échoue (données
+          // incohérentes) : ne pas déclencher un faux rappel « pas de pick ».
+          return { playerId: row.player_id, name: player?.name ?? "?", injuryStatus: player?.injury_status ?? null };
+        })()
+      : null;
+
+    const { data: sentRows } = await db.from("reminders_sent").select("kind, key").eq("night", date);
+    const sent = new Set((sentRows ?? []).map((r) => `${r.kind}|${r.key}`));
+    for (const r of dueReminders({ now, night, pick, sent })) {
+      await deliver(date, r.kind, r.key, r.title, r.body, night.closing_at);
+    }
+  }
+
+  // Vérification du deck sur 7 jours (24/11/2026) : blessure d'un pick ou
+  // autre joueur proposé par le moteur. Un échec ici ne doit pas faire
+  // échouer les rappels du soir (la route est appelée sans surveillance).
+  try {
+    const entries = await loadDeckEntries(db, date);
+    const { data: deckSent } = await db.from("reminders_sent").select("night, kind, key")
+      .gte("night", date).lte("night", addDays(date, DECK_CHECK_DAYS - 1));
+    const sent = new Set((deckSent ?? []).map((r: { night: string; kind: string; key: string }) => `${r.night}|${r.kind}|${r.key}`));
+    const closing = new Map(entries.map((e) => [e.night, e.closingAt]));
+    for (const a of deckAlerts({ now, entries, sent })) {
+      await deliver(a.night, a.kind, a.key, a.title, a.body, closing.get(a.night)!);
+    }
+  } catch (e) {
+    console.error("Échec de la vérification du deck :", e instanceof Error ? e.message : e);
   }
 
   return Response.json({ sent: sentCount });
