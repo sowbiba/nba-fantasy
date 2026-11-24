@@ -58,7 +58,7 @@ def test_build_decision_inputs_matches_manual_profile_and_recent_logs():
 
     recent_1 = inputs.recent_logs[1]
     sorted_current_1 = sorted(current_1, key=lambda l: l.date, reverse=True)[:5]
-    assert recent_1 == [{"minutes": l.minutes} for l in sorted_current_1]
+    assert recent_1 == [{"minutes": l.minutes, "date": l.date} for l in sorted_current_1]
     assert recent_1[0]["minutes"] == sorted_current_1[0].minutes
 
 

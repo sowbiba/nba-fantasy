@@ -508,6 +508,63 @@ def test_joueur_revenu_depuis_moins_de_7_jours_ecarte_ce_soir():
     assert 1 in [r.cell.player_id for r in d.recommendations]
 
 
+# --- Quarantaine levée dès qu'il a rejoué (étude du 24/11/2026) ---------------
+# Après une absence, un joueur qui a rejoué joue ensuite 79-81 % du temps
+# (contre 85 %) et marque 99 % de sa moyenne : plus de quarantaine dès qu'il a
+# joué le dernier match de son équipe avec des minutes normales.
+
+def _returned(minutes, played_on, last_team_game=TODAY - timedelta(days=1), status=None):
+    back = {**PLAYERS[1], "injury_status": status, "injury_last_status": "Out",
+            "injury_last_seen": (TODAY - timedelta(days=3)).isoformat()}
+    games = [_game("g0", last_team_game, "DEN", "PHX"), _game("g1", TODAY, "DEN", "LAL"),
+             _game("g2", TODAY + timedelta(days=20), "DEN", "WAS")]
+    logs = {**_inputs().recent_logs, 1: [{"minutes": minutes, "date": played_on}] + [{"minutes": 0}] * 2}
+    return decide(_inputs(players={**PLAYERS, 1: back}, games=games, recent_logs=logs))
+
+
+def test_revenu_avec_minutes_normales_plus_de_quarantaine():
+    d = _returned(34, TODAY - timedelta(days=1))
+    assert 1 in [r.cell.player_id for r in d.recommendations]
+
+
+def test_revenu_avec_minutes_reduites_reste_en_quarantaine():
+    d = _returned(15, TODAY - timedelta(days=1))
+    assert 1 not in [r.cell.player_id for r in d.recommendations]
+
+
+def test_absent_au_dernier_match_de_son_equipe_reste_en_quarantaine():
+    d = _returned(34, TODAY - timedelta(days=5))
+    assert 1 not in [r.cell.player_id for r in d.recommendations]
+
+
+def test_revenu_hier_encore_vu_signale_ce_matin_plus_de_quarantaine():
+    """Cas Zion 24/11/2026 : joué 40 min la veille (date US), encore listé
+    par ESPN à la synchro du matin, retiré ensuite."""
+    back = {**PLAYERS[1], "injury_status": None, "injury_last_status": "Day-To-Day",
+            "injury_last_seen": TODAY.isoformat()}
+    games = [_game("g0", TODAY - timedelta(days=1), "DEN", "PHX"), _game("g1", TODAY, "DEN", "LAL"),
+             _game("g2", TODAY + timedelta(days=20), "DEN", "WAS")]
+    logs = {**_inputs().recent_logs, 1: [{"minutes": 34, "date": TODAY - timedelta(days=1)}] * 3}
+    d = decide(_inputs(players={**PLAYERS, 1: back}, games=games, recent_logs=logs))
+    assert 1 in [r.cell.player_id for r in d.recommendations]
+
+
+def test_signale_apres_son_dernier_match_reste_en_quarantaine():
+    """Signalé ce matin, dernier match il y a 2 jours : blessure nouvelle."""
+    back = {**PLAYERS[1], "injury_status": None, "injury_last_status": "Out",
+            "injury_last_seen": TODAY.isoformat()}
+    games = [_game("g0", TODAY - timedelta(days=2), "DEN", "PHX"), _game("g1", TODAY, "DEN", "LAL"),
+             _game("g2", TODAY + timedelta(days=20), "DEN", "WAS")]
+    logs = {**_inputs().recent_logs, 1: [{"minutes": 34, "date": TODAY - timedelta(days=2)}] * 3}
+    d = decide(_inputs(players={**PLAYERS, 1: back}, games=games, recent_logs=logs))
+    assert 1 not in [r.cell.player_id for r in d.recommendations]
+
+
+def test_revenu_mais_encore_signale_reste_ecarte():
+    d = _returned(34, TODAY - timedelta(days=1), status="Day-To-Day")
+    assert 1 not in [r.cell.player_id for r in d.recommendations]   # statut signalé : règle inchangée
+
+
 # --- Coéquipier majeur absent (2026-11) --------------------------------------
 # DEN : joueur 1 (n°1, 51 pts de base) et joueur 5 (n°2, 40,8 pts).
 

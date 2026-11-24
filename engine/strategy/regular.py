@@ -29,6 +29,12 @@ log = logging.getLogger(__name__)
 
 HORIZON_DAYS = 30
 MIN_EXP_MINUTES = 15.0
+# Quarantaine de retour levée dès que le joueur a joué le dernier match de son
+# équipe avec des minutes normales (≥ 75 % de ses minutes attendues). Étude
+# du 24/11/2026 (2025-26 + 2026-27, joueurs ≥ 28 TTFL) : un joueur revenu
+# joue ensuite 79-81 % du temps (85 % pour la référence) et marque 99 % de sa
+# moyenne ; un joueur absent au dernier match ne joue que 36-52 % du temps.
+RETURN_MIN_MINUTES_SHARE = 0.75
 TOP_RECOMMENDATIONS = 50
 # Une réservation future reste contestable : le plan ne propose un autre
 # joueur que s'il rapporte au moins cette marge (points attendus, décote du
@@ -241,6 +247,23 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
             return 1.0, None
         return 1.0 + gain * share, inputs.players[lid].get("name")
 
+    def _returned(pid: int, team: str, exp_minutes: float, last_seen: date | None) -> bool:
+        """Le joueur a joué le dernier match passé de son équipe, après son
+        dernier signalement, avec des minutes normales. Box score manquant →
+        considéré absent (prudence)."""
+        last_team = max((x for x in team_dates.get(team, []) if x < today), default=None)
+        logs = inputs.recent_logs.get(pid, [])
+        if last_team is None or last_seen is None or not logs or logs[0].get("date") is None:
+            return False
+        played_on = logs[0]["date"]
+        if isinstance(played_on, str):
+            played_on = date.fromisoformat(played_on[:10])
+        # Tolérance d'un jour : un match daté D (heure US) finit le matin de
+        # D+1 à Paris, et ESPN affiche souvent encore le joueur à la synchro
+        # de ce matin-là (cas Zion, joué 40 min le 23/11, vu signalé le 24/11).
+        return (played_on >= last_team and played_on >= last_seen - timedelta(days=1)
+                and (logs[0].get("minutes") or 0) >= RETURN_MIN_MINUTES_SHARE * exp_minutes)
+
     def _estimate(pid: int, team: str, opponent: str, is_home: bool, d: date, k: int, game: dict
                   ) -> tuple[float, float, GameContext]:
         """(projection, p_play, contexte) d'un joueur sur un match (S1)."""
@@ -268,6 +291,11 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
             return_date = None
             if k > 0:
                 status = None
+        # Statut levé et joueur revenu : plus de quarantaine (seul le
+        # taux de présence et le motif DNP récent jouent).
+        if not status and _returned(pid, team, profile.exp_minutes,
+                                    parse_return_date(row.get("injury_last_seen"))):
+            return_date = None
         b2b = rd == 0
         if k == 0:
             p = tonight_p_play(injury_status=status, recent_logs=inputs.recent_logs.get(pid, []),
