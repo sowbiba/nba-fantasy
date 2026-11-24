@@ -65,9 +65,13 @@ export function deckAlerts(input: { now: Date; entries: DeckEntry[]; sent: Set<s
     const day = frDayMonth(e.night);
     const p = e.pick;
     const other = e.proposal && e.proposal.playerId !== p.playerId ? e.proposal : null;
+    // Pas de proposition (soirée x2 réservée, absente du plan ; recos du
+    // soir pas encore calculées) : ne pas prétendre que le moteur le garde.
     const proposalText = other
       ? `Le moteur propose ${other.name} (≈ ${fr1(other.expected)}).`
-      : "Le moteur le garde pour l'instant.";
+      : e.proposal
+        ? "Le moteur le garde pour l'instant."
+        : "Pas de proposition du moteur pour cette soirée : vérifie les recos dans l'app.";
     let alert: DeckAlert | null = null;
     if (p.injuryStatus) {
       alert = { kind: "deck_injury", night: e.night, key: `${p.playerId}:${p.injuryStatus}`,

@@ -67,6 +67,15 @@ describe("deckAlerts", () => {
     expect(r[0].body).toContain("garde");
   });
 
+  it("pick blessé sans proposition du moteur (x2 réservé) : ne dit pas qu'il le garde", () => {
+    const r = deckAlerts({ now, sent: new Set(), entries: [entry({
+      pick: { playerId: 1, name: "Wembanyama", injuryStatus: "Day-To-Day" }, proposal: null,
+    })] });
+    expect(r).toHaveLength(1);
+    expect(r[0].body).not.toContain("garde");
+    expect(r[0].body).toContain("Pas de proposition");
+  });
+
   it("joueur sain mais le moteur propose un autre joueur : alerte de changement", () => {
     const r = deckAlerts({ now, sent: new Set(), entries: [entry({
       proposal: { playerId: 3, name: "SGA", expected: 45.7 },
