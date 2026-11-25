@@ -654,3 +654,45 @@ def test_repos_leve_par_espn_pas_de_quarantaine():
             "injury_last_seen": (TODAY - timedelta(days=1)).isoformat()}
     d = decide(_inputs(players={**PLAYERS, 1: back}))
     assert 1 in [r.cell.player_id for r in d.recommendations]
+
+
+# --- Gain net d'un changement du pick du soir (alerte du 25/11/2026) ---------
+# SGA n°1 ce soir (+7,7 sur Randle) mais réservé le 02/12 à 47,6 : l'avancer
+# faisait perdre ~5 points sur le deck. Le gain net compare le deck entier
+# (ce soir + plan) avec et sans le changement.
+
+from engine.strategy.regular import swap_net_gains  # noqa: E402
+
+
+def _ev(decision, pid):
+    return next(r.cell.p_play * r.cell.projection for r in decision.recommendations if r.cell.player_id == pid)
+
+
+def test_gain_net_negatif_si_le_candidat_est_reserve_plus_haut_plus_tard():
+    # Pick du soir : joueur 2. La star (1) fait mieux ce soir, mais elle est
+    # réservée à J+20 contre WAS, où le seul remplaçant (4) est faible.
+    inputs = _with_rival(eff=1.0, picks=[_resa(), PickRow(99, 2, TODAY, "regular", "2026-27")])
+    d = decide(inputs)
+    assert _ev(d, 1) - _ev(d, 2) > 3                      # écart brut du soir : l'ancienne alerte partait
+    gains = swap_net_gains(inputs, d)
+    assert gains[1] < 0
+
+
+def test_gain_net_positif_si_le_candidat_n_a_pas_mieux_plus_tard():
+    # À J+20, DEN ne joue pas : la star n'a rien de mieux que ce soir.
+    later = [_game("g1", TODAY, "DEN", "LAL"), _game("g2", LATER, "LAL", "WAS")]
+    inputs = _inputs(games=later, picks=[PickRow(99, 2, TODAY, "regular", "2026-27")])
+    d = decide(inputs)
+    gains = swap_net_gains(inputs, d)
+    assert gains[1] > 3
+
+
+def test_gain_net_vide_sans_pick_du_soir():
+    inputs = _inputs()
+    assert swap_net_gains(inputs, decide(inputs)) == {}
+
+
+def test_gain_net_ignore_les_candidats_sous_la_marge():
+    # Joueur 1 pické : personne ne fait mieux de plus de 3 points ce soir.
+    inputs = _inputs(picks=_pick_tonight(1))
+    assert swap_net_gains(inputs, decide(inputs)) == {}

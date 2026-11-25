@@ -29,7 +29,7 @@ GAME_LOGS_NOT_NULL = {"player_id", "game_id", "date"}
 RECOMMENDATIONS_ALLOWED = {
     "date", "player_id", "rank", "estimated_score", "perf_score", "matchup_score", "strategy_score",
     "pros", "cons", "verdict", "tier", "tags", "computed_at", "projection", "p_play", "value",
-    "lock_value", "locked_until", "best_future",
+    "lock_value", "locked_until", "best_future", "net_gain", "net_gain_vs",
 }
 RECOMMENDATIONS_NOT_NULL = {"date", "player_id", "rank", "estimated_score", "tier"}
 

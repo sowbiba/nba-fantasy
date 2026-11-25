@@ -433,3 +433,18 @@ def test_daily_sync_repos_note_rest_dans_la_trace():
     run(repo, _fetch_scoreboard(SCOREBOARD), lambda: other, TODAY, NOW)
     assert repo.players[2]["injury_status"] is None
     assert repo.players[2]["injury_last_status"] == "Rest"
+
+
+def test_daily_sync_ecrit_le_gain_net_d_un_changement_du_pick_du_soir():
+    """Alerte deck du 25/11/2026 : le web ne propose de changer le pick du
+    soir que sur le gain net du deck, calculé ici contre ce pick."""
+    base = _base_repo()
+    tonight = {"id": 2, "player_id": 1, "game_id": "0022600020", "date": TODAY.isoformat(),
+               "mode": "regular", "season": "2026-27", "actual_score": None, "is_x2": False}
+    # Joueur 1 (le pick) nettement en dessous du joueur 2 ce soir.
+    logs = [{**l, "ttfl_score": 25} if l["player_id"] == 1 else l for l in base.logs.values()]
+    repo = _base_repo(picks=base.picks + [tonight], logs=logs)
+    run(repo, _fetch_scoreboard(SCOREBOARD), lambda: {}, TODAY, NOW)
+    recs = {r["player_id"]: r for r in repo.recommendations[TODAY]}
+    assert recs[2]["net_gain_vs"] == 1 and recs[2]["net_gain"] > 3
+    assert recs[1]["net_gain"] is None and recs[1]["net_gain_vs"] is None

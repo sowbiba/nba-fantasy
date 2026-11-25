@@ -460,3 +460,51 @@ def decide(inputs: DecisionInputs, tonight_source: str = TONIGHT_SOURCE, decay: 
                             reserved_on=reserved_on.get(plan_pid)))
                         del recommendations[TOP_RECOMMENDATIONS:]
     return Decision(tonight, recommendations, plan, reservations)
+
+
+# Changer le pick du soir n'est proposé que si le deck entier y gagne plus que
+# cette marge (miroir de TONIGHT_MARGIN côté web). Seuls les SWAP_CANDIDATES
+# premiers recos qui dépassent le pick de plus de la marge ce soir sont
+# simulés : chaque candidat coûte un decide() complet.
+SWAP_CANDIDATES = 3
+
+
+def _deck_points(decision: Decision, tonight_pid: int) -> float:
+    """Points attendus (p × projection, x2 compris) du deck : le pick du soir
+    plus le plan des soirées suivantes."""
+    tonight = next((r.cell.p_play * r.cell.projection for r in decision.recommendations
+                    if r.cell.player_id == tonight_pid), 0.0)
+    return tonight + sum(e.cell.p_play * e.cell.projection * (2 if e.is_x2 else 1)
+                         for d, e in decision.plan.items() if d != decision.tonight)
+
+
+def swap_net_gains(inputs: DecisionInputs, decision: Decision, decay: float | None = None,
+                   blowout: BlowoutModel | None = None) -> dict[int, float]:
+    """Gain net, sur tout le deck, à remplacer le pick du soir par chacun des
+    recos qui le dépassent ce soir de plus de CHALLENGE_MARGIN.
+
+    `decision` = decide(inputs). Pour chaque candidat, decide() est relancé
+    avec le candidat comme pick du soir : il quitte alors sa réservation
+    future éventuelle (cooldown) et l'ancien pick redevient disponible. Le
+    gain net est la différence de points attendus (ce soir + plan). Cas du
+    25/11/2026 : SGA +7,7 ce soir, mais −14,6 le 02/12 où il était réservé.
+    Vide sans pick du soir."""
+    today = inputs.today
+    tonight_picks = [p for p in inputs.picks if p.date == today]
+    if decision.tonight != today or not tonight_picks:
+        return {}
+    pick = max(tonight_picks, key=lambda p: p.id)
+    ev = {r.cell.player_id: r.cell.p_play * r.cell.projection for r in decision.recommendations}
+    pick_ev = ev.get(pick.player_id, 0.0)
+    candidates = [pid for pid, v in ev.items()
+                  if pid != pick.player_id and v - pick_ev > CHALLENGE_MARGIN][:SWAP_CANDIDATES]
+    if not candidates:
+        return {}
+    others = [p for p in inputs.picks if p.date != today]
+    base = _deck_points(decision, pick.player_id)
+    gains: dict[int, float] = {}
+    for pid in candidates:
+        alt_inputs = replace(inputs, picks=others + [replace(pick, player_id=pid)])
+        alt = decide(alt_inputs, decay=decay, blowout=blowout)
+        gains[pid] = _deck_points(alt, pid) - base
+    return gains

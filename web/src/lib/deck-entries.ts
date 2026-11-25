@@ -3,8 +3,9 @@ import type { DeckEntry } from "@/lib/reminders";
 
 /** Horizon de la vérification du deck (soirée du jour comprise). */
 export const DECK_CHECK_DAYS = 7;
-/** Le soir même, la reco n°1 ne remplace le pick qu'au-delà de cette marge
- *  (miroir de CHALLENGE_MARGIN, engine/strategy/regular.py). */
+/** Le soir même, un reco ne remplace le pick que si le deck entier y gagne
+ *  plus que cette marge (gain net calculé par le moteur, miroir de
+ *  CHALLENGE_MARGIN, engine/strategy/regular.py). */
 export const TONIGHT_MARGIN = 3;
 
 type Named = { name: string; injury_status?: string | null };
@@ -14,12 +15,21 @@ const one = (p: Join): Named | null => (Array.isArray(p) ? p[0] ?? null : p);
 export type NightRow = { date: string; closing_at: string };
 export type PickRow = { date: string; player_id: number; players: Join };
 export type PlanRow = { night: string; player_id: number; projection: number; p_play: number; players: Join };
-export type RecoRow = { player_id: number; rank: number; estimated_score: number | null; players: Join };
+export type RecoRow = {
+  player_id: number; rank: number; estimated_score: number | null; players: Join;
+  /** Gain net sur le deck (ce soir + plan) à le prendre à la place du pick
+   *  `net_gain_vs` ; null s'il n'a pas été simulé. */
+  net_gain?: number | null; net_gain_vs?: number | null;
+};
 
 /** Assemble, pour chaque soirée, le pick du deck et la proposition du moteur :
- *  le soir même, la reco n°1 si elle dépasse le pick de plus de
- *  TONIGHT_MARGIN ; les soirs suivants, le dernier plan (qui applique déjà
- *  cette marge aux réservations). Pure. */
+ *  le soir même, le reco au meilleur gain net sur le deck s'il dépasse
+ *  TONIGHT_MARGIN (la reco n°1 si le pick est absent des recos ou s'il n'y
+ *  a pas de pick) ; les soirs suivants, le dernier plan (qui applique déjà
+ *  cette marge aux réservations). Pure.
+ *
+ *  Pas d'écart brut du soir : le 25/11/2026, SGA (+7,7 ce soir) était
+ *  réservé le 02/12 et l'avancer coûtait ~5 points sur le deck. */
 export function buildDeckEntries(input: {
   today: string; nights: NightRow[]; picks: PickRow[]; plan: PlanRow[]; tonightRecos: RecoRow[];
 }): DeckEntry[] {
@@ -33,13 +43,18 @@ export function buildDeckEntries(input: {
     let proposal: DeckEntry["proposal"] = null;
     if (n.date === today) {
       const top = [...tonightRecos].sort((a, b) => a.rank - b.rank)[0];
-      if (top) {
-        const mine = tonightRecos.find((r) => r.player_id === pick?.playerId);
-        const gap = (top.estimated_score ?? 0) - (mine?.estimated_score ?? 0);
-        const better = !pick || (top.player_id !== pick.playerId && (!mine || gap > TONIGHT_MARGIN));
-        proposal = better
-          ? { playerId: top.player_id, name: one(top.players)?.name ?? "?", expected: top.estimated_score ?? 0 }
-          : pick && { playerId: pick.playerId, name: pick.name, expected: mine?.estimated_score ?? 0 };
+      const mine = tonightRecos.find((r) => r.player_id === pick?.playerId);
+      const asProposal = (r: RecoRow) => ({ playerId: r.player_id, name: one(r.players)?.name ?? "?",
+                                            expected: r.estimated_score ?? 0 });
+      if (!pick || !mine) {
+        proposal = top ? asProposal(top) : null;
+      } else {
+        const best = tonightRecos
+          .filter((r) => r.player_id !== pick.playerId && r.net_gain_vs === pick.playerId
+                         && r.net_gain != null && Number(r.net_gain) > TONIGHT_MARGIN)
+          .sort((a, b) => Number(b.net_gain) - Number(a.net_gain))[0];
+        proposal = best ? { ...asProposal(best), netGain: Number(best.net_gain) }
+                        : { playerId: pick.playerId, name: pick.name, expected: mine.estimated_score ?? 0 };
       }
     } else {
       const pl = planBy.get(n.date);
@@ -70,7 +85,7 @@ export async function loadDeckEntries(db: any, today: string): Promise<DeckEntry
         .eq("generated_at", generatedAt).gte("night", today).lte("night", last)
     : { data: [], error: null };
   const recos: Res<RecoRow> = await db.from("recommendations")
-    .select("player_id, rank, estimated_score, players(name)").eq("date", today);
+    .select("player_id, rank, estimated_score, net_gain, net_gain_vs, players(name)").eq("date", today);
   for (const [what, r] of [["nights", nights], ["picks", picks], ["plan", latest], ["plan", plan], ["recommendations", recos]] as const) {
     if (r.error) throw new Error(`${what} : ${r.error.message ?? r.error}`);
   }

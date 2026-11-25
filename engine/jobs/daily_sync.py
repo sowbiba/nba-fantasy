@@ -23,7 +23,7 @@ from engine.stats.availability_prob import REST_STATUS, is_rest
 from engine.stats.elo import PRODUCTION_ELO, EloParams, game_season, is_countable, predict, ratings_before
 from engine.stats.profile import GameLog
 from engine.strategy.inputs import absent_shares, build_decision_inputs
-from engine.strategy.regular import HORIZON_DAYS, decide
+from engine.strategy.regular import HORIZON_DAYS, decide, swap_net_gains
 
 SCHEDULE_PAST_DAYS = 5
 SCHEDULE_AHEAD_DAYS = 35
@@ -243,6 +243,12 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime,
     decision = decide(decision_inputs, blowout=decision_inputs.blowout_model)   # None sauf BLOWOUT_ENABLED
 
     if decision.tonight is not None:
+        # Gain net (deck entier) d'un changement du pick du soir : l'alerte
+        # deck_change du web ne compare plus seulement les points du soir.
+        gains = _step("gain net du pick du soir",
+                      lambda: swap_net_gains(decision_inputs, decision, blowout=decision_inputs.blowout_model),
+                      result) or {}
+        tonight_pick = max((p for p in picks if p.date == today), key=lambda p: p.id, default=None)
         rows = []
         for rank, rec in enumerate(decision.recommendations, start=1):
             pros, cons, verdict, tags = reco_texts(rec, rank, players[rec.cell.player_id]["name"])
@@ -257,6 +263,8 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime,
                 "best_future": None if rec.best_future is None else plan_explanation(rec.best_future),
                 "pros": pros, "cons": cons, "verdict": verdict, "tier": tier(rank), "tags": tags,
                 "computed_at": now.isoformat(),
+                "net_gain": round(gains[rec.cell.player_id], 1) if rec.cell.player_id in gains else None,
+                "net_gain_vs": tonight_pick.player_id if rec.cell.player_id in gains else None,
             })
         repo.replace_recommendations(today, rows)
         result.recommendations = len(rows)
