@@ -85,6 +85,13 @@ describe("deckAlerts", () => {
     expect(r[0].body).toContain("SGA");
   });
 
+  it("changement du soir : le gain net sur le deck figure dans le message", () => {
+    const r = deckAlerts({ now, sent: new Set(), entries: [entry({
+      proposal: { playerId: 3, name: "Herro", expected: 37, netGain: 6.5 },
+    })] });
+    expect(r[0].body).toContain("Gain net sur le deck : +6,5.");
+  });
+
   it("une seule fois par changement", () => {
     const e = entry({ proposal: { playerId: 3, name: "SGA", expected: 45.7 } });
     expect(deckAlerts({ now, entries: [e], sent: new Set(["2026-11-27|deck_change|1>3"]) })).toEqual([]);

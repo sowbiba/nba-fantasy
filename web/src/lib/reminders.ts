@@ -51,7 +51,8 @@ export type DeckEntry = {
   night: string;
   closingAt: string;
   pick: { playerId: number; name: string; injuryStatus: string | null } | null;
-  proposal: { playerId: number; name: string; expected: number } | null;
+  /** netGain : gain net sur le deck d'un changement du pick du soir. */
+  proposal: { playerId: number; name: string; expected: number; netGain?: number } | null;
 };
 
 export type DeckAlert = { kind: "deck_injury" | "deck_change"; night: string; key: string; title: string; body: string };
@@ -80,7 +81,8 @@ export function deckAlerts(input: { now: Date; entries: DeckEntry[]; sent: Set<s
     } else if (other) {
       alert = { kind: "deck_change", night: e.night, key: `${p.playerId}>${other.playerId}`,
                 title: `Deck ${day} : changement proposé`,
-                body: `Le moteur propose ${other.name} (≈ ${fr1(other.expected)}) à la place de ${p.name}.` };
+                body: `Le moteur propose ${other.name} (≈ ${fr1(other.expected)}) à la place de ${p.name}.`
+                      + (other.netGain != null ? ` Gain net sur le deck : +${fr1(other.netGain)}.` : "") };
     }
     if (alert && !sent.has(`${alert.night}|${alert.kind}|${alert.key}`)) out.push(alert);
   }
