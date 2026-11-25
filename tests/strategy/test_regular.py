@@ -696,3 +696,33 @@ def test_gain_net_ignore_les_candidats_sous_la_marge():
     # Joueur 1 pické : personne ne fait mieux de plus de 3 points ce soir.
     inputs = _inputs(picks=_pick_tonight(1))
     assert swap_net_gains(inputs, decide(inputs)) == {}
+
+
+# --- Classement du soir aligné sur le gain net (25/11/2026) ------------------
+# SGA n°1 dans l'app alors que l'avancer coûtait ~5 points : avec la règle
+# « pick = n°1 du moteur », le classement doit dire la même chose que l'alerte.
+
+from engine.strategy.regular import rank_tonight  # noqa: E402
+
+
+def test_classement_le_pick_passe_devant_un_candidat_a_gain_net_negatif():
+    inputs = _with_rival(eff=1.0, picks=[_resa(), PickRow(99, 2, TODAY, "regular", "2026-27")])
+    d = decide(inputs)
+    assert d.recommendations[0].cell.player_id == 1            # best-available brut
+    ranked = rank_tonight(d.recommendations, 2, swap_net_gains(inputs, d))
+    assert [r.cell.player_id for r in ranked][:2] == [2, 1]
+    assert sorted(r.cell.player_id for r in ranked) == sorted(r.cell.player_id for r in d.recommendations)
+
+
+def test_classement_un_gain_net_au_dela_de_la_marge_reste_devant_le_pick():
+    later = [_game("g1", TODAY, "DEN", "LAL"), _game("g2", LATER, "LAL", "WAS")]
+    inputs = _inputs(games=later, picks=[PickRow(99, 2, TODAY, "regular", "2026-27")])
+    d = decide(inputs)
+    ranked = rank_tonight(d.recommendations, 2, swap_net_gains(inputs, d))
+    assert [r.cell.player_id for r in ranked][:2] == [1, 2]
+
+
+def test_classement_inchange_sans_pick_du_soir_ou_pick_absent_des_recos():
+    d = decide(_inputs())
+    assert rank_tonight(d.recommendations, None, {}) == d.recommendations
+    assert rank_tonight(d.recommendations, 999, {}) == d.recommendations
