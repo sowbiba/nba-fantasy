@@ -508,3 +508,21 @@ def swap_net_gains(inputs: DecisionInputs, decision: Decision, decay: float | No
         alt = decide(alt_inputs, decay=decay, blowout=blowout)
         gains[pid] = _deck_points(alt, pid) - base
     return gains
+
+
+def rank_tonight(recommendations: list[Recommendation], pick_pid: int | None,
+                 gains: dict[int, float]) -> list[Recommendation]:
+    """Ordre affiché des recos du soir quand un pick est déjà posé : d'abord
+    les joueurs dont le gain net sur le deck (swap_net_gains) dépasse
+    CHALLENGE_MARGIN, du meilleur gain au moins bon, puis le pick, puis les
+    autres dans l'ordre du moteur. Même règle que l'alerte deck_change du web :
+    le n°1 est le joueur à prendre. Inchangé sans pick ou si le pick n'est
+    pas dans les recos (écarté, blessé)."""
+    pick = next((r for r in recommendations if r.cell.player_id == pick_pid), None)
+    if pick is None:
+        return list(recommendations)
+    better = sorted((r for r in recommendations
+                     if r is not pick and gains.get(r.cell.player_id, float("-inf")) > CHALLENGE_MARGIN),
+                    key=lambda r: -gains[r.cell.player_id])
+    rest = [r for r in recommendations if r is not pick and r not in better]
+    return better + [pick] + rest

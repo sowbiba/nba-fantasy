@@ -23,7 +23,7 @@ from engine.stats.availability_prob import REST_STATUS, is_rest
 from engine.stats.elo import PRODUCTION_ELO, EloParams, game_season, is_countable, predict, ratings_before
 from engine.stats.profile import GameLog
 from engine.strategy.inputs import absent_shares, build_decision_inputs
-from engine.strategy.regular import HORIZON_DAYS, decide, swap_net_gains
+from engine.strategy.regular import CHALLENGE_MARGIN, HORIZON_DAYS, decide, rank_tonight, swap_net_gains
 
 SCHEDULE_PAST_DAYS = 5
 SCHEDULE_AHEAD_DAYS = 35
@@ -249,9 +249,17 @@ def run(repo, fetch_scoreboard, fetch_injuries, today: date, now: datetime,
                       lambda: swap_net_gains(decision_inputs, decision, blowout=decision_inputs.blowout_model),
                       result) or {}
         tonight_pick = max((p for p in picks if p.date == today), key=lambda p: p.id, default=None)
+        # Le pick du soir passe devant tout joueur dont le changement ne
+        # rapporte pas plus de CHALLENGE_MARGIN sur le deck (25/11/2026 :
+        # SGA n°1 alors que l'avancer coûtait ~5 points).
+        ranked = rank_tonight(decision.recommendations,
+                              tonight_pick.player_id if tonight_pick else None, gains)
         rows = []
-        for rank, rec in enumerate(decision.recommendations, start=1):
+        for rank, rec in enumerate(ranked, start=1):
             pros, cons, verdict, tags = reco_texts(rec, rank, players[rec.cell.player_id]["name"])
+            gain = gains.get(rec.cell.player_id)
+            if gain is not None and gain <= CHALLENGE_MARGIN:
+                cons = [*cons, f"📉 À la place de ton pick : {gain:+.1f} pts sur le deck".replace(".", ",")]
             rows.append({
                 "date": today.isoformat(), "player_id": rec.cell.player_id, "rank": rank,
                 "estimated_score": round(rec.cell.p_play * rec.cell.projection, 1),

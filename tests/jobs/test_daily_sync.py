@@ -448,3 +448,4 @@ def test_daily_sync_ecrit_le_gain_net_d_un_changement_du_pick_du_soir():
     recs = {r["player_id"]: r for r in repo.recommendations[TODAY]}
     assert recs[2]["net_gain_vs"] == 1 and recs[2]["net_gain"] > 3
     assert recs[1]["net_gain"] is None and recs[1]["net_gain_vs"] is None
+    assert (recs[2]["rank"], recs[1]["rank"]) == (1, 2)          # gain net > 3 : devant le pick

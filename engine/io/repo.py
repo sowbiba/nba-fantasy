@@ -127,9 +127,16 @@ class SupabaseRepo:
         q.execute()
 
     def replace_recommendations(self, night: date, rows: list[dict]) -> None:
-        self.c.table("recommendations").delete().eq("date", night.isoformat()).execute()
+        # Upsert d'abord, purge des joueurs sortis du classement ensuite : un
+        # échec de l'écriture (colonne absente, 25/11/2026) laisse les recos
+        # précédentes au lieu d'une soirée vide.
         if rows:
-            self.c.table("recommendations").insert(rows).execute()
+            self.c.table("recommendations").upsert(rows, on_conflict="date,player_id").execute()
+        q = self.c.table("recommendations").delete().eq("date", night.isoformat())
+        kept = sorted({r["player_id"] for r in rows})
+        if kept:
+            q = q.not_.in_("player_id", kept)
+        q.execute()
 
     def write_plan(self, rows: list[dict], keep_since: datetime) -> None:
         if rows:

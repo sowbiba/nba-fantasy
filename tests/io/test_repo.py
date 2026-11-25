@@ -36,10 +36,13 @@ def test_replace_nights_vide_supprime_seulement():
     assert [op[0] for op in client.ops] == ["delete"]
 
 
-def test_replace_recommendations_supprime_puis_insere():
+def test_replace_recommendations_upsert_puis_purge():
+    # 25/11/2026 : l'insert a échoué après le delete, la soirée est restée
+    # sans recos (« Aucune reco »). L'upsert passe désormais en premier.
     client = FakeClient()
     SupabaseRepo(client).replace_recommendations(date(2026, 11, 10), [{"player_id": 1}])
-    assert [op[0] for op in client.ops] == ["delete", "insert"]
+    assert [op[0] for op in client.ops] == ["upsert", "delete"]
+    assert client.ops[0] == ("upsert", "recommendations", 1, "date,player_id")
 
 
 def test_replace_recommendations_vide_supprime_seulement():
