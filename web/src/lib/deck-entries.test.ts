@@ -42,6 +42,17 @@ describe("buildDeckEntries", () => {
     expect(e.proposal?.name).toBe("Sabonis");
   });
 
+  it("plan périmé : un joueur déjà dans le deck à moins de 30 jours n'est pas proposé", () => {
+    // 27/11/2026 22h00 : la vérification a lu le plan d'avant le changement
+    // du deck (Maxey avancé au 27/11) et proposé Maxey le 01/12.
+    const n2 = [{ date: "2026-11-27", closing_at: "2026-11-27T23:00:00Z" }, { date: "2026-12-01", closing_at: "2026-12-01T23:00:00Z" }];
+    const [, e] = buildDeckEntries({ today: "2026-11-27", nights: n2, tonightRecos: [],
+      picks: [{ date: "2026-11-27", player_id: 9, players: { name: "Maxey", injury_status: null } },
+              { date: "2026-12-01", player_id: 1, players: { name: "Harden", injury_status: null } }],
+      plan: [{ night: "2026-12-01", player_id: 9, projection: 33.5, p_play: 1, players: { name: "Maxey" } }] });
+    expect(e.proposal).toBeNull();
+  });
+
   it("soirée sans pick ni plan : entrée vide", () => {
     const [, e] = buildDeckEntries({ today, nights, picks: [], plan: [], tonightRecos: [] });
     expect(e).toEqual({ night: "2026-11-27", closingAt: "2026-11-27T23:00:00Z", pick: null, proposal: null });

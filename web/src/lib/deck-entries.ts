@@ -1,6 +1,10 @@
 import { addDays } from "@/lib/date";
 import type { DeckEntry } from "@/lib/reminders";
 
+/** Délai de blocage après un pick (R3, engine/rules/availability.py). */
+const COOLDOWN_DAYS = 30;
+const dayDiff = (a: string, b: string) => (Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
+
 /** Horizon de la vérification du deck (soirée du jour comprise). */
 export const DECK_CHECK_DAYS = 7;
 /** Le soir même, un reco ne remplace le pick que si le deck entier y gagne
@@ -58,7 +62,12 @@ export function buildDeckEntries(input: {
       }
     } else {
       const pl = planBy.get(n.date);
-      if (pl) {
+      // Plan calculé avant un changement du deck (synchro en cours, 27/11/2026) :
+      // un joueur déjà pické à moins de COOLDOWN_DAYS de cette soirée est
+      // bloqué, la proposition est périmée.
+      const stale = pl && picks.some((p) => p.player_id === pl.player_id && p.date !== n.date
+                                           && Math.abs(dayDiff(p.date, n.date)) < COOLDOWN_DAYS);
+      if (pl && !stale) {
         proposal = { playerId: pl.player_id, name: one(pl.players)?.name ?? "?",
                      expected: Number(pl.projection) * Number(pl.p_play) };
       }
