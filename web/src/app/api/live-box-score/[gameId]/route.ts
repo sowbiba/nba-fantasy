@@ -169,7 +169,7 @@ export async function GET(
         player_name: r.name,
         team: r.team,
         is_home: isHome,
-        on_court: false,
+        on_court: event.state === "in" && r.onCourt,
         played: r.played,
         minutes: r.minutes,
         ...stats,

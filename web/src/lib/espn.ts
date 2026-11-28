@@ -49,6 +49,8 @@ type EspnBoxRow = {
   name: string;
   starter: boolean;
   played: boolean;
+  /** ESPN `active` : sur le terrain à l'instant (5 par équipe en direct). */
+  onCourt: boolean;
   minutes: number;
   pts: number;
   reb: number;
@@ -98,6 +100,7 @@ export function parseEspnBox(summary: unknown): EspnBoxRow[] {
       const athlete = a as {
         athlete?: { displayName?: string };
         starter?: boolean;
+        active?: boolean;
         didNotPlay?: boolean;
         stats?: string[];
       };
@@ -119,6 +122,7 @@ export function parseEspnBox(summary: unknown): EspnBoxRow[] {
         name,
         starter,
         played,
+        onCourt: played && athlete.active === true,
         minutes: played ? numOr0(byLabel["MIN"]) : 0,
         pts: played ? numOr0(byLabel["PTS"]) : 0,
         reb: played ? numOr0(byLabel["REB"]) : 0,

@@ -27,14 +27,18 @@ describe("espn", () => {
     const summary = { boxscore: { players: [{ team: { abbreviation: "GS" }, statistics: [{
       labels: ["MIN", "PTS", "FG", "3PT", "FT", "REB", "AST", "TO", "STL", "BLK", "OREB", "DREB", "PF", "+/-"],
       athletes: [
-        { athlete: { displayName: "Stephen Curry" }, starter: true, didNotPlay: false,
+        { athlete: { displayName: "Stephen Curry" }, starter: true, active: true, didNotPlay: false,
           stats: ["34", "30", "10-20", "5-11", "5-5", "4", "6", "3", "1", "0", "0", "4", "2", "+8"] },
-        { athlete: { displayName: "Bench Guy" }, starter: false, didNotPlay: true, stats: [] },
+        { athlete: { displayName: "Bench Guy" }, starter: false, active: true, didNotPlay: true, stats: [] },
+        { athlete: { displayName: "Sixth Man" }, starter: false, active: false, didNotPlay: false,
+          stats: ["12", "4", "2-5", "0-2", "0-0", "1", "1", "0", "0", "0", "0", "1", "1", "-3"] },
       ] }] }] } };
     const rows = parseEspnBox(summary);
     expect(rows[0]).toMatchObject({ team: "GSW", name: "Stephen Curry", played: true, minutes: 34, pts: 30,
-      fgm: 10, fga: 20, tpm: 5, tpa: 11, ftm: 5, fta: 5, reb: 4, ast: 6, tov: 3, stl: 1, blk: 0, fouls: 2 });
-    expect(rows[1]).toMatchObject({ played: false, minutes: 0, pts: 0 });
+      fgm: 10, fga: 20, tpm: 5, tpa: 11, ftm: 5, fta: 5, reb: 4, ast: 6, tov: 3, stl: 1, blk: 0, fouls: 2,
+      onCourt: true });
+    expect(rows[1]).toMatchObject({ played: false, minutes: 0, pts: 0, onCourt: false });
+    expect(rows[2]).toMatchObject({ played: true, onCourt: false });
   });
   it("trouve le match par équipes", () => {
     const sb = { events: [{ id: "401", status: { period: 2, displayClock: "5:12", type: { state: "in" } },
